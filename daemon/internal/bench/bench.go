@@ -15,8 +15,10 @@ import (
 // runner scores on Run. It is measured, not chosen: the daemon CI job prints
 // the raw figure on that hardware, and this constant is set from it.
 //
-// PLACEHOLDER until calibrated from CI; see docs/spec.md.
-const ReferenceUnitsPerSecond = 100.0
+// Measured 2026-10-03 on ubuntu-latest (x64): 208.00, 208.68, 211.87. That is
+// one runner on one day; hosted runners vary by host CPU, so re-read the CI
+// output from time to time and move this if the median has.
+const ReferenceUnitsPerSecond = 209.0
 
 // One unit is a fixed piece of work shaped like CI: compress, hash, sort.
 func unit(data []byte, scratch []int) [32]byte {
