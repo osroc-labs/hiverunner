@@ -30,7 +30,7 @@ export default async function Home() {
           {product.description}
         </p>
         <div className="flex gap-3">
-          <Button render={<Link href={session ? "/dashboard" : "/sign-up"} />}>
+          <Button render={<Link href={session ? "/dashboard" : "/sign-in"} />}>
             {session ? "Open workspace" : "Get started"}
           </Button>
           {!session && (

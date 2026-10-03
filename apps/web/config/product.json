@@ -1,54 +1,39 @@
 {
   "name": "HiveWorker",
   "slug": "hiveworker",
-  "description": "A workspace for your team and projects.",
+  "description": "GitHub Actions runners on your own developers' machines.",
   "supportEmail": "auth@thecomputerplumbers.com",
-  "features": { "billing": true, "mcp": true, "projects": true },
+  "features": {
+    "billing": false,
+    "mcp": false,
+    "projects": false
+  },
   "navigation": [
-    { "href": "/dashboard", "label": "Dashboard", "icon": "dashboard" },
     {
-      "href": "/projects",
-      "label": "Projects",
-      "icon": "projects",
-      "feature": "projects"
+      "href": "/dashboard",
+      "label": "Dashboard",
+      "icon": "dashboard"
     },
     {
-      "href": "/billing",
-      "label": "Billing",
-      "icon": "billing",
-      "feature": "billing"
-    },
-    { "href": "/account", "label": "Your account", "icon": "account" },
-    { "href": "/team", "label": "Organization", "icon": "organization" },
-    {
-      "href": "/connections",
-      "label": "Connected apps",
-      "icon": "account",
-      "feature": "mcp"
+      "href": "/wallet",
+      "label": "Wallet",
+      "icon": "billing"
     },
     {
-      "href": "/onboarding",
-      "label": "Switch organization",
+      "href": "/settings",
+      "label": "Pool settings",
+      "icon": "organization"
+    },
+    {
+      "href": "/account",
+      "label": "Your account",
+      "icon": "account"
+    },
+    {
+      "href": "/pools",
+      "label": "Switch pool",
       "icon": "organization"
     }
   ],
-  "plans": [
-    {
-      "id": "pro-monthly",
-      "name": "Pro",
-      "description": "For a growing team.",
-      "price": "$29",
-      "cadence": "per month",
-      "features": ["Unlimited projects", "Email support"],
-      "featured": true
-    },
-    {
-      "id": "pro-yearly",
-      "name": "Pro, yearly",
-      "description": "One payment for the year.",
-      "price": "$290",
-      "cadence": "per year",
-      "features": ["Everything in Pro", "Two months free"]
-    }
-  ]
+  "plans": []
 }

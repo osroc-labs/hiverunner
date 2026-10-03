@@ -9,7 +9,7 @@ export default async function Page() {
   const sessions = await auth.api.listSessions({ headers: await headers() })
   return (
     <AccountPage title="Your account">
-      <p>{current.user.email} · Verified</p>
+      <p>{current.user.email} · Signed in with GitHub</p>
       <AccountForm name={current.user.name} />
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Signed-in devices</h2>

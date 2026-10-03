@@ -35,12 +35,15 @@ const icons: Record<string, typeof Building2> = {
   organization: Building2,
   projects: Folder,
 }
-const nav: NavItem[] = product.navigation
-  .filter(
-    (item) =>
-      !item.feature ||
-      product.features[item.feature as keyof typeof product.features]
-  )
+const nav: NavItem[] = (
+  product.navigation as Array<{
+    href: string
+    label: string
+    icon: string
+    feature?: keyof typeof product.features
+  }>
+)
+  .filter((item) => !item.feature || product.features[item.feature])
   .map((item) => ({ ...item, icon: icons[item.icon] }))
 
 export function AppSidebar() {

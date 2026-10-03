@@ -1,0 +1,30 @@
+{
+  "name": "HiveWorker",
+  "url": "https://hiveworkr.thecomputerplumbers.com",
+  "description": "Run GitHub Actions on your own developers' machines.",
+  "public": true,
+  "hook_attributes": {
+    "url": "https://hiveworkr.thecomputerplumbers.com/api/github/webhook",
+    "active": true
+  },
+  "callback_urls": [
+    "https://hiveworkr.thecomputerplumbers.com/api/auth/callback/github"
+  ],
+  "setup_url": "https://hiveworkr.thecomputerplumbers.com/github/setup",
+  "setup_on_update": false,
+  "request_oauth_on_install": false,
+  "default_permissions": {
+    "organization_self_hosted_runners": "write",
+    "members": "read",
+    "actions": "read",
+    "metadata": "read",
+    "emails": "read"
+  },
+  "default_events": [
+    "workflow_job",
+    "organization",
+    "membership",
+    "team",
+    "installation_target"
+  ]
+}

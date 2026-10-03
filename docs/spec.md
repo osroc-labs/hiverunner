@@ -109,19 +109,26 @@ needs the account permission _Email addresses: read_ or GitHub returns no email
 and Better Auth rejects the sign-in.
 
 **Organizations.** Keep the `organization` plugin, with
-`allowUserToCreateOrganization: false` and no invitations. An organization row
-is created only by a GitHub App installation and carries `githubAccountId`,
-`githubLogin`, and `installationId` as additional fields.
+`allowUserToCreateOrganization: false`; its create, invite, role and remove
+endpoints are refused at the Worker entry. An organization row is created only
+by a GitHub App installation. Its id is derived from the GitHub account id, and
+the installation lives beside it in `github_installation`, keyed by that
+account so a reinstall returns to the same pool.
 
 **Membership.** GitHub is the source of truth; the `member` table is a cache.
 
-- On sign-in, on device approval, and daily: for each installed org, check
-  `GET /orgs/{org}/memberships/{username}` with the _installation_ token.
-  GitHub `admin` maps to `owner`, `member` to `member`.
+- On sign-in: candidates are the installations the person's own token lists
+  (`GET /user/installations`) plus every pool they are already cached in.
+  Each is confirmed with `GET /orgs/{org}/memberships/{username}` using the
+  _installation_ token. GitHub `admin` maps to `owner`, `member` to `member`.
+  The same check runs fresh on device approval, and daily for everyone.
+- An error from GitHub leaves the cache alone. Only a definite "not a member"
+  removes anyone.
 - `organization.member_removed` webhooks delete the member and revoke their
   machines immediately.
-- If the org has narrowed access to teams, also check
-  `GET /orgs/{org}/teams/{slug}/memberships/{username}`.
+- Team narrowing applies to adding machines, not to seeing the dashboard:
+  enrollment also checks `GET /orgs/{org}/teams/{slug}/memberships/{username}`.
+  Owners are exempt.
 - The starter's rule stands: `session.activeOrganizationId` is never an
   authorization decision. Use `requireMembership` on every write.
 
@@ -142,6 +149,8 @@ membership. They expire after eight hours and we do not refresh them.
 
 A separate machine token means a session expiry never takes a machine offline,
 and removing a person revokes exactly their machines.
+
+**Passwords.** Enabled on localhost only, for seeded users and the smoke test.
 
 ## 5. GitHub App installation
 
@@ -270,6 +279,33 @@ since the runner talks to GitHub directly.
 Speed scores come from the enrollment benchmark and are corrected against
 observed durations of repeated jobs. Step 1 records the data; automatic
 cutting of inflated scores only matters once payees are strangers (step 5).
+
+## 6a. Daemon: virtualization and speed
+
+Go, in `daemon/`. Apple's Virtualization.framework, driven from Go. Not
+Docker: on a Mac it is a Linux VM with containers inside, and a container is
+not the hardware boundary the goals require. Not Firecracker: it needs Linux
+KVM, so it arrives with Linux x64 hosts in step 3. Docker runs _inside_ the
+guest for jobs that use `container:` or `services:`.
+
+A cold runner pays for scheduling, an image pull, boot, registration and empty
+caches on every job. The daemon pays for none of them at job time:
+
+| Cost         | How it is avoided                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Boot         | One VM is always booted. Direct kernel boot, no firmware or bootloader                                                         |
+| Registration | **Verify**: the warm VM holds a runner already registered and idle, so GitHub assigns at once. Falls back to JIT on assignment |
+| Disk         | Each job's disk is a copy-on-write clone of a golden image (APFS `clonefile`), discarded after                                 |
+| Image pull   | The golden image is on the host already; updates download in the background                                                    |
+| Cold caches  | A per-repository cache volume on the host: package stores, Docker layers, `actions/cache`                                      |
+| Slow cores   | Jobs run on the machine's performance cores; the speed score prices it                                                         |
+
+The cache volume is the one place a job leaves something behind. It is scoped
+to one repository within one private pool, never shared across organizations,
+and never attached to public-pool jobs.
+
+x64 container images run under Rosetta in the guest. Memory is ballooned back
+to the host when the VM is idle, so a warm VM costs the owner little.
 
 ## 7. Data model (D1)
 

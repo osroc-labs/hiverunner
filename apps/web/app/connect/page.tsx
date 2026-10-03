@@ -36,7 +36,7 @@ export default async function Page({
       {!organizations.length && (
         <p className="mb-4">
           First{" "}
-          <Link className="underline" href="/onboarding">
+          <Link className="underline" href="/pools">
             create an organization
           </Link>
           , then restart the connection.

@@ -6,10 +6,6 @@ export async function browserSession(request: Request) {
   if (request.method !== "GET" && request.headers.get("origin") !== env.APP_URL)
     throw new AppError("FORBIDDEN", "Invalid request origin")
   const session = await auth.api.getSession({ headers: request.headers })
-  if (!session?.user.emailVerified)
-    throw new AppError(
-      "UNAUTHENTICATED",
-      "Sign in with a verified email address"
-    )
+  if (!session) throw new AppError("UNAUTHENTICATED", "Sign in to continue")
   return session
 }

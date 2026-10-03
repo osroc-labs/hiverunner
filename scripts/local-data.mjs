@@ -47,7 +47,7 @@ if (action === "reset") {
   for (let org = 1; org <= 2; org++) {
     const id = `demo-org-${org}`
     sql.push(
-      `INSERT OR IGNORE INTO organization (id,name,slug,created_at) VALUES (${quote(id)},${quote(org === 1 ? "Acme Studio" : "Northwind Team")},${quote(id)},${now});`
+      `INSERT OR IGNORE INTO organization (id,name,slug,created_at) VALUES (${quote(id)},${quote(org === 1 ? "acme-studio" : "northwind-team")},${quote(id)},${now});`
     )
     for (const role of ["owner", "admin", "member"]) {
       const userId = `demo-${role}-${org}`,
@@ -58,14 +58,15 @@ if (action === "reset") {
         `INSERT OR IGNORE INTO member (id,organization_id,user_id,role,created_at) VALUES (${quote(userId)},${quote(id)},${quote(userId)},${quote(role)},${now});`
       )
     }
-    for (let i = 1; i <= 25; i++) {
-      const projectId = `00000000-0000-4000-8000-${String(org * 100 + i).padStart(12, "0")}`
-      sql.push(
-        `INSERT OR IGNORE INTO project (id,organization_id,name,description,status,version,created_at,updated_at) VALUES (${quote(projectId)},${quote(id)},${quote(`Project ${String(i).padStart(2, "0")}`)},'A sample project for local development.',${quote(i % 5 === 0 ? "archived" : "active")},1,${now},${now});`
-      )
-    }
+    // What a GitHub App installation would have provisioned.
+    const login = org === 1 ? "acme-studio" : "northwind-team"
+    sql.push(
+      `INSERT OR IGNORE INTO github_installation (account_id,installation_id,organization_id,account_login,account_type,repository_selection,status,created_at,updated_at) VALUES (${1000 + org},${2000 + org},${quote(id)},${quote(login)},'Organization','all','active',${now},${now});`,
+      `INSERT OR IGNORE INTO pool_settings (organization_id,allowed_teams,earnings_destination,version,updated_at) VALUES (${quote(id)},'[]','organization',1,${now});`,
+      `INSERT OR IGNORE INTO ledger_entry (id,account_type,account_id,kind,amount,created_at) VALUES (${quote(`grant:${id}`)},'organization',${quote(id)},'grant',5000000,${now});`
+    )
   }
-  const folder = mkdtempSync(join(tmpdir(), "starter-seed-")),
+  const folder = mkdtempSync(join(tmpdir(), "hiveworker-seed-")),
     file = join(folder, "seed.sql")
   try {
     writeFileSync(file, sql.join("\n"), { mode: 0o600 })

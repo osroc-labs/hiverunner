@@ -18,7 +18,9 @@ to a different Worker namespace in each deployment.
 2. Configure the matching custom domain for each Worker, or set APP_URL to its
    actual workers.dev origin. The post-deploy check uses this URL.
 3. Verify a sending domain in Cloudflare Email Service and set EMAIL_FROM.
-4. Set BETTER_AUTH_SECRET separately for each Worker. If billing is enabled,
+4. Create the GitHub App for the environment and set its six secrets: see
+   [github-app.md](github-app.md).
+5. Set BETTER_AUTH_SECRET separately for each Worker. If billing is enabled,
    set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and the plan price secrets too.
    Use test Stripe credentials for staging, live credentials for production.
 

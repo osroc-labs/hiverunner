@@ -56,7 +56,7 @@ if (environment === "local") {
       "--config",
       "wrangler.jsonc",
       "--command",
-      "SELECT id FROM user LIMIT 0; SELECT id FROM project LIMIT 0; SELECT id FROM agent_grant LIMIT 0;",
+      "SELECT id FROM user LIMIT 0; SELECT account_id FROM github_installation LIMIT 0; SELECT id FROM agent_grant LIMIT 0;",
     ],
     { cwd: root, encoding: "utf8", env: { ...process.env, CLOUDFLARE_ENV: "" } }
   )
@@ -113,6 +113,12 @@ if (environment === "local") {
   )
   const required = [
     "BETTER_AUTH_SECRET",
+    "GITHUB_APP_ID",
+    "GITHUB_APP_SLUG",
+    "GITHUB_APP_PRIVATE_KEY",
+    "GITHUB_WEBHOOK_SECRET",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
     ...(product.features.billing
       ? [
           "STRIPE_SECRET_KEY",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { resolveSecret } from "../packages/auth/src/auth.ts"
+import { createAuth, resolveSecret } from "../packages/auth/src/auth.ts"
+import { database } from "./database.mjs"
 import { safeReturnPath } from "../packages/stripe/src/portal.ts"
 import { createCheckoutSession } from "../packages/stripe/src/checkout.ts"
 
@@ -45,4 +46,24 @@ test("separate checkout attempts do not share the organization idempotency key",
   }
   assert.equal(new Set(keys).size, 3)
   assert.ok(keys.every(Boolean))
+})
+
+test("passwords are a local convenience and off unless asked for", async (t) => {
+  const base = { secret: "x".repeat(32), baseURL: "https://app.example" }
+  const deployed = createAuth({
+    ...base,
+    db: database(t).db,
+    github: { clientId: "id", clientSecret: "secret" },
+  })
+  // Plugins query the database while starting; let them finish first.
+  await deployed.$context
+  assert.equal(deployed.options.emailAndPassword.enabled, false)
+  assert.ok(deployed.options.socialProviders.github)
+  const local = createAuth({
+    ...base,
+    db: database(t).db,
+    localPasswordSignIn: true,
+  })
+  await local.$context
+  assert.equal(local.options.emailAndPassword.enabled, true)
 })

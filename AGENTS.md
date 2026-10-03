@@ -30,6 +30,9 @@ Put a component in the narrowest package that fits:
 - `@workspace/ui-data` — stat cards, tables, timelines, status, empty states, `Intl` formatting.
 - `@workspace/ui-forms` — fields and server-action form plumbing around one `FormState` shape.
 - `@workspace/auth` — Better Auth on D1. See its README before touching it.
+- `@workspace/db` — HiveWorker tables and the operations on them. Shared with the coordinator; no `@/` imports, so `tests/*.test.mjs` can run it against real migrations.
+- `@workspace/github` — the GitHub App over `fetch`. No Octokit.
+- `@workspace/pricing` — every price, rate and grant. Pages and the meter both import from here; never write a price anywhere else.
 - `@workspace/mcp` — transport only; app tools delegate to `apps/web/operations`.
 - `@workspace/email` — native Cloudflare Email Service; local sends stay simulated.
 - `@workspace/stripe` — billing. See its README before touching it.
@@ -41,6 +44,20 @@ New packages need their `src` added to `transpilePackages` in `apps/web/next.con
 Never construct Better Auth at module scope — it starts plugin setup, including D1 queries, on construction, and workerd forbids I/O outside a request handler. Use `lazyAuth`.
 
 `session.activeOrganizationId` is not an authorization decision. It is whatever the session was last pointed at and goes stale when a member is removed. Re-check membership against the database with `requireMembership` on every write.
+
+GitHub is the only way in. Email and password sign-in is enabled on localhost
+only, for seeded users and the smoke test; never enable it for a deployment.
+
+Pools and members come from GitHub, not from Better Auth. An organization row
+exists because the GitHub App was installed (`packages/db/src/installations.ts`)
+and a member row because GitHub says the person is a member
+(`packages/db/src/membership.ts`). The Worker entry refuses Better Auth's own
+create, invite, role and remove endpoints. Do not add another way to create
+either. An error from GitHub is never a "no": only a definite answer removes a
+member.
+
+An `installation_id` from a URL is untrusted. Use it only after GitHub lists
+it for the signed-in person's own token.
 
 Adding a Better Auth plugin means adding its tables. Better Auth validates the schema on construction and names what is missing.
 
@@ -64,7 +81,7 @@ This repository will become public. Read `docs/licensing.md` before adding a dep
 
 MCP and browser mutations share app operations. Enforce scopes and current membership there. OAuth grants bind to the organization selected at consent; never derive an agent organization from the mutable browser session. Recheck grant and consent on every request so revocation invalidates existing JWTs.
 
-After auth, OAuth, mail or tool changes, run `pnpm test:worker` in addition to `mise run check`. This uses fresh local state and Cloudflare simulated mail. Never enable remote email bindings in tests.
+After auth, GitHub, OAuth, mail or tool changes, run `pnpm test:worker` in addition to `mise run check`. This uses fresh local state and Cloudflare simulated mail. Never enable remote email bindings in tests.
 
 ## Product setup and feature examples
 

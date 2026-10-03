@@ -23,24 +23,17 @@ export type CreateAuthOptions = {
   baseURL?: string
   trustedOrigins?: string[]
   /**
-   * Delivers the reset link. Without it, password reset is disabled rather
-   * than silently broken — a reset flow that cannot send mail is worse than
-   * no reset flow, because it tells people a mail is coming.
+   * The GitHub App's own OAuth credentials. One App covers installation and
+   * sign-in. It needs the account permission "Email addresses: read", or
+   * GitHub returns no email and the sign-in is rejected.
    */
-  sendResetPassword?: (input: {
-    user: { email: string; name: string }
-    url: string
-  }) => Promise<void>
-  sendVerificationEmail?: (input: {
-    user: { email: string; name: string }
-    url: string
-  }) => Promise<void>
-  sendInvitationEmail?: (input: {
-    id: string
-    email: string
-    role: string
-    organization: { name: string }
-  }) => Promise<void>
+  github?: { clientId: string; clientSecret: string }
+  /**
+   * Email and password, for seeded local users and the smoke test only.
+   * GitHub is the only way in anywhere a real person signs in, so the app
+   * turns this on for localhost and nowhere else.
+   */
+  localPasswordSignIn?: boolean
   /** Appended to the built-in plugins. */
   plugins?: Parameters<typeof betterAuth>[0]["plugins"]
 }
@@ -63,27 +56,17 @@ export function createAuth(options: CreateAuthOptions) {
     baseURL: options.baseURL,
     trustedOrigins: options.trustedOrigins,
 
-    emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: true,
-      // Reset links are single-use and short-lived; 30 minutes is long enough
-      // to find the mail and short enough that a leaked inbox ages out.
-      resetPasswordTokenExpiresIn: 30 * 60,
-      // A password change means the old password may be compromised, so every
-      // other session goes with it.
-      revokeSessionsOnPasswordReset: true,
-      ...(options.sendResetPassword
-        ? { sendResetPassword: options.sendResetPassword }
-        : {}),
-    },
+    socialProviders: options.github
+      ? {
+          github: {
+            clientId: options.github.clientId,
+            clientSecret: options.github.clientSecret,
+          },
+        }
+      : undefined,
 
-    emailVerification: {
-      sendOnSignUp: true,
-      sendOnSignIn: true,
-      autoSignInAfterVerification: true,
-      expiresIn: 3600,
-      sendVerificationEmail: options.sendVerificationEmail,
-    },
+    emailAndPassword: { enabled: options.localPasswordSignIn === true },
+
     session: {
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
@@ -102,21 +85,16 @@ export function createAuth(options: CreateAuthOptions) {
       storage: "database",
       customRules: {
         "/sign-in/email": { window: 60, max: 10 },
-        "/sign-up/email": { window: 3600, max: 10 },
-        "/request-password-reset": { window: 3600, max: 5 },
-        "/reset-password": { window: 60, max: 10 },
-        "/send-verification-email": { window: 3600, max: 5 },
+        "/sign-in/social": { window: 60, max: 20 },
         "/oauth2/register": { window: 3600, max: 20 },
       },
     },
 
     plugins: [
-      organization({
-        requireEmailVerificationOnInvitation: true,
-        allowUserToCreateOrganization: (user) => user.emailVerified,
-        sendInvitationEmail: options.sendInvitationEmail,
-        cancelPendingInvitationsOnReInvite: true,
-      }),
+      // Organizations come from GitHub App installations and members from
+      // GitHub. Nobody creates, invites or removes through Better Auth; the
+      // Worker entry also refuses those endpoints outright.
+      organization({ allowUserToCreateOrganization: false }),
       jwt(),
       mcp({
         resource: `${options.baseURL}/mcp`,
