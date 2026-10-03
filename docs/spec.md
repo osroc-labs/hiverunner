@@ -10,14 +10,14 @@ a spike before building on them. Items marked **Open** need a decision.
 
 ## 1. System map
 
-| Piece           | What it does                                                              | Runs on                                   | Lives in                       |
-| --------------- | ------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------ |
-| Web             | Marketing site, docs, dashboard, sign-in, GitHub App callbacks + webhooks | Cloudflare Worker (vinext)                | `apps/web`                     |
-| Coordinator     | Holds scale set sessions, machine tunnels, scheduling, metering           | Cloudflare Worker + Durable Objects       | `apps/coordinator`             |
-| Daemon          | Takes jobs, runs them in a throwaway VM, reports presence                 | Developer's Mac (Go, per-user agent)      | `daemon/` (**Open**: own repo) |
-| Runner          | GitHub's official runner binary, one job, JIT config                      | Inside the VM                             | VM image, built from `daemon/` |
-| Token + escrow  | ERC-20 with tax, escrow channel                                           | Base                                      | Separate repo                  |
-| Releases        | Daemon binaries, VM images, update manifest                               | R2                                        | Published by CI                |
+| Piece          | What it does                                                              | Runs on                              | Lives in                       |
+| -------------- | ------------------------------------------------------------------------- | ------------------------------------ | ------------------------------ |
+| Web            | Marketing site, docs, dashboard, sign-in, GitHub App callbacks + webhooks | Cloudflare Worker (vinext)           | `apps/web`                     |
+| Coordinator    | Holds scale set sessions, machine tunnels, scheduling, metering           | Cloudflare Worker + Durable Objects  | `apps/coordinator`             |
+| Daemon         | Takes jobs, runs them in a throwaway VM, reports presence                 | Developer's Mac (Go, per-user agent) | `daemon/` (**Open**: own repo) |
+| Runner         | GitHub's official runner binary, one job, JIT config                      | Inside the VM                        | VM image, built from `daemon/` |
+| Token + escrow | ERC-20 with tax, escrow channel                                           | Base                                 | Separate repo                  |
+| Releases       | Daemon binaries, VM images, update manifest                               | R2                                   | Published by CI                |
 
 The coordinator is never in a job's data path. The runner inside the VM talks
 to GitHub directly for the job, its logs, and its artifacts. HiveWorker stores
@@ -49,15 +49,15 @@ packages/mcp        Kept, switched off
 
 ### What changes from the starter
 
-| Starter piece                                         | Action                                                                          |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Email + password, sign-up, verify, forgot, reset      | Remove. GitHub is the only way in                                               |
-| Invitations, create/select organization, `/team`      | Remove. Organizations come from GitHub App installs, members from GitHub        |
-| Projects example                                      | `features.projects: false` now; delete once `/machines` exists as the pattern   |
-| MCP + OAuth provider                                  | `features.mcp: false`. Leave the code; revisit after v1                         |
-| Stripe subscriptions, plans, `/billing`               | `features.billing: false` in step 1. Becomes one-time token purchases in step 2 |
-| `apps/web/db/schema`                                  | Move to `packages/db` so the coordinator shares it                              |
-| `AppDatabase` Durable Object                          | Keep in web for rate limits                                                     |
+| Starter piece                                    | Action                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Email + password, sign-up, verify, forgot, reset | Remove. GitHub is the only way in                                               |
+| Invitations, create/select organization, `/team` | Remove. Organizations come from GitHub App installs, members from GitHub        |
+| Projects example                                 | `features.projects: false` now; delete once `/machines` exists as the pattern   |
+| MCP + OAuth provider                             | `features.mcp: false`. Leave the code; revisit after v1                         |
+| Stripe subscriptions, plans, `/billing`          | `features.billing: false` in step 1. Becomes one-time token purchases in step 2 |
+| `apps/web/db/schema`                             | Move to `packages/db` so the coordinator shares it                              |
+| `AppDatabase` Durable Object                     | Keep in web for rate limits                                                     |
 
 `packages/pricing` is the single source for the floor, the rate, and the
 GitHub/Blacksmith comparison figures. The coordinator charges from it and the
@@ -68,16 +68,16 @@ marketing calculator renders from it, so the site cannot drift from the bill.
 Two Workers, because deploying a Worker drops every WebSocket held by its
 Durable Objects. Marketing copy changes must not disconnect the fleet.
 
-| Resource        | Name                          | Notes                                                                 |
-| --------------- | ----------------------------- | --------------------------------------------------------------------- |
-| Worker          | `hiveworker-web`              | `<domain>`. Marketing, dashboard, `/api/auth/*`, `/api/github/*`      |
-| Worker          | `hiveworker-coordinator`      | `connect.<domain>`. Tunnel endpoint, Durable Objects, queue consumer  |
-| D1              | `hiveworker`                  | Bound to both Workers. Migrations are applied by the web deploy only  |
-| Durable Objects | `Pool`, `Listener`            | Coordinator. SQLite storage, hibernatable WebSockets                  |
-| Queue           | `github-events`               | Web produces verified webhooks; coordinator consumes                  |
-| R2              | `hiveworker-releases`         | `get.<domain>`. Daemon builds, VM images, install script, manifest    |
-| Cron            | Coordinator, daily            | Membership reconcile, stale-machine sweep                             |
-| Email Service   | Web                           | Low balance, machine revoked                                          |
+| Resource        | Name                     | Notes                                                                |
+| --------------- | ------------------------ | -------------------------------------------------------------------- |
+| Worker          | `hiveworker-web`         | `<domain>`. Marketing, dashboard, `/api/auth/*`, `/api/github/*`     |
+| Worker          | `hiveworker-coordinator` | `connect.<domain>`. Tunnel endpoint, Durable Objects, queue consumer |
+| D1              | `hiveworker`             | Bound to both Workers. Migrations are applied by the web deploy only |
+| Durable Objects | `Pool`, `Listener`       | Coordinator. SQLite storage, hibernatable WebSockets                 |
+| Queue           | `github-events`          | Web produces verified webhooks; coordinator consumes                 |
+| R2              | `hiveworker-releases`    | `get.<domain>`. Daemon builds, VM images, install script, manifest   |
+| Cron            | Coordinator, daily       | Membership reconcile, stale-machine sweep                            |
+| Email Service   | Web                      | Low balance, machine revoked                                         |
 
 Each has a `-staging` twin, with its own GitHub App (§5). Web reaches the
 coordinator through a service binding for dashboard reads of live presence.
@@ -95,7 +95,7 @@ in that version.
 
 **Sign-in.** One provider: GitHub, using the HiveWorker GitHub App's own client
 ID and secret. One App therefore covers both installation and sign-in. The App
-needs the account permission *Email addresses: read* or GitHub returns no email
+needs the account permission _Email addresses: read_ or GitHub returns no email
 and Better Auth rejects the sign-in.
 
 **Organizations.** Keep the `organization` plugin, with
@@ -106,7 +106,7 @@ is created only by a GitHub App installation and carries `githubAccountId`,
 **Membership.** GitHub is the source of truth; the `member` table is a cache.
 
 - On sign-in, on device approval, and daily: for each installed org, check
-  `GET /orgs/{org}/memberships/{username}` with the *installation* token.
+  `GET /orgs/{org}/memberships/{username}` with the _installation_ token.
   GitHub `admin` maps to `owner`, `member` to `member`.
 - `organization.member_removed` webhooks delete the member and revoke their
   machines immediately.
@@ -141,13 +141,13 @@ defined by a manifest committed at `apps/web/github-app.json`.
 
 ### Permissions and events
 
-| Permission                               | Why                                                   |
-| ---------------------------------------- | ----------------------------------------------------- |
-| Organization → Self-hosted runners: write | Create scale sets, mint JIT runner configs            |
-| Organization → Members: read              | Membership and team checks                            |
-| Repository → Actions: read                | `workflow_job` events                                 |
-| Repository → Metadata: read               | Mandatory                                             |
-| Account → Email addresses: read           | Sign-in                                               |
+| Permission                                | Why                                        |
+| ----------------------------------------- | ------------------------------------------ |
+| Organization → Self-hosted runners: write | Create scale sets, mint JIT runner configs |
+| Organization → Members: read              | Membership and team checks                 |
+| Repository → Actions: read                | `workflow_job` events                      |
+| Repository → Metadata: read               | Mandatory                                  |
+| Account → Email addresses: read           | Sign-in                                    |
 
 Events: `workflow_job`, `organization`, `membership`, `team`,
 `installation_repositories`. `installation` events are always delivered.
@@ -207,14 +207,14 @@ Runner Controller listener, over `fetch`:
 
 1. Installation token → registration token → Actions service admin token.
 2. Open a message session; long-poll for messages.
-3. On *job available*: ask `Pool` whether a machine of that size is free. If
+3. On _job available_: ask `Pool` whether a machine of that size is free. If
    so, acquire the job, mint a JIT runner config, and have `Pool` send it down
    the tunnel. If not, leave the job unacquired; it stays queued at GitHub.
-4. On *job started* and *job completed*: write the job row and meter it.
+4. On _job started_ and _job completed_: write the job row and meter it.
 
-GitHub assigns an acquired job to *any* idle runner in the scale set, not to
+GitHub assigns an acquired job to _any_ idle runner in the scale set, not to
 one we choose. So the coordinator reserves capacity, not a specific job, and
-learns the machine-to-job binding from the runner name in *job started*. The
+learns the machine-to-job binding from the runner name in _job started_. The
 JIT runner name encodes the machine ID for that reason.
 
 **Woken, not always on.** A listener that long-polls forever keeps its object
@@ -231,10 +231,10 @@ scale set client in a Cloudflare Container fronted by the same object.
 `wss://connect.<domain>/v1/tunnel`, machine token in the `Authorization`
 header, one outbound connection, JSON messages defined in `packages/protocol`.
 
-| Direction        | Messages                                                             |
-| ---------------- | -------------------------------------------------------------------- |
-| Daemon → coord   | `hello`, `presence`, `job.accepted`, `job.exited`, `benchmark`       |
-| Coord → daemon   | `welcome`, `job.assign` (JIT config, size, time limit), `drain`, `revoked` |
+| Direction      | Messages                                                                   |
+| -------------- | -------------------------------------------------------------------------- |
+| Daemon → coord | `hello`, `presence`, `job.accepted`, `job.exited`, `benchmark`             |
+| Coord → daemon | `welcome`, `job.assign` (JIT config, size, time limit), `drain`, `revoked` |
 
 Presence is `offline | paused | online | busy | draining`. Keepalive uses the
 WebSocket auto-response so pings do not wake the object. Daemons reconnect with
@@ -243,7 +243,7 @@ since the runner talks to GitHub directly.
 
 ### Metering
 
-- Time comes from GitHub's *job started* and *job completed* messages, not from
+- Time comes from GitHub's _job started_ and _job completed_ messages, not from
   the daemon. The payee does not get to report its own hours.
 - Charge = minutes (rounded up) × vCPUs × speed score × rate. The rate is
   fixed at the floor for private pools in step 1 and locked at assignment.
@@ -265,15 +265,15 @@ cutting of inflated scores only matters once payees are strangers (step 5).
 Better Auth tables (`user`, `session`, `account`, `verification`,
 `organization`, `member`, `deviceCode`, `jwks`, `rateLimit`) plus:
 
-| Table                 | Key columns                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| `github_installation` | installation ID, account ID + login, organization ID, status, permission set                      |
-| `pool_settings`       | organization ID, allowed team slugs, earnings destination (`org` or `developer`), public overflow |
-| `scale_set`           | organization ID, name, vCPUs, GitHub scale set ID                                                 |
-| `machine`             | organization ID, user ID, name, model, cores, memory, speed score, token hash, status, last seen, daemon version |
+| Table                 | Key columns                                                                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `github_installation` | installation ID, account ID + login, organization ID, status, permission set                                                                                          |
+| `pool_settings`       | organization ID, allowed team slugs, earnings destination (`org` or `developer`), public overflow                                                                     |
+| `scale_set`           | organization ID, name, vCPUs, GitHub scale set ID                                                                                                                     |
+| `machine`             | organization ID, user ID, name, model, cores, memory, speed score, token hash, status, last seen, daemon version                                                      |
 | `job`                 | organization ID, scale set, repo, run ID, job ID, runner name, machine ID, vCPUs, speed score, rate, queued/started/completed, result, compute units, amount, receipt |
-| `ledger_entry`        | account (org, user, or treasury), kind (`grant`, `purchase`, `charge`, `earning`, `tax`), amount, job ID |
-| `webhook_delivery`    | GitHub delivery ID, for dedupe                                                                    |
+| `ledger_entry`        | account (org, user, or treasury), kind (`grant`, `purchase`, `charge`, `earning`, `tax`), amount, job ID                                                              |
+| `webhook_delivery`    | GitHub delivery ID, for dedupe                                                                                                                                        |
 
 Balances are sums over `ledger_entry`; nothing stores a mutable balance.
 
@@ -284,15 +284,15 @@ system, and the starter already ships the site header and footer. Marketing
 routes read no session and no database, so they prerender and cache at the
 edge. A signed-in visitor sees the same page with "Dashboard" in the header.
 
-| Route        | Content                                                                                               |
-| ------------ | ----------------------------------------------------------------------------------------------------- |
-| `/`          | The one-line diff (`ubuntu-latest` → `hive`). Cheaper, faster, simple. How it works in three steps: install, sign in, change one line. Isolation summary. Install button |
-| `/pricing`   | Calculator: minutes per month and runner size in; GitHub, Blacksmith, HiveWorker out. Fed by `packages/pricing`. Trial grant |
-| `/security`  | Hardware-virtualized VM per job, nothing touches the host, App permissions (no code access), private pool trust model, owner stays in control |
-| `/docs/*`    | MDX in the repo: quickstart, labels and sizes, the daemon, pools, pricing, FAQ                         |
-| `/download`  | Daemon for Apple Silicon, `curl` installer, system requirements                                        |
-| `/install`   | Redirect to the GitHub App install URL                                                                 |
-| `/terms`, `/privacy` | Legal                                                                                          |
+| Route                | Content                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`                  | The one-line diff (`ubuntu-latest` → `hive`). Cheaper, faster, simple. How it works in three steps: install, sign in, change one line. Isolation summary. Install button |
+| `/pricing`           | Calculator: minutes per month and runner size in; GitHub, Blacksmith, HiveWorker out. Fed by `packages/pricing`. Trial grant                                             |
+| `/security`          | Hardware-virtualized VM per job, nothing touches the host, App permissions (no code access), private pool trust model, owner stays in control                            |
+| `/docs/*`            | MDX in the repo: quickstart, labels and sizes, the daemon, pools, pricing, FAQ                                                                                           |
+| `/download`          | Daemon for Apple Silicon, `curl` installer, system requirements                                                                                                          |
+| `/install`           | Redirect to the GitHub App install URL                                                                                                                                   |
+| `/terms`, `/privacy` | Legal                                                                                                                                                                    |
 
 No blog, changelog, or status page in v1.
 
@@ -330,15 +330,15 @@ A single global pool object alongside the per-org ones.
 
 ## 10. Step 1 milestones
 
-| #  | Milestone       | Done when                                                                                          |
-| -- | --------------- | -------------------------------------------------------------------------------------------------- |
-| 0  | Spike           | A Durable Object holds a scale set session for a test org and a hand-started runner takes a job    |
-| 1  | Foundation      | `project:init` run, starter trimmed per §2, GitHub-only sign-in, staging deployed                  |
-| 2  | GitHub App      | Install provisions org, pool, scale sets, grant; Setup URL claim check; uninstall handled          |
-| 3  | Tunnel          | Device sign-in, machine enrollment, `Pool` presence; a scripted fake daemon passes the smoke test  |
-| 4  | Daemon          | Signed Go binary boots a Linux ARM VM, keeps one warm, runs a JIT runner, yields to the owner      |
-| 5  | Metering        | Jobs priced, ledger and signed receipts written, dashboard shows machines, jobs, balance           |
-| 6  | Site            | Marketing pages, docs, download, install                                                           |
+| #   | Milestone  | Done when                                                                                         |
+| --- | ---------- | ------------------------------------------------------------------------------------------------- |
+| 0   | Spike      | A Durable Object holds a scale set session for a test org and a hand-started runner takes a job   |
+| 1   | Foundation | `project:init` run, starter trimmed per §2, GitHub-only sign-in, staging deployed                 |
+| 2   | GitHub App | Install provisions org, pool, scale sets, grant; Setup URL claim check; uninstall handled         |
+| 3   | Tunnel     | Device sign-in, machine enrollment, `Pool` presence; a scripted fake daemon passes the smoke test |
+| 4   | Daemon     | Signed Go binary boots a Linux ARM VM, keeps one warm, runs a JIT runner, yields to the owner     |
+| 5   | Metering   | Jobs priced, ledger and signed receipts written, dashboard shows machines, jobs, balance          |
+| 6   | Site       | Marketing pages, docs, download, install                                                          |
 
 The spike comes first because the woken listener is the one design choice here
 that could fail outright, and its fallback changes the coordinator's shape.

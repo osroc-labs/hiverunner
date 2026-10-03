@@ -28,85 +28,85 @@ Not in v1: replacing GitHub's orchestration, secret-bearing jobs on strangers' m
 
 ### Product and pools
 
-| Decision | Detail |
-| --- | --- |
-| Model | Follows the Actions Runner Controller pattern: a listener holds the scale set session with GitHub, and ephemeral runners take one job each |
-| Runner | GitHub's official runner binary inside the VM, registered with a one-time JIT config |
-| Pools | Both. Private pool per org by default, with optional overflow to a public pool |
-| Main product | Private pools. They will be the most common use |
-| Public pool | No-secret jobs only, opt-in per repo, machines post a stake |
-| Org billing | None. No org accounts, platform fees, or subscriptions |
+| Decision     | Detail                                                                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model        | Follows the Actions Runner Controller pattern: a listener holds the scale set session with GitHub, and ephemeral runners take one job each |
+| Runner       | GitHub's official runner binary inside the VM, registered with a one-time JIT config                                                       |
+| Pools        | Both. Private pool per org by default, with optional overflow to a public pool                                                             |
+| Main product | Private pools. They will be the most common use                                                                                            |
+| Public pool  | No-secret jobs only, opt-in per repo, machines post a stake                                                                                |
+| Org billing  | None. No org accounts, platform fees, or subscriptions                                                                                     |
 
 ### Onboarding
 
-| Decision | Detail |
-| --- | --- |
-| Org install | One click: install the HiveWorker GitHub App and authorize |
-| What install creates | The `hive` scale set, the private pool, and the org's wallet |
-| Joining a pool | Developer installs the daemon and signs in with GitHub. No invite codes |
-| Default restriction | Only members of the GitHub org that installed the app can add machines to its pool. Admins can narrow to specific GitHub teams |
-| Trial | Every new org gets a grant of tokens. Adding a credit card doubles it |
-| Buying more | The credit card is how an org buys more tokens |
+| Decision             | Detail                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Org install          | One click: install the HiveWorker GitHub App and authorize                                                                     |
+| What install creates | The `hive` scale set, the private pool, and the org's wallet                                                                   |
+| Joining a pool       | Developer installs the daemon and signs in with GitHub. No invite codes                                                        |
+| Default restriction  | Only members of the GitHub org that installed the app can add machines to its pool. Admins can narrow to specific GitHub teams |
+| Trial                | Every new org gets a grant of tokens. Adding a credit card doubles it                                                          |
+| Buying more          | The credit card is how an org buys more tokens                                                                                 |
 
 ### Daemon
 
-| Decision | Detail |
-| --- | --- |
-| Language | Go, shipped as a single signed binary plus a menu bar item |
-| Host platform | Apple Silicon macOS only in v1 |
-| Connection | One outbound tunnel to the coordinator. No inbound ports |
-| Presence | Reports `offline`, `paused`, `online`, `busy`, or `draining` |
-| Warm VM | Keeps one VM booted and ready so jobs start in seconds |
-| Keys | The daemon should not hold a private key. It verifies vouchers and names a pay-to address |
-| Privileges | Runs as a per-user agent, not root |
-| Owner returns | Throttle the VM and finish the job. Kill only on battery or lid close |
-| Wallet ownership | Configurable per org. Earnings go to an org wallet or to the developer as a perk |
+| Decision         | Detail                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| Language         | Go, shipped as a single signed binary plus a menu bar item                                |
+| Host platform    | Apple Silicon macOS only in v1                                                            |
+| Connection       | One outbound tunnel to the coordinator. No inbound ports                                  |
+| Presence         | Reports `offline`, `paused`, `online`, `busy`, or `draining`                              |
+| Warm VM          | Keeps one VM booted and ready so jobs start in seconds                                    |
+| Keys             | The daemon should not hold a private key. It verifies vouchers and names a pay-to address |
+| Privileges       | Runs as a per-user agent, not root                                                        |
+| Owner returns    | Throttle the VM and finish the job. Kill only on battery or lid close                     |
+| Wallet ownership | Configurable per org. Earnings go to an org wallet or to the developer as a perk          |
 
 ### Payments
 
-| Decision | Detail |
-| --- | --- |
-| Protocol | x402 |
-| Chain | Base |
-| Facilitator | Coinbase's hosted facilitator. HiveWorker does not run its own |
-| Currency | The HiveWorker token only, as an ERC-20. No USDC layer |
-| Display | Token amounts with a USD estimate beside them for comparison |
-| Scheme | Batch settlement: the org deposits into escrow once, signs a cumulative voucher each minute, and the machine claims in batches |
-| Charging later | Acceptable. Usage is batched and settled after the fact |
+| Decision       | Detail                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Protocol       | x402                                                                                                                           |
+| Chain          | Base                                                                                                                           |
+| Facilitator    | Coinbase's hosted facilitator. HiveWorker does not run its own                                                                 |
+| Currency       | The HiveWorker token only, as an ERC-20. No USDC layer                                                                         |
+| Display        | Token amounts with a USD estimate beside them for comparison                                                                   |
+| Scheme         | Batch settlement: the org deposits into escrow once, signs a cumulative voucher each minute, and the machine claims in batches |
+| Charging later | Acceptable. Usage is batched and settled after the fact                                                                        |
 
 ### Token and tax
 
-| Decision | Detail |
-| --- | --- |
-| Business model | The token tax, paid to the HiveWorker treasury wallet, is the only revenue |
-| Where the tax lives | Inside the token contract |
-| Rates | Two: a job rate on claims out of escrow, and a transfer rate on everything else, including trades |
-| Escrow handling | Deposits into escrow and refunds out of it are untaxed |
-| Minimum price | The coordinator enforces a network-wide floor per compute unit and refuses jobs priced below it |
-| Claim rule | Machines must claim their vouchers. A machine with stale unclaimed vouchers stops receiving jobs |
+| Decision            | Detail                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| Business model      | The token tax, paid to the HiveWorker treasury wallet, is the only revenue                        |
+| Where the tax lives | Inside the token contract                                                                         |
+| Rates               | Two: a job rate on claims out of escrow, and a transfer rate on everything else, including trades |
+| Escrow handling     | Deposits into escrow and refunds out of it are untaxed                                            |
+| Minimum price       | The coordinator enforces a network-wide floor per compute unit and refuses jobs priced below it   |
+| Claim rule          | Machines must claim their vouchers. A machine with stale unclaimed vouchers stops receiving jobs  |
 
 ### Pricing
 
-| Decision | Detail |
-| --- | --- |
-| Target | Under GitHub Actions and Blacksmith. Private pools 10x cheaper than Blacksmith, backed by the floor |
-| Unit | Compute unit: one vCPU-minute at reference speed. The reference is one core of a GitHub standard hosted runner |
-| Hardware | Price reflects the machine. A benchmark at enrollment gives each machine a speed score |
-| Charge | Minutes x vCPUs x speed score x rate |
-| Job sizes | Requested by label, for example `hive-2cpu` or `hive-8cpu` |
-| Honest scores | The coordinator checks scores against real job durations and cuts inflated ones |
+| Decision      | Detail                                                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| Target        | Under GitHub Actions and Blacksmith. Private pools 10x cheaper than Blacksmith, backed by the floor            |
+| Unit          | Compute unit: one vCPU-minute at reference speed. The reference is one core of a GitHub standard hosted runner |
+| Hardware      | Price reflects the machine. A benchmark at enrollment gives each machine a speed score                         |
+| Charge        | Minutes x vCPUs x speed score x rate                                                                           |
+| Job sizes     | Requested by label, for example `hive-2cpu` or `hive-8cpu`                                                     |
+| Honest scores | The coordinator checks scores against real job durations and cuts inflated ones                                |
 
 ## Placeholder numbers
 
 These are starting points to tune, not decisions.
 
-| Setting | Placeholder |
-| --- | --- |
-| Job rate | 25% |
-| Transfer rate | 1% |
-| Floor | $0.0005 per compute unit ($0.001 per minute for 2 reference vCPUs) |
-| Org's net cost in a private pool | $0.00025 per 2 vCPU minute |
-| Trial grant | $5 of tokens, $10 with a credit card |
+| Setting                          | Placeholder                                                        |
+| -------------------------------- | ------------------------------------------------------------------ |
+| Job rate                         | 25%                                                                |
+| Transfer rate                    | 1%                                                                 |
+| Floor                            | $0.0005 per compute unit ($0.001 per minute for 2 reference vCPUs) |
+| Org's net cost in a private pool | $0.00025 per 2 vCPU minute                                         |
+| Trial grant                      | $5 of tokens, $10 with a credit card                               |
 
 What the placeholders imply:
 
