@@ -1,0 +1,70 @@
+import Link from "next/link"
+import product from "@/config/product.json"
+import { Code } from "../code"
+
+export function Faq() {
+  return (
+    <dl>
+      <dt>Is HiveWorker available now?</dt>
+      <dd>
+        Not generally. It is in early access and the daemon has not been
+        released. These docs describe how it is designed to work.
+      </dd>
+
+      <dt>Can HiveWorker read my code?</dt>
+      <dd>
+        No. The GitHub App has no permission for code, contents or secrets. A
+        job checks out code inside its VM, straight from GitHub. The full
+        permission list is on the <Link href="/security">security page</Link>.
+      </dd>
+
+      <dt>Which jobs can run on it?</dt>
+      <dd>
+        Linux arm64 jobs. macOS, Windows and GPU jobs are not supported in the
+        first release.
+      </dd>
+
+      <dt>Which machines can join a pool?</dt>
+      <dd>Apple Silicon Macs that belong to members of your organization.</dd>
+
+      <dt>Do I have to move every workflow?</dt>
+      <dd>
+        No. Only jobs whose <Code>runs-on</Code> is a <Code>hive</Code> label
+        run on your pool. Change the label back and the job returns to its
+        previous runner.
+      </dd>
+
+      <dt>What happens if a laptop closes in the middle of a job?</dt>
+      <dd>
+        The job is stopped. It shows as failed in GitHub and can be re-run. If
+        the developer only starts using the machine, the job is slowed down and
+        allowed to finish.
+      </dd>
+
+      <dt>What happens when no machine is free?</dt>
+      <dd>The job waits in GitHub's queue until one is.</dd>
+
+      <dt>Do I need a credit card to start?</dt>
+      <dd>
+        No. A new organization starts with a trial grant. Putting a card on file
+        doubles it.
+      </dd>
+
+      <dt>What is the HiveWorker token?</dt>
+      <dd>
+        It is how jobs are paid for. Each job has a price, and prices are shown
+        with a US dollar estimate. See <Link href="/docs/pricing">Pricing</Link>
+        .
+      </dd>
+
+      <dt>Can I use it on a personal account?</dt>
+      <dd>Not in the first release. HiveWorker installs on organizations.</dd>
+
+      <dt>How do I get help or report a problem?</dt>
+      <dd>
+        Write to{" "}
+        <a href={`mailto:${product.supportEmail}`}>{product.supportEmail}</a>.
+      </dd>
+    </dl>
+  )
+}
