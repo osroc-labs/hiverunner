@@ -1,6 +1,7 @@
 {
   "name": "@workspace/ui-forms",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "description": "Form fields and server-action form plumbing built on Base UI.",
   "type": "module",
   "private": true,

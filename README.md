@@ -2,7 +2,8 @@
 
 GitHub Actions-compatible runners on your own developers' machines. Start with
 the [goals and decisions](docs/goals-and-decisions.md) and the
-[build spec](docs/spec.md).
+[build spec](docs/spec.md). Licensed under [AGPL-3.0](LICENSE); see
+[licensing](docs/licensing.md).
 
 This repository was copied from `thecomputerplumbers/starter` and is initialized
 for `hiveworkr.thecomputerplumbers.com`; the D1 databases are not created yet. Everything below is the

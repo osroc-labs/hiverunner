@@ -1,6 +1,7 @@
 {
   "name": "@workspace/stripe",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "description": "Workerd-safe Stripe module: checkout, billing portal, subscriptions, verified webhooks, Drizzle tables and drop-in React controls.",
   "type": "module",
   "private": true,

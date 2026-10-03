@@ -1,6 +1,7 @@
 {
   "name": "@workspace/ui-data",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "description": "Data display: stat cards, tables, timelines, status and empty states.",
   "type": "module",
   "private": true,

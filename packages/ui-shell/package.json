@@ -1,6 +1,7 @@
 {
   "name": "@workspace/ui-shell",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "description": "Application chrome: shells, siderails, headers, footers and page furniture.",
   "type": "module",
   "private": true,

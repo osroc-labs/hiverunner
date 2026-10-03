@@ -356,8 +356,6 @@ that could fail outright, and its fallback changes the coordinator's shape.
 
 ## 11. Open
 
-- **License** for our own code, before the repository goes public. See
-  [licensing.md](licensing.md).
 - **Daemon location.** In this repo under `daemon/` (recommended: the protocol
   types are generated from `packages/protocol`) or its own repo like the token.
 - **Personal accounts** in v1: refused above.
