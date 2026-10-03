@@ -48,6 +48,10 @@ try {
       String(port),
       "--var",
       `APP_URL:${origin}`,
+      // Custom-domain routes make wrangler dev present the route host to the
+      // Worker; keep the request origin equal to APP_URL.
+      "--local-upstream",
+      `localhost:${port}`,
       "--persist-to",
       storage,
     ],
