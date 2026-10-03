@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import {
+  COMPETITOR_RATES,
   FLOOR_RATE,
+  RUNNER_SIZES,
+  compareMonthlyUsd,
   computeUnits,
   priceJob,
   privatePoolUsdPerMinute,
@@ -35,4 +38,17 @@ test("the placeholders give the documented private pool cost", () => {
   const job = priceJob({ seconds: 60, vcpus: 2, speedScore: 1 })
   assert.equal(microTokensToUsd(job.amount), 0.001)
   assert.equal(usdToMicroTokens(5), 5_000_000)
+})
+test("every runner size has a comparison rate on both architectures", () => {
+  for (const { vcpus } of RUNNER_SIZES)
+    for (const arch of ["arm64", "x64"])
+      for (const provider of ["github", "blacksmith"])
+        assert.ok(COMPETITOR_RATES[provider].usdPerMinute[arch][vcpus] > 0)
+})
+test("the monthly comparison is minutes times the per-minute rates", () => {
+  const month = compareMonthlyUsd({ minutes: 100_000, vcpus: 2 })
+  assert.equal(month.github, 500)
+  assert.equal(month.blacksmith, 250)
+  assert.equal(month.gross, 100)
+  assert.equal(month.net, 25)
 })

@@ -96,20 +96,68 @@ export function privatePoolUsdPerMinute(vcpus: number, speedScore = 1) {
 }
 
 /**
- * Per-minute USD list prices for a Linux runner, by vCPU count, for the
- * comparison on the site. Check `asOf` before quoting these anywhere new.
+ * Per-minute USD list prices for a Linux runner, by architecture and vCPU
+ * count, for the comparison on the site. Check `asOf` before quoting these
+ * anywhere new.
+ *
+ * v1 runs Linux ARM jobs, so the site compares against `arm64`. The `x64`
+ * rates are here so nobody quotes them against an ARM job by accident.
  */
+export type RunnerArch = "arm64" | "x64"
+
+export const COMPARISON_ARCH: RunnerArch = "arm64"
+
 export const COMPETITOR_RATES = {
   asOf: "2026-10-03",
   github: {
     name: "GitHub-hosted",
     source:
       "https://docs.github.com/en/billing/reference/actions-runner-pricing",
-    usdPerMinute: { 2: 0.006, 4: 0.012, 8: 0.022 } as Record<number, number>,
+    usdPerMinute: {
+      arm64: { 2: 0.005, 4: 0.008, 8: 0.014 },
+      x64: { 2: 0.006, 4: 0.012, 8: 0.022 },
+    } as Record<RunnerArch, Record<number, number>>,
   },
   blacksmith: {
     name: "Blacksmith",
     source: "https://www.blacksmith.sh/pricing",
-    usdPerMinute: { 2: 0.0025, 4: 0.005, 8: 0.01 } as Record<number, number>,
+    usdPerMinute: {
+      arm64: { 2: 0.0025, 4: 0.005, 8: 0.01 },
+      x64: { 2: 0.004, 4: 0.008, 8: 0.016 },
+    } as Record<RunnerArch, Record<number, number>>,
   },
+}
+
+/** A competitor's list price for one runner-minute. Throws on an unknown size. */
+export function competitorUsdPerMinute(
+  provider: "github" | "blacksmith",
+  vcpus: number,
+  arch: RunnerArch = COMPARISON_ARCH
+) {
+  const rate = COMPETITOR_RATES[provider].usdPerMinute[arch][vcpus]
+  if (rate === undefined)
+    throw new Error(`No ${provider} ${arch} rate for ${vcpus} vCPUs`)
+  return rate
+}
+
+/**
+ * What a month of runner-minutes costs on each option, in USD, at reference
+ * speed. `net` is the private pool when the org's own machines earn the
+ * payment back and only the tax is left.
+ */
+export function compareMonthlyUsd(input: {
+  minutes: number
+  vcpus: number
+  arch?: RunnerArch
+}) {
+  const hive = privatePoolUsdPerMinute(input.vcpus)
+  return {
+    github:
+      input.minutes * competitorUsdPerMinute("github", input.vcpus, input.arch),
+    blacksmith:
+      input.minutes *
+      competitorUsdPerMinute("blacksmith", input.vcpus, input.arch),
+    gross: input.minutes * hive.gross,
+    net: input.minutes * hive.net,
+  }
 }
