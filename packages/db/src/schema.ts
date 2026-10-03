@@ -121,6 +121,55 @@ export const machine = sqliteTable(
 )
 
 /**
+ * One GitHub Actions job that ran on a machine. Written when GitHub says it
+ * started, priced when GitHub says it finished: the times are GitHub's, never
+ * the machine's, because the machine is the one being paid.
+ */
+export const job = sqliteTable(
+  "job",
+  {
+    /** `<organization>:<GitHub runner request id>`, so a replay is a no-op. */
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    machineId: text("machine_id")
+      .notNull()
+      .references(() => machine.id),
+    /** The `runs-on` label. */
+    label: text("label").notNull(),
+    repository: text("repository").notNull(),
+    workflowRunId: integer("workflow_run_id"),
+    githubJobId: integer("github_job_id"),
+    jobName: text("job_name").notNull().default(""),
+    /** Locked when the job is assigned; a later change does not reprice it. */
+    vcpus: integer("vcpus").notNull(),
+    speedScore: real("speed_score").notNull(),
+    /** Micro-tokens per compute unit. */
+    rate: integer("rate").notNull(),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    /** GitHub's conclusion: `succeeded`, `failed`, `canceled`. */
+    result: text("result"),
+    computeUnits: real("compute_units"),
+    /** Micro-tokens. `amount` is what the org paid; `tax + earning` equals it. */
+    amount: integer("amount"),
+    tax: integer("tax"),
+    earning: integer("earning"),
+    payeeType: text("payee_type", { enum: ["organization", "user"] }),
+    payeeId: text("payee_id"),
+    /** The exact bytes that were signed, and the signature over them. */
+    receipt: text("receipt"),
+    receiptSignature: text("receipt_signature"),
+    receiptKeyId: text("receipt_key_id"),
+  },
+  (table) => [
+    index("job_org_idx").on(table.organizationId, table.startedAt),
+    index("job_machine_idx").on(table.machineId, table.startedAt),
+  ]
+)
+
+/**
  * Append-only. A balance is the sum of an account's entries; nothing stores a
  * mutable balance, so there is nothing to drift.
  *

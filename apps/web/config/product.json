@@ -20,6 +20,11 @@
       "icon": "machines"
     },
     {
+      "href": "/jobs",
+      "label": "Jobs",
+      "icon": "jobs"
+    },
+    {
       "href": "/wallet",
       "label": "Wallet",
       "icon": "billing"

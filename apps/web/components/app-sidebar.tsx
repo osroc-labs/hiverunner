@@ -10,6 +10,7 @@ import {
   Settings2,
   Folder,
   Laptop,
+  ListChecks,
 } from "lucide-react"
 
 import { useActiveOrganization } from "@workspace/auth/client"
@@ -36,6 +37,7 @@ const icons: Record<string, typeof Building2> = {
   organization: Building2,
   projects: Folder,
   machines: Laptop,
+  jobs: ListChecks,
 }
 const nav: NavItem[] = (
   product.navigation as Array<{
