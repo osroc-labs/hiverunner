@@ -1,0 +1,83 @@
+package protocol
+
+import (
+	"encoding/json"
+	"os"
+	"reflect"
+	"testing"
+)
+
+func fixtures(t *testing.T, name string) []json.RawMessage {
+	t.Helper()
+	raw, err := os.ReadFile("../../../packages/protocol/fixtures/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var messages []json.RawMessage
+	if err := json.Unmarshal(raw, &messages); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) == 0 {
+		t.Fatalf("%s has no messages", name)
+	}
+	return messages
+}
+
+func TestEveryCoordinatorFixtureDecodes(t *testing.T) {
+	seen := map[string]bool{}
+	for _, raw := range fixtures(t, "coordinator.json") {
+		message, err := DecodeCoordinator(raw)
+		if err != nil {
+			t.Errorf("%s: %v", raw, err)
+			continue
+		}
+		seen[reflect.TypeOf(message).Elem().Name()] = true
+	}
+	for _, want := range []string{"Welcome", "JobAssign", "Drain", "Error"} {
+		if !seen[want] {
+			t.Errorf("no fixture exercised %s", want)
+		}
+	}
+}
+
+// What the daemon sends must be byte-for-byte what the coordinator's own
+// fixtures say a daemon sends.
+func TestDaemonMessagesMatchFixtures(t *testing.T) {
+	sent := []any{
+		NewHello("0.1.0", Online),
+		NewPresence(Paused),
+		NewPresence(Draining),
+		NewJobAccepted("a-1"),
+		NewJobRejected("a-1", "on battery"),
+		NewJobExited("a-1", 0),
+	}
+	want := fixtures(t, "daemon.json")
+	if len(sent) != len(want) {
+		t.Fatalf("fixtures have %d messages, test builds %d", len(want), len(sent))
+	}
+	for i, message := range sent {
+		encoded, err := json.Marshal(message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got, expected any
+		_ = json.Unmarshal(encoded, &got)
+		_ = json.Unmarshal(want[i], &expected)
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("message %d: sent %s, fixture %s", i, encoded, want[i])
+		}
+	}
+}
+
+func TestUnknownAndIncompleteFramesAreErrors(t *testing.T) {
+	for _, raw := range []string{
+		`not json`,
+		`{"type":"reboot"}`,
+		`{"type":"job.assign","assignmentId":"a","vcpus":2}`,
+		`{"type":"job.assign","assignmentId":"","jitConfig":"x","vcpus":2}`,
+	} {
+		if _, err := DecodeCoordinator([]byte(raw)); err == nil {
+			t.Errorf("%s decoded without error", raw)
+		}
+	}
+}

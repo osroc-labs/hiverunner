@@ -33,6 +33,7 @@ mise run dev         # Start the development server
 mise run check       # Lint, format, licenses, types, tests, production build
 mise run format      # Format the workspace with oxfmt
 pnpm test:worker     # Install flow against a fake GitHub; tunnel as a fake daemon
+pnpm test:daemon     # The real daemon against both local Workers (macOS)
 pnpm run doctor      # Check local setup; also accepts staging or production
 pnpm db:seed         # Repeatable local pools and users
 pnpm db:reset --yes  # Reset local state; stop the dev server first
@@ -51,8 +52,15 @@ pnpm cf:typegen      # Regenerate Cloudflare binding and runtime types
 | `packages/ui*`                                      | Primitives, app chrome, data display, forms                         |
 | `packages/stripe`, `packages/mcp`, `packages/email` | From the starter; switched off until needed                         |
 
-Still to come, per the spec: the scale set listener in the coordinator, and
-`daemon/`.
+## Status
+
+Working end to end locally, with tests: GitHub App installation, GitHub
+sign-in and membership, pool settings, the ledger and trial grant, daemon
+sign-in and enrollment, the tunnel, presence, and revocation.
+
+Not built yet: the scale set listener (so no job reaches a machine), the VM
+runner in the daemon (it declines jobs), metering and receipts, the menu bar
+item, and anything on chain. Nothing is deployed.
 
 `AGENTS.md` has the rules for working in this codebase: the two databases,
 package boundaries, auth, and the checks.

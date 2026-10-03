@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers"
 import { listOrganizations } from "@workspace/auth"
 import {
   endSession,
@@ -53,7 +54,14 @@ export async function POST(request: Request) {
       throw new AppError(result.code, result.message, result.fields)
     if (bearer) await endSession(db, session.id)
     return Response.json(
-      { machineId: result.machineId, organizationId, token: result.token },
+      {
+        machineId: result.machineId,
+        organizationId,
+        token: result.token,
+        // Told, not built from a hostname, so moving the coordinator is a
+        // configuration change and not a daemon release.
+        tunnelUrl: env.COORDINATOR_URL ?? "ws://localhost:8788/v1/tunnel",
+      },
       { status: 201, headers: { "Cache-Control": "no-store" } }
     )
   } catch (error) {

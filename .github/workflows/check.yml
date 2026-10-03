@@ -21,3 +21,19 @@ jobs:
         run: node tests/run-worker-smoke.mjs
       - name: Drive the coordinator as a daemon would
         run: node tests/run-coordinator-smoke.mjs
+  daemon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: daemon
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Reference speed on a GitHub standard hosted runner
+        # The speed score is relative to this hardware. Copy the median into
+        # ReferenceUnitsPerSecond in daemon/internal/bench when it moves.
+        run: for i in 1 2 3; do go run ./cmd/hived benchmark --raw; done

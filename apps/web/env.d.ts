@@ -29,6 +29,9 @@ interface AppSecrets {
   /** Honored on localhost only, so tests can stand in for GitHub. */
   GITHUB_API_URL?: string
 
+  /** The coordinator's tunnel endpoint, handed to daemons at enrollment. */
+  COORDINATOR_URL?: string
+
   STRIPE_API_VERSION?: string
   STRIPE_SECRET_KEY?: string
   STRIPE_WEBHOOK_SECRET?: string
