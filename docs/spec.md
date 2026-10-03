@@ -407,6 +407,12 @@ that could fail outright, and its fallback changes the coordinator's shape.
 
 ## 11. Open
 
+- **GitHub's self-hosted runner fee.** GitHub announced a $0.002 per minute
+  charge for self-hosted runners in December 2025 and postponed it with no new
+  date; as of 2026-10-03 it is not in effect and not cancelled. If it returns
+  it is twice our 2 vCPU gross price and would be paid by the organization on
+  top of ours. The "close to free" goal and the site's "no platform fee" line
+  both depend on it staying away.
 - **Personal accounts** in v1: refused above.
 - **Empty pool.** Jobs currently wait in GitHub's queue. The goals doc leaves
   open whether to fail over to GitHub-hosted runners or a cloud fleet.
