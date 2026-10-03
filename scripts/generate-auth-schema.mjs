@@ -2,8 +2,10 @@
 import { writeFileSync } from "node:fs"
 import { mcp } from "../packages/auth/node_modules/@better-auth/mcp/dist/index.mjs"
 import { jwt } from "../packages/auth/node_modules/better-auth/dist/plugins/jwt/index.mjs"
+import { deviceAuthorization } from "../packages/auth/node_modules/better-auth/dist/plugins/device-authorization/index.mjs"
 const tables = {
   ...jwt().schema,
+  ...deviceAuthorization({}).schema,
   ...mcp({
     resource: "http://localhost:3000/mcp",
     loginPage: "/sign-in",

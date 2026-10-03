@@ -12,6 +12,7 @@ import { once } from "node:events"
  *   visible:       { [userToken]: installationId[] }
  *   installations: { [installationId]: { account: { id, login, type } } }
  *   roles:         { "org/login": "admin" | "member" }
+ *   teams:         { "org/team-slug": login[] }
  *   down:          true makes membership questions fail with 502
  */
 export async function startFakeGitHub(publicKey) {
@@ -82,6 +83,25 @@ export async function startFakeGitHub(publicKey) {
       return role
         ? send(200, { state: "active", role })
         : send(404, { message: "Not Found" })
+    }
+    if (
+      (match = path.match(
+        /^\/orgs\/([^/]+)\/teams\/([^/]+)\/memberships\/([^/]+)$/
+      ))
+    ) {
+      if (!installationTokens.has(token))
+        return send(401, { message: "Bad credentials" })
+      return state.teams?.[`${match[1]}/${match[2]}`]?.includes(match[3])
+        ? send(200, { state: "active", role: "member" })
+        : send(404, { message: "Not Found" })
+    }
+    if ((match = path.match(/^\/user\/(\d+)$/))) {
+      if (!installationTokens.has(token))
+        return send(401, { message: "Bad credentials" })
+      const user = Object.values(state.users).find(
+        (candidate) => String(candidate.id) === match[1]
+      )
+      return user ? send(200, user) : send(404, { message: "Not Found" })
     }
     send(404, { message: "Not Found" })
   })

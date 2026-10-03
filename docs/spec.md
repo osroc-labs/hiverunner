@@ -137,15 +137,21 @@ membership. They expire after eight hours and we do not refresh them.
 
 **Daemon sign-in.** `deviceAuthorization` plugin (RFC 8628) plus `bearer`.
 
-1. Daemon requests a device code and opens `https://<domain>/device?user_code=…`.
-2. The developer signs in with GitHub if needed and approves. If they belong to
-   more than one installed org, they pick the pool here.
-3. Daemon polls, receives a session token, and calls `POST /api/machines` to
-   enroll: hardware facts and benchmark result in, machine ID and **machine
-   token** out.
-4. The session token is discarded. The machine token (opaque, stored hashed,
-   revocable per machine) is the only credential the daemon keeps, and it
-   authenticates the tunnel.
+1. Daemon requests a device code (client id `hiveworker-daemon`; any other
+   is refused) and opens `https://<domain>/device?user_code=…`.
+2. The developer signs in with GitHub if needed, checks the code matches, and
+   approves.
+3. Daemon exchanges the device code for a session token and calls
+   `POST /api/machines` with it as a bearer token: hardware facts and benchmark
+   result in, machine ID and **machine token** out. Someone in several pools
+   gets the list back and the daemon asks which.
+4. The server ends that session as it answers. The machine token (opaque,
+   stored only as a hash, revocable per machine) is the only credential the
+   daemon keeps, and it authenticates the tunnel.
+
+Enrollment re-checks GitHub membership and the pool's team limit at that
+moment, caps machines per person per pool, and accepts Apple Silicon macOS
+only. A person's machines are revoked when GitHub says they left.
 
 A separate machine token means a session expiry never takes a machine offline,
 and removing a person revokes exactly their machines.

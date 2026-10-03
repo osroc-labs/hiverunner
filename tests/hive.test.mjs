@@ -17,6 +17,12 @@ import {
   updatePoolSettings,
   validatePoolSettings,
 } from "../packages/db/src/settings.ts"
+import {
+  authenticateMachine,
+  enrollMachine,
+  revokeMachine,
+  MAX_MACHINES_PER_PERSON,
+} from "../packages/db/src/machines.ts"
 import { GitHubError } from "../packages/github/src/index.ts"
 
 const acme = {
@@ -371,4 +377,116 @@ test("pool settings refuse stale versions and bad slugs", async (t) => {
     validatePoolSettings({ ...change, earningsDestination: "me" })
       .earningsDestination
   )
+})
+
+const mac = {
+  name: "Ada's MacBook Pro",
+  model: "Mac15,9",
+  os: "darwin",
+  arch: "arm64",
+  cores: 12,
+  memoryBytes: 36 * 2 ** 30,
+  daemonVersion: "0.1.0",
+}
+
+test("machines enroll once, authenticate by token, and stop when revoked", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  const viewer = { id: 1, login: "ada" }
+  const asMember = github({
+    viewer,
+    installations: [9001],
+    roles: { "acme/ada": "member" },
+  })
+  const input = {
+    userId: "ada",
+    organizationId: orgId,
+    facts: { ...mac, speedScore: 99 },
+  }
+
+  // Not a member yet: nothing to enroll into.
+  assert.equal((await enrollMachine(db, asMember, input)).code, "FORBIDDEN")
+  await syncMemberships(db, asMember, { userId: "ada", userToken: "token" })
+
+  const bad = await enrollMachine(db, asMember, {
+    ...input,
+    facts: { ...mac, os: "linux", arch: "x64", cores: 0 },
+  })
+  assert.equal(bad.code, "INVALID_INPUT")
+  assert.ok(bad.fields.os && bad.fields.cores)
+
+  const enrolled = await enrollMachine(db, asMember, input)
+  assert.equal(enrolled.ok, true)
+  const row = sqlite.prepare("select * from machine").get()
+  assert.equal(row.speed_score, 8, "a claimed score is clamped")
+  assert.ok(
+    !JSON.stringify(row).includes(enrolled.token),
+    "only the hash is stored"
+  )
+
+  assert.equal(
+    (await authenticateMachine(db, enrolled.token)).id,
+    enrolled.machineId
+  )
+  assert.equal(await authenticateMachine(db, `${enrolled.token}x`), null)
+  assert.equal(await authenticateMachine(db, "not-a-machine-token"), null)
+
+  // A suspended installation silences its machines without revoking them.
+  await provisionInstallation(db, { ...acme, suspended: true })
+  assert.equal(await authenticateMachine(db, enrolled.token), null)
+  await provisionInstallation(db, acme)
+  assert.ok(await authenticateMachine(db, enrolled.token))
+
+  await revokeMachine(db, enrolled.machineId)
+  assert.equal(await authenticateMachine(db, enrolled.token), null)
+})
+
+test("leaving the organization revokes that person's machines", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  const viewer = { id: 1, login: "ada" }
+  const asMember = github({
+    viewer,
+    installations: [9001],
+    roles: { "acme/ada": "member" },
+  })
+  const sync = { userId: "ada", userToken: "token" }
+  await syncMemberships(db, asMember, sync)
+  const input = { userId: "ada", organizationId: orgId, facts: mac }
+
+  const first = await enrollMachine(db, asMember, input)
+  await syncMemberships(db, github({ viewer, installations: [9001] }), sync)
+  assert.equal(await authenticateMachine(db, first.token), null)
+
+  await syncMemberships(db, asMember, sync)
+  const second = await enrollMachine(db, asMember, input)
+  await applyGitHubEvent(db, {
+    deliveryId: "bye",
+    event: "organization",
+    payload: {
+      action: "member_removed",
+      organization: { id: 501, login: "acme" },
+      membership: { user: { id: 1 } },
+    },
+  })
+  assert.equal(await authenticateMachine(db, second.token), null)
+})
+
+test("a person cannot fill a pool with machines", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  const viewer = { id: 1, login: "ada" }
+  const asMember = github({
+    viewer,
+    installations: [9001],
+    roles: { "acme/ada": "member" },
+  })
+  await syncMemberships(db, asMember, { userId: "ada", userToken: "token" })
+  const input = { userId: "ada", organizationId: orgId, facts: mac }
+  for (let i = 0; i < MAX_MACHINES_PER_PERSON; i++)
+    assert.equal((await enrollMachine(db, asMember, input)).ok, true)
+  assert.equal((await enrollMachine(db, asMember, input)).code, "CONFLICT")
 })

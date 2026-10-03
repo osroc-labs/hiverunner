@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Settings2,
   Folder,
+  Laptop,
 } from "lucide-react"
 
 import { useActiveOrganization } from "@workspace/auth/client"
@@ -34,6 +35,7 @@ const icons: Record<string, typeof Building2> = {
   account: Settings2,
   organization: Building2,
   projects: Folder,
+  machines: Laptop,
 }
 const nav: NavItem[] = (
   product.navigation as Array<{

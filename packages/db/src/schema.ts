@@ -1,11 +1,12 @@
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core"
-import { organization } from "@workspace/auth/schema"
+import { organization, user } from "@workspace/auth/schema"
 
 /**
  * One row per GitHub App installation. The organization row is created from
@@ -64,6 +65,51 @@ export const poolSettings = sqliteTable("pool_settings", {
   version: integer("version").notNull().default(1),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 })
+
+/**
+ * A developer's computer, enrolled in one pool. The daemon holds the machine
+ * token and nothing else; only its hash is stored, so a database read cannot
+ * impersonate a machine.
+ */
+export const machine = sqliteTable(
+  "machine",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Whose machine it is. Their leaving the organization revokes it. */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    model: text("model").notNull(),
+    os: text("os").notNull(),
+    arch: text("arch").notNull(),
+    cores: integer("cores").notNull(),
+    memoryBytes: integer("memory_bytes").notNull(),
+    /**
+     * Speed relative to one core of a GitHub standard hosted runner. Starts
+     * from the daemon's own benchmark, which is a claim; the coordinator
+     * corrects it against observed job durations.
+     */
+    speedScore: real("speed_score").notNull().default(1),
+    daemonVersion: text("daemon_version").notNull(),
+    /** SHA-256 of the machine token, hex. */
+    tokenHash: text("token_hash").notNull(),
+    status: text("status", { enum: ["active", "revoked"] })
+      .notNull()
+      .default("active"),
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("machine_org_idx").on(table.organizationId, table.status),
+    index("machine_user_idx").on(table.userId),
+    uniqueIndex("machine_token_idx").on(table.tokenHash),
+  ]
+)
 
 /**
  * Append-only. A balance is the sum of an account's entries; nothing stores a

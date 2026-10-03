@@ -15,6 +15,11 @@
       "icon": "dashboard"
     },
     {
+      "href": "/machines",
+      "label": "Machines",
+      "icon": "machines"
+    },
+    {
       "href": "/wallet",
       "label": "Wallet",
       "icon": "billing"

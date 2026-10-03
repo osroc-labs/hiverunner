@@ -4,7 +4,7 @@ import type { AuthDb } from "@workspace/auth/db"
 import { account, member, session } from "@workspace/auth/schema"
 import type { GitHubApp } from "@workspace/github"
 
-import { githubInstallation, poolSettings } from "@workspace/db/schema"
+import { githubInstallation, machine, poolSettings } from "@workspace/db/schema"
 
 /** The slice of the App this module needs; the tests pass a fake. */
 export type MembershipSource = Pick<
@@ -15,6 +15,24 @@ export type MembershipSource = Pick<
 export type SyncResult = {
   /** Organizations the person belongs to after the sync. */
   organizationIds: string[]
+}
+
+/** Their machines go when they do. */
+export async function revokeMachinesForUser(
+  db: AuthDb,
+  input: { organizationId: string; userId: string },
+  now = new Date()
+) {
+  await db
+    .update(machine)
+    .set({ status: "revoked", revokedAt: now })
+    .where(
+      and(
+        eq(machine.organizationId, input.organizationId),
+        eq(machine.userId, input.userId),
+        eq(machine.status, "active")
+      )
+    )
 }
 
 /**
@@ -120,13 +138,13 @@ export async function syncMemberships(
     (row) =>
       candidates.has(row.organizationId) && !confirmed.has(row.organizationId)
   )
-  if (stale.length)
-    await db.delete(member).where(
-      inArray(
-        member.id,
-        stale.map((row) => row.id)
-      )
-    )
+  for (const row of stale) {
+    await db.delete(member).where(eq(member.id, row.id))
+    await revokeMachinesForUser(db, {
+      organizationId: row.organizationId,
+      userId: input.userId,
+    })
+  }
 
   return { organizationIds: [...confirmed.keys()] }
 }

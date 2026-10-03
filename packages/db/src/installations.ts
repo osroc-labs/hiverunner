@@ -5,6 +5,7 @@ import { account, member, organization } from "@workspace/auth/schema"
 import type { Installation } from "@workspace/github"
 import { TRIAL_GRANT_USD, usdToMicroTokens } from "@workspace/pricing"
 
+import { revokeMachinesForUser } from "@workspace/db/membership"
 import {
   githubInstallation,
   ledgerEntry,
@@ -141,14 +142,16 @@ export async function removeGitHubMember(
     )
     .limit(1)
   if (!linked) return false
+  const organizationId = organizationIdFor(input.accountId)
   await db
     .delete(member)
     .where(
       and(
-        eq(member.organizationId, organizationIdFor(input.accountId)),
+        eq(member.organizationId, organizationId),
         eq(member.userId, linked.userId)
       )
     )
+  await revokeMachinesForUser(db, { organizationId, userId: linked.userId })
   return true
 }
 

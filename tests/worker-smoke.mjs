@@ -249,6 +249,118 @@ for (const [path, body] of [
   )
 console.log("Member sign-in, owner-only settings and locked endpoints passed.")
 
+// The daemon signs in with a device code, enrolls, and keeps only a machine
+// token. The pool is limited to the `ci` team by the settings saved above.
+const mac = {
+  name: "Ada's MacBook Pro",
+  model: "Mac15,9",
+  os: "darwin",
+  arch: "arm64",
+  cores: 12,
+  memoryBytes: 36 * 2 ** 30,
+  daemonVersion: "0.1.0",
+  speedScore: 1.8,
+}
+async function daemonSignIn(approver, decision = "approve") {
+  const daemon = (path, body, token) =>
+    fetch(`${origin}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    })
+  const code = await json(
+    await daemon("/api/auth/device/code", { client_id: "hiveworker-daemon" })
+  )
+  assert.ok(code.verification_uri_complete.includes(code.user_code))
+  assert.ok(
+    (await page(approver, `/device?user_code=${code.user_code}`)).includes(
+      code.user_code
+    )
+  )
+  await json(
+    await approver(`/api/auth/device/${decision}`, { userCode: code.user_code })
+  )
+  const granted = await daemon("/api/auth/device/token", {
+    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    device_code: code.device_code,
+    client_id: "hiveworker-daemon",
+  })
+  return { daemon, granted }
+}
+assert.ok(
+  (
+    await fetch(`${origin}/api/auth/device/code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: "someone-else" }),
+    })
+  ).status >= 400
+)
+await redirectsTo(
+  await anonymous("/device?user_code=ABCD"),
+  `/sign-in?next=${encodeURIComponent("/device?user_code=ABCD")}`,
+  307
+)
+assert.ok((await daemonSignIn(owner, "deny")).granted.status >= 400)
+
+const ownerDaemon = await daemonSignIn(owner)
+const ownerToken = (await json(ownerDaemon.granted)).access_token
+assert.equal(
+  (
+    await ownerDaemon.daemon(
+      "/api/machines",
+      { ...mac, os: "linux" },
+      ownerToken
+    )
+  ).status,
+  400
+)
+const enrolled = await json(
+  await ownerDaemon.daemon("/api/machines", mac, ownerToken),
+  201
+)
+assert.ok(enrolled.token.startsWith("hwm_"))
+assert.equal(enrolled.organizationId, organizationId)
+// The sign-in token did its one job and is gone.
+assert.equal(
+  (await ownerDaemon.daemon("/api/machines", mac, ownerToken)).status,
+  401
+)
+assert.ok((await page(owner, "/machines")).includes("Mac15,9"))
+
+// A member who is not on an allowed team cannot add a machine; one who is, can.
+let memberDaemon = await daemonSignIn(member)
+let memberToken = (await json(memberDaemon.granted)).access_token
+assert.equal(
+  (await memberDaemon.daemon("/api/machines", mac, memberToken)).status,
+  403
+)
+await tellGitHub({ teams: { "acme/ci": ["member"] } })
+const memberMachine = await json(
+  await memberDaemon.daemon(
+    "/api/machines",
+    { ...mac, name: "Member's Mac mini", model: "Mac16,10" },
+    memberToken
+  ),
+  201
+)
+assert.ok((await page(owner, "/machines")).includes("Mac16,10"))
+// Members can remove their own machine, not anyone else's.
+assert.equal(
+  (await member("/api/machines/revoke", { machineId: enrolled.machineId }))
+    .status,
+  403
+)
+assert.equal(
+  (await outsider("/api/machines/revoke", { machineId: enrolled.machineId }))
+    .status,
+  404
+)
+console.log("Device sign-in, enrollment, team limits and removal rules passed.")
+
 // GitHub being down is not the same as GitHub saying no.
 await tellGitHub({ down: true })
 await redirectsTo(await member("/github/sync"), "/dashboard")
@@ -270,6 +382,14 @@ assert.equal(
 )
 assert.ok((await page(member, "/dashboard")).includes("No pool yet"))
 assert.equal((await settings(member, { version: 2 })).status, 403)
+// Their machine left with them; the owner's is untouched.
+const remaining = await page(owner, "/machines")
+assert.ok(!remaining.includes("Mac16,10") && remaining.includes("Mac15,9"))
+assert.ok(memberMachine.token)
+await json(
+  await owner("/api/machines/revoke", { machineId: enrolled.machineId })
+)
+assert.ok(!(await page(owner, "/machines")).includes("Mac15,9"))
 // And a sync agrees with the webhook once GitHub's own answer changes.
 await tellGitHub({ roles: { "acme/owner": "admin" } })
 await redirectsTo(await member("/github/sync"), "/dashboard")

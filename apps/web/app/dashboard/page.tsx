@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { RUNNER_SIZES, privatePoolUsdPerMinute } from "@workspace/pricing"
 import { getBalance } from "@workspace/db/ledger"
+import { listMachines } from "@workspace/db/machines"
 import { roleAtLeast } from "@workspace/auth"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -29,10 +30,11 @@ export default async function DashboardPage({
 
   const { installed } = await searchParams
   const { organizationId, installation, membership } = pool
-  const balance = await getBalance(getDb(), {
-    accountType: "organization",
-    accountId: organizationId,
-  })
+  const db = getDb()
+  const [balance, machines] = await Promise.all([
+    getBalance(db, { accountType: "organization", accountId: organizationId }),
+    listMachines(db, organizationId),
+  ])
   const owner = roleAtLeast(membership.role, "owner")
   const perMinute = privatePoolUsdPerMinute(RUNNER_SIZES[0].vcpus)
 
@@ -75,14 +77,24 @@ export default async function DashboardPage({
         <Card>
           <CardHeader>
             <CardDescription>Machines</CardDescription>
-            <CardTitle className="text-3xl tabular-nums">0</CardTitle>
+            <CardTitle className="text-3xl tabular-nums">
+              {machines.length}
+            </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            No machines in this pool yet.{" "}
-            <Link className="underline" href="/download">
-              Install the daemon
-            </Link>{" "}
-            on an Apple Silicon Mac and sign in with GitHub.
+            {machines.length ? (
+              <Link className="underline" href="/machines">
+                See the pool
+              </Link>
+            ) : (
+              <>
+                No machines in this pool yet.{" "}
+                <Link className="underline" href="/download">
+                  Install the daemon
+                </Link>{" "}
+                on an Apple Silicon Mac and sign in with GitHub.
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

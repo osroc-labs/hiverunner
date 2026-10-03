@@ -7,7 +7,8 @@ import {
   MCP_SCOPES,
   hasGrantSelection,
 } from "@workspace/auth/grants"
-import { organization, jwt } from "better-auth/plugins"
+import { organization, jwt, bearer } from "better-auth/plugins"
+import { deviceAuthorization } from "better-auth/plugins/device-authorization"
 
 import type { AuthDb } from "@workspace/auth/db"
 import * as schema from "@workspace/auth/schema"
@@ -95,6 +96,16 @@ export function createAuth(options: CreateAuthOptions) {
       // GitHub. Nobody creates, invites or removes through Better Auth; the
       // Worker entry also refuses those endpoints outright.
       organization({ allowUserToCreateOrganization: false }),
+      // How the daemon signs in: it shows a code, the person approves it in
+      // a browser where they are signed in with GitHub, and the daemon
+      // receives a session token it presents as a bearer token.
+      deviceAuthorization({
+        expiresIn: "10m",
+        interval: "5s",
+        verificationUri: "/device",
+        validateClient: (clientId) => clientId === DAEMON_CLIENT_ID,
+      }),
+      bearer(),
       jwt(),
       mcp({
         resource: `${options.baseURL}/mcp`,
@@ -137,6 +148,9 @@ export function createAuth(options: CreateAuthOptions) {
     ],
   })
 }
+
+/** The only client allowed to start a device sign-in. */
+export const DAEMON_CLIENT_ID = "hiveworker-daemon"
 
 export type Auth = ReturnType<typeof createAuth>
 
