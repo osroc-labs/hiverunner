@@ -1,7 +1,7 @@
 {
   "name": "HiveWorker",
   "slug": "hiveworker",
-  "description": "A workspace for your team and projects.",
+  "description": "GitHub Actions runners on your own developers' machines.",
   "supportEmail": "auth@thecomputerplumbers.com",
   "features": { "billing": true, "mcp": true, "projects": true },
   "navigation": [

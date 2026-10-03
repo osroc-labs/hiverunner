@@ -3,6 +3,8 @@ export const metadata = {
   title: { default: product.name, template: `%s | ${product.name}` },
   description: product.description,
 }
+import "@fontsource-variable/bricolage-grotesque/opsz.css"
+import "@fontsource-variable/martian-mono/wdth.css"
 import "@workspace/ui/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 

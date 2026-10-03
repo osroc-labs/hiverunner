@@ -18,6 +18,9 @@ const allowed = new Set([
   "MPL-2.0",
   // Data, not code. Attribution only.
   "CC-BY-4.0",
+  // Fonts, not code: the site's typefaces, served unmodified from
+  // @fontsource packages. Attribution only while we do not modify the files.
+  "OFL-1.1",
 ])
 // Reviewed one by one. Prefix match, because native builds are per platform.
 const exceptions = [
