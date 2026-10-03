@@ -5,7 +5,7 @@ export default function NotFound() {
       <h1 className="text-2xl font-semibold">Page not found</h1>
       <p>This page is unavailable or you no longer have access.</p>
       <Link className="underline" href="/">
-        Go to dashboard
+        Go to the home page
       </Link>
     </main>
   )
