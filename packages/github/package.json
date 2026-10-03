@@ -1,0 +1,20 @@
+{
+  "name": "@workspace/github",
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "GitHub App plumbing over fetch and WebCrypto: app tokens, installation tokens, webhook verification.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

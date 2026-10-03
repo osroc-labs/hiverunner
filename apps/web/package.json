@@ -19,7 +19,9 @@
   "dependencies": {
     "@vinext/cloudflare": "1.0.0",
     "@workspace/auth": "workspace:*",
+    "@workspace/db": "workspace:*",
     "@workspace/email": "workspace:*",
+    "@workspace/github": "workspace:*",
     "@workspace/mcp": "workspace:*",
     "@workspace/pricing": "workspace:*",
     "@workspace/stripe": "workspace:*",

@@ -14,7 +14,7 @@ a spike before building on them. Items marked **Open** need a decision.
 | -------------- | ------------------------------------------------------------------------- | ------------------------------------ | ------------------------------ |
 | Web            | Marketing site, docs, dashboard, sign-in, GitHub App callbacks + webhooks | Cloudflare Worker (vinext)           | `apps/web`                     |
 | Coordinator    | Holds scale set sessions, machine tunnels, scheduling, metering           | Cloudflare Worker + Durable Objects  | `apps/coordinator`             |
-| Daemon         | Takes jobs, runs them in a throwaway VM, reports presence                 | Developer's Mac (Go, per-user agent) | `daemon/` (**Open**: own repo) |
+| Daemon         | Takes jobs, runs them in a throwaway VM, reports presence                 | Developer's Mac (Go, per-user agent) | `daemon/`                      |
 | Runner         | GitHub's official runner binary, one job, JIT config                      | Inside the VM                        | VM image, built from `daemon/` |
 | Token + escrow | ERC-20 with tax, escrow channel                                           | Base                                 | Separate repo                  |
 | Releases       | Daemon binaries, VM images, update manifest                               | R2                                   | Published by CI                |
@@ -356,8 +356,6 @@ that could fail outright, and its fallback changes the coordinator's shape.
 
 ## 11. Open
 
-- **Daemon location.** In this repo under `daemon/` (recommended: the protocol
-  types are generated from `packages/protocol`) or its own repo like the token.
 - **Personal accounts** in v1: refused above.
 - **Empty pool.** Jobs currently wait in GitHub's queue. The goals doc leaves
   open whether to fail over to GitHub-hosted runners or a cloud fleet.

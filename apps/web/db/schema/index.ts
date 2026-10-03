@@ -7,5 +7,6 @@
 
 export * from "./auth"
 export * from "./billing"
+export * from "./hive"
 
 export * from "./projects"

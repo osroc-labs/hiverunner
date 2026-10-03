@@ -15,6 +15,7 @@ export default defineConfig({
   schema: [
     "./db/schema/auth.ts",
     "./db/schema/billing.ts",
+    "./db/schema/hive.ts",
     "./db/schema/projects.ts",
   ],
   out: "./migrations",
