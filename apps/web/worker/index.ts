@@ -7,6 +7,13 @@ export { AppDatabase } from "./database"
 import { auth } from "../lib/auth"
 import { handleMcp } from "../mcp/handler"
 
+const ORGANIZATION_ENDPOINTS = new Set([
+  "set-active",
+  "list",
+  "get-full-organization",
+  "get-active-member",
+])
+
 export default {
   async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
     return observeRequest(request, async () => {
@@ -22,6 +29,16 @@ export default {
             path === "/api/connections")) ||
         (!product.features.billing &&
           (path === "/billing" || path.startsWith("/api/stripe/")))
+      )
+        return new Response("Not found", { status: 404 })
+      // Pools and their members come from GitHub. Better Auth's organization
+      // plugin is kept for sessions and roles, but nobody may create, invite,
+      // promote or remove through it.
+      if (
+        path.startsWith("/api/auth/organization/") &&
+        !ORGANIZATION_ENDPOINTS.has(
+          path.slice("/api/auth/organization/".length)
+        )
       )
         return new Response("Not found", { status: 404 })
       if (path === "/mcp") return handleMcp(request)

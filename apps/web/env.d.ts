@@ -16,6 +16,22 @@ interface AppSecrets {
    */
   BETTER_AUTH_SECRET?: string
 
+  /**
+   * The HiveWorker GitHub App. One App per environment; see
+   * docs/github-app.md. The private key may be the PKCS#1 file GitHub issues.
+   */
+  GITHUB_APP_ID?: string
+  GITHUB_APP_SLUG?: string
+  GITHUB_APP_PRIVATE_KEY?: string
+  GITHUB_WEBHOOK_SECRET?: string
+  GITHUB_CLIENT_ID?: string
+  GITHUB_CLIENT_SECRET?: string
+  /** Honored on localhost only, so tests can stand in for GitHub. */
+  GITHUB_API_URL?: string
+
+  /** The coordinator's tunnel endpoint, handed to daemons at enrollment. */
+  COORDINATOR_URL?: string
+
   STRIPE_API_VERSION?: string
   STRIPE_SECRET_KEY?: string
   STRIPE_WEBHOOK_SECRET?: string

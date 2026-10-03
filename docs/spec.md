@@ -14,7 +14,7 @@ a spike before building on them. Items marked **Open** need a decision.
 | -------------- | ------------------------------------------------------------------------- | ------------------------------------ | ------------------------------ |
 | Web            | Marketing site, docs, dashboard, sign-in, GitHub App callbacks + webhooks | Cloudflare Worker (vinext)           | `apps/web`                     |
 | Coordinator    | Holds scale set sessions, machine tunnels, scheduling, metering           | Cloudflare Worker + Durable Objects  | `apps/coordinator`             |
-| Daemon         | Takes jobs, runs them in a throwaway VM, reports presence                 | Developer's Mac (Go, per-user agent) | `daemon/` (**Open**: own repo) |
+| Daemon         | Takes jobs, runs them in a throwaway VM, reports presence                 | Developer's Mac (Go, per-user agent) | `daemon/`                      |
 | Runner         | GitHub's official runner binary, one job, JIT config                      | Inside the VM                        | VM image, built from `daemon/` |
 | Token + escrow | ERC-20 with tax, escrow channel                                           | Base                                 | Separate repo                  |
 | Releases       | Daemon binaries, VM images, update manifest                               | R2                                   | Published by CI                |
@@ -109,19 +109,26 @@ needs the account permission _Email addresses: read_ or GitHub returns no email
 and Better Auth rejects the sign-in.
 
 **Organizations.** Keep the `organization` plugin, with
-`allowUserToCreateOrganization: false` and no invitations. An organization row
-is created only by a GitHub App installation and carries `githubAccountId`,
-`githubLogin`, and `installationId` as additional fields.
+`allowUserToCreateOrganization: false`; its create, invite, role and remove
+endpoints are refused at the Worker entry. An organization row is created only
+by a GitHub App installation. Its id is derived from the GitHub account id, and
+the installation lives beside it in `github_installation`, keyed by that
+account so a reinstall returns to the same pool.
 
 **Membership.** GitHub is the source of truth; the `member` table is a cache.
 
-- On sign-in, on device approval, and daily: for each installed org, check
-  `GET /orgs/{org}/memberships/{username}` with the _installation_ token.
-  GitHub `admin` maps to `owner`, `member` to `member`.
+- On sign-in: candidates are the installations the person's own token lists
+  (`GET /user/installations`) plus every pool they are already cached in.
+  Each is confirmed with `GET /orgs/{org}/memberships/{username}` using the
+  _installation_ token. GitHub `admin` maps to `owner`, `member` to `member`.
+  The same check runs fresh on device approval, and daily for everyone.
+- An error from GitHub leaves the cache alone. Only a definite "not a member"
+  removes anyone.
 - `organization.member_removed` webhooks delete the member and revoke their
   machines immediately.
-- If the org has narrowed access to teams, also check
-  `GET /orgs/{org}/teams/{slug}/memberships/{username}`.
+- Team narrowing applies to adding machines, not to seeing the dashboard:
+  enrollment also checks `GET /orgs/{org}/teams/{slug}/memberships/{username}`.
+  Owners are exempt.
 - The starter's rule stands: `session.activeOrganizationId` is never an
   authorization decision. Use `requireMembership` on every write.
 
@@ -130,18 +137,30 @@ membership. They expire after eight hours and we do not refresh them.
 
 **Daemon sign-in.** `deviceAuthorization` plugin (RFC 8628) plus `bearer`.
 
-1. Daemon requests a device code and opens `https://<domain>/device?user_code=…`.
-2. The developer signs in with GitHub if needed and approves. If they belong to
-   more than one installed org, they pick the pool here.
-3. Daemon polls, receives a session token, and calls `POST /api/machines` to
-   enroll: hardware facts and benchmark result in, machine ID and **machine
-   token** out.
-4. The session token is discarded. The machine token (opaque, stored hashed,
-   revocable per machine) is the only credential the daemon keeps, and it
-   authenticates the tunnel.
+1. Daemon requests a device code (client id `hiveworker-daemon`; any other
+   is refused) and opens `https://<domain>/device?user_code=…`.
+2. The developer signs in with GitHub if needed, checks the code matches, and
+   approves.
+3. Daemon exchanges the device code for a session token and calls
+   `POST /api/machines` with it as a bearer token: hardware facts, benchmark
+   result and the pools to serve in; machine ID and **machine token** out.
+   Someone in several pools gets the list back and chooses any or all.
+4. The server ends that session as it answers. The machine token (opaque,
+   stored only as a hash) is the only credential the daemon keeps.
 
-A separate machine token means a session expiry never takes a machine offline,
-and removing a person revokes exactly their machines.
+**A machine belongs to a person and can serve several organizations.** Each
+pool is authorized separately (`machine_pool`): GitHub membership and that
+pool's team limit are checked when it is added, and there is a cap per person
+per pool. A machine already running can be added to another of its owner's
+pools from the dashboard; the daemon asks `GET /api/machines/me` on a timer
+and opens or closes tunnels to match, so nothing is reinstalled. Leaving an
+organization on GitHub removes that person's machines from that pool only.
+The machine's owner can retire it everywhere; an organization owner can
+remove it from their own pool.
+
+Apple Silicon macOS only.
+
+**Passwords.** Enabled on localhost only, for seeded users and the smoke test.
 
 ## 5. GitHub App installation
 
@@ -208,8 +227,11 @@ repositories by default. That is the right default for a private pool.
 
 ### Durable Objects
 
-**`Pool`**, one per organization. Holds one hibernatable WebSocket per machine,
-their presence, and free capacity by size. Single-threaded, so two jobs cannot
+**`Pool`**, one per organization. Holds one hibernatable WebSocket per machine
+serving it, their presence, and free capacity by size. A machine serving three
+organizations holds three tunnels, one to each object, and keeps a single job
+slot between them: when two pools offer it a job at once, it takes the first
+and declines the second, which stays queued at GitHub for another machine. Single-threaded, so two jobs cannot
 be handed the same machine. Its SQLite holds only live state; anything worth
 querying is written through to D1.
 
@@ -239,8 +261,9 @@ scale set client in a Cloudflare Container fronted by the same object.
 
 ### Tunnel
 
-`wss://connect.<domain>/v1/tunnel`, machine token in the `Authorization`
-header, one outbound connection, JSON messages defined in `packages/protocol`.
+`wss://connect.<domain>/v1/tunnel?pool=<organization>`, machine token in the
+`Authorization` header, outbound only, one connection per pool served, JSON
+messages defined in `packages/protocol`.
 
 | Direction      | Messages                                                                   |
 | -------------- | -------------------------------------------------------------------------- |
@@ -271,6 +294,33 @@ Speed scores come from the enrollment benchmark and are corrected against
 observed durations of repeated jobs. Step 1 records the data; automatic
 cutting of inflated scores only matters once payees are strangers (step 5).
 
+## 6a. Daemon: virtualization and speed
+
+Go, in `daemon/`. Apple's Virtualization.framework, driven from Go. Not
+Docker: on a Mac it is a Linux VM with containers inside, and a container is
+not the hardware boundary the goals require. Not Firecracker: it needs Linux
+KVM, so it arrives with Linux x64 hosts in step 3. Docker runs _inside_ the
+guest for jobs that use `container:` or `services:`.
+
+A cold runner pays for scheduling, an image pull, boot, registration and empty
+caches on every job. The daemon pays for none of them at job time:
+
+| Cost         | How it is avoided                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Boot         | One VM is always booted. Direct kernel boot, no firmware or bootloader                                                         |
+| Registration | **Verify**: the warm VM holds a runner already registered and idle, so GitHub assigns at once. Falls back to JIT on assignment |
+| Disk         | Each job's disk is a copy-on-write clone of a golden image (APFS `clonefile`), discarded after                                 |
+| Image pull   | The golden image is on the host already; updates download in the background                                                    |
+| Cold caches  | A per-repository cache volume on the host: package stores, Docker layers, `actions/cache`                                      |
+| Slow cores   | Jobs run on the machine's performance cores; the speed score prices it                                                         |
+
+The cache volume is the one place a job leaves something behind. It is scoped
+to one repository within one private pool, never shared across organizations,
+and never attached to public-pool jobs.
+
+x64 container images run under Rosetta in the guest. Memory is ballooned back
+to the host when the VM is idle, so a warm VM costs the owner little.
+
 ## 7. Data model (D1)
 
 Better Auth tables (`user`, `session`, `account`, `verification`,
@@ -281,7 +331,8 @@ Better Auth tables (`user`, `session`, `account`, `verification`,
 | `github_installation` | installation ID, account ID + login, organization ID, status, permission set                                                                                          |
 | `pool_settings`       | organization ID, allowed team slugs, earnings destination (`org` or `developer`), public overflow                                                                     |
 | `scale_set`           | organization ID, name, vCPUs, GitHub scale set ID                                                                                                                     |
-| `machine`             | organization ID, user ID, name, model, cores, memory, speed score, token hash, status, last seen, daemon version                                                      |
+| `machine`             | user ID, name, model, cores, memory, speed score, token hash, status, daemon version                                                                                  |
+| `machine_pool`        | machine ID, organization ID, status, presence, last seen                                                                                                              |
 | `job`                 | organization ID, scale set, repo, run ID, job ID, runner name, machine ID, vCPUs, speed score, rate, queued/started/completed, result, compute units, amount, receipt |
 | `ledger_entry`        | account (org, user, or treasury), kind (`grant`, `purchase`, `charge`, `earning`, `tax`), amount, job ID                                                              |
 | `webhook_delivery`    | GitHub delivery ID, for dedupe                                                                                                                                        |
@@ -356,8 +407,6 @@ that could fail outright, and its fallback changes the coordinator's shape.
 
 ## 11. Open
 
-- **Daemon location.** In this repo under `daemon/` (recommended: the protocol
-  types are generated from `packages/protocol`) or its own repo like the token.
 - **Personal accounts** in v1: refused above.
 - **Empty pool.** Jobs currently wait in GitHub's queue. The goals doc leaves
   open whether to fail over to GitHub-hosted runners or a cloud fleet.

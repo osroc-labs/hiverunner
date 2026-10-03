@@ -10,7 +10,9 @@ import { createStripeClient, getStripeConfig } from "@workspace/stripe"
  * browser only ever names a key; the price id is resolved here, on the
  * server, so a tampered request cannot buy Pro at the Starter price.
  */
-export const PLANS = product.plans.map((plan) => plan.id)
+export const PLANS = (product.plans as Array<{ id: string }>).map(
+  (plan) => plan.id
+)
 
 export type Plan = (typeof PLANS)[number]
 

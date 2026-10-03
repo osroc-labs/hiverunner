@@ -1,0 +1,25 @@
+{
+  "name": "@workspace/db",
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "HiveWorker's D1 tables and the operations on them, shared by the web and coordinator Workers.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@workspace/auth": "workspace:*",
+    "@workspace/github": "workspace:*",
+    "@workspace/pricing": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5-5935859"
+  },
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -2,3 +2,11 @@ APP_URL=http://localhost:3000
 EMAIL_FROM=starter@example.com
 # Set a unique BETTER_AUTH_SECRET outside local development.
 # Cloudflare simulates EMAIL locally; never enable remote email in automated tests.
+# Optional locally. Without these, seeded pools work and GitHub is never called.
+# See docs/github-app.md.
+# GITHUB_APP_ID=
+# GITHUB_APP_SLUG=
+# GITHUB_APP_PRIVATE_KEY=
+# GITHUB_WEBHOOK_SECRET=
+# GITHUB_CLIENT_ID=
+# GITHUB_CLIENT_SECRET=

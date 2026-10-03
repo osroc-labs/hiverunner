@@ -46,6 +46,17 @@ export async function GET() {
     emailFromConfigured: Boolean(env.EMAIL_FROM),
   }
 
+  // Which parts of the GitHub App are configured, never their values.
+  const github = {
+    app: Boolean(
+      env.GITHUB_APP_ID &&
+      env.GITHUB_APP_PRIVATE_KEY &&
+      env.GITHUB_WEBHOOK_SECRET
+    ),
+    signIn: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+    installLink: Boolean(env.GITHUB_APP_SLUG),
+  }
+
   const local = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(
     env.APP_URL ?? ""
   )
@@ -54,12 +65,23 @@ export async function GET() {
     durableObject.ok &&
     (local ||
       (auth.secretConfigured &&
+        github.app &&
+        github.signIn &&
+        github.installLink &&
         auth.emailBound &&
         auth.emailFromConfigured &&
         (!product.features.billing || billing.configured)))
 
   return Response.json(
-    { ok, buildId: env.BUILD_ID ?? "local", d1, durableObject, auth, billing },
+    {
+      ok,
+      buildId: env.BUILD_ID ?? "local",
+      d1,
+      durableObject,
+      auth,
+      github,
+      billing,
+    },
     { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } }
   )
 }

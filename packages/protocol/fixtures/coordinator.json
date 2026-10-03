@@ -1,0 +1,13 @@
+[
+  { "type": "welcome", "machineId": "m-1", "protocol": 1 },
+  {
+    "type": "job.assign",
+    "assignmentId": "a-1",
+    "label": "hive",
+    "vcpus": 2,
+    "jitConfig": "ZXhhbXBsZQ==",
+    "timeoutMinutes": 360
+  },
+  { "type": "drain" },
+  { "type": "error", "message": "unrecognized message" }
+]

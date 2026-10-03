@@ -1,0 +1,58 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hiveworker-coordinator",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-09-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "865d0c927a18e87c0a0701b8d1f18ee9",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "connect.hiveworkr.thecomputerplumbers.com",
+      "custom_domain": true,
+    },
+  ],
+  "d1_databases": [
+    {
+      // The same database as apps/web, which owns its migrations. This
+      // Worker never applies any.
+      "binding": "DB",
+      "database_name": "hiveworker",
+      "database_id": "REPLACE_WITH_YOUR_PRODUCTION_D1_DATABASE_ID",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "POOL", "class_name": "Pool" }],
+  },
+  "exports": {
+    "Pool": { "type": "durable-object", "storage": "sqlite" },
+  },
+  "vars": {
+    // How often a pool re-checks its connected machines against D1.
+    "SWEEP_SECONDS": "60",
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "upload_source_maps": true,
+  "env": {
+    "staging": {
+      "name": "hiveworker-coordinator-staging",
+      "routes": [
+        {
+          "pattern": "connect.hiveworkr-staging.thecomputerplumbers.com",
+          "custom_domain": true,
+        },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "hiveworker-staging",
+          "database_id": "REPLACE_WITH_YOUR_STAGING_D1_DATABASE_ID",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [{ "name": "POOL", "class_name": "Pool" }],
+      },
+      "vars": { "SWEEP_SECONDS": "60" },
+    },
+  },
+}

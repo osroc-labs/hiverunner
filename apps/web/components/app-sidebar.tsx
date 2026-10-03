@@ -9,6 +9,8 @@ import {
   LayoutDashboard,
   Settings2,
   Folder,
+  Laptop,
+  ListChecks,
 } from "lucide-react"
 
 import { useActiveOrganization } from "@workspace/auth/client"
@@ -34,13 +36,18 @@ const icons: Record<string, typeof Building2> = {
   account: Settings2,
   organization: Building2,
   projects: Folder,
+  machines: Laptop,
+  jobs: ListChecks,
 }
-const nav: NavItem[] = product.navigation
-  .filter(
-    (item) =>
-      !item.feature ||
-      product.features[item.feature as keyof typeof product.features]
-  )
+const nav: NavItem[] = (
+  product.navigation as Array<{
+    href: string
+    label: string
+    icon: string
+    feature?: keyof typeof product.features
+  }>
+)
+  .filter((item) => !item.feature || product.features[item.feature])
   .map((item) => ({ ...item, icon: icons[item.icon] }))
 
 export function AppSidebar() {
