@@ -146,7 +146,8 @@ and removing a person revokes exactly their machines.
 ## 5. GitHub App installation
 
 One App per environment, owned by a GitHub organization named for the product
-so the install screen reads "HiveWorker" (**Open**: which org). The App is
+so the install screen reads "HiveWorker". The repository lives under
+`thecomputerplumbers`; whether the App does too is **Open**. The App is
 defined by a manifest committed at `apps/web/github-app.json`.
 
 ### Permissions and events
@@ -355,7 +356,8 @@ that could fail outright, and its fallback changes the coordinator's shape.
 
 ## 11. Open
 
-- **GitHub owner** of this repo and of the App.
+- **License** for our own code, before the repository goes public. See
+  [licensing.md](licensing.md).
 - **Daemon location.** In this repo under `daemon/` (recommended: the protocol
   types are generated from `packages/protocol`) or its own repo like the token.
 - **Personal accounts** in v1: refused above.

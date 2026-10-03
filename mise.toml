@@ -16,4 +16,4 @@ run = "pnpm format"
 
 [tasks.check]
 description = "Run the full repository validation suite"
-run = "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build"
+run = "pnpm lint && pnpm format:check && pnpm licenses:check && pnpm typecheck && pnpm test && pnpm build"

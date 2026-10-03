@@ -56,7 +56,9 @@ Entitlements are granted from verified webhook events only, never from a Checkou
 
 ## Checks
 
-`mise run check` runs oxlint, `oxfmt --check`, `turbo typecheck`, regression tests and a production build. All must pass.
+`mise run check` runs oxlint, `oxfmt --check`, the dependency license check, `turbo typecheck`, regression tests and a production build. All must pass.
+
+This repository will become public. Read `docs/licensing.md` before adding a dependency with a license outside the allowlist or copying code in from elsewhere.
 
 ## MCP and account lifecycle
 
