@@ -79,6 +79,14 @@ Durable Objects. Marketing copy changes must not disconnect the fleet.
 | Cron            | Coordinator, daily       | Membership reconcile, stale-machine sweep                            |
 | Email Service   | Web                      | Low balance, machine revoked                                         |
 
+`<domain>` is `hiveworkr.thecomputerplumbers.com` for now (staging:
+`hiveworkr-staging.thecomputerplumbers.com`); the product domain is undecided.
+While it is a subdomain, sibling hosts are flat (`hiveworkr-connect.…`,
+`hiveworkr-get.…`), not nested, because the zone's certificate covers only one
+level of subdomain. Hosts come from configuration, never from string-building,
+so the move to a real domain is a config change plus new GitHub App URLs. The
+daemon reads its coordinator host from the release manifest for the same reason.
+
 Each has a `-staging` twin, with its own GitHub App (§5). Web reaches the
 coordinator through a service binding for dashboard reads of live presence.
 
@@ -345,7 +353,6 @@ that could fail outright, and its fallback changes the coordinator's shape.
 
 ## 11. Open
 
-- **Domain.** Needed for `project:init`, the App's callback URLs, and the tunnel host.
 - **GitHub owner** of this repo and of the App.
 - **Daemon location.** In this repo under `daemon/` (recommended: the protocol
   types are generated from `packages/protocol`) or its own repo like the token.

@@ -1,8 +1,8 @@
 {
-  "name": "Starter",
-  "slug": "starter",
+  "name": "HiveWorker",
+  "slug": "hiveworker",
   "description": "A workspace for your team and projects.",
-  "supportEmail": "support@example.com",
+  "supportEmail": "auth@thecomputerplumbers.com",
   "features": { "billing": true, "mcp": true, "projects": true },
   "navigation": [
     { "href": "/dashboard", "label": "Dashboard", "icon": "dashboard" },

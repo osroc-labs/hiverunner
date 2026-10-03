@@ -4,8 +4,8 @@ GitHub Actions-compatible runners on your own developers' machines. Start with
 the [goals and decisions](docs/goals-and-decisions.md) and the
 [build spec](docs/spec.md).
 
-This repository was copied from `thecomputerplumbers/starter` and has not been
-initialized yet (`pnpm project:init` needs the domain). Everything below is the
+This repository was copied from `thecomputerplumbers/starter` and is initialized
+for `hiveworkr.thecomputerplumbers.com`; the D1 databases are not created yet. Everything below is the
 starter's own README and still describes the code as it stands.
 
 ---
