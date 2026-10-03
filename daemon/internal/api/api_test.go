@@ -48,7 +48,7 @@ func TestDeviceSignInThenEnroll(t *testing.T) {
 		},
 		"/api/machines": {func(w http.ResponseWriter, r *http.Request) {
 			bearer = r.Header.Get("Authorization")
-			reply(201, Enrollment{MachineID: "m", OrganizationID: "gh-1", Token: "hwm_x", TunnelURL: "wss://c/v1/tunnel"})(w, r)
+			reply(201, Enrollment{MachineID: "m", Token: "hwm_x", Pools: []Pool{{ID: "gh-1", Name: "acme"}}})(w, r)
 		}},
 	})
 	ctx := context.Background()
@@ -118,5 +118,27 @@ func TestEnrollSurfacesThePoolChoiceAndRefusals(t *testing.T) {
 	}
 	if _, err := c.Enroll(ctx, "t", Machine{}); !errors.As(err, &refusal) || refusal.Fields["os"] == "" {
 		t.Fatalf("want field errors, got %v", err)
+	}
+}
+
+func TestMeListsPoolsAndRecognisesARetiredMachine(t *testing.T) {
+	c := server(t, map[string][]func(http.ResponseWriter, *http.Request){
+		"/api/machines/me": {
+			func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer hwm_x" {
+					t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+				}
+				reply(200, Assignment{MachineID: "m", TunnelURL: "wss://c/v1/tunnel", Pools: []Pool{{ID: "gh-1", Name: "acme"}, {ID: "gh-2", Name: "globex"}}})(w, r)
+			},
+			reply(401, map[string]string{"error": "Unknown machine"}),
+		},
+	})
+	ctx := context.Background()
+	assignment, err := c.Me(ctx, "hwm_x")
+	if err != nil || len(assignment.Pools) != 2 {
+		t.Fatalf("Me() = %+v, %v", assignment, err)
+	}
+	if _, err := c.Me(ctx, "hwm_x"); !errors.Is(err, ErrUnknownMachine) {
+		t.Fatalf("Me() after retirement = %v", err)
 	}
 }

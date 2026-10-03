@@ -10,14 +10,12 @@ import (
 	"path/filepath"
 )
 
-// Machine is the daemon's identity after enrollment.
+// Machine is the daemon's identity after enrollment. Which pools it serves is
+// not kept here: that can change from the dashboard, so the daemon asks.
 type Machine struct {
 	// Server is the web origin the machine enrolled with.
-	Server string `json:"server"`
-	// TunnelURL is where the coordinator listens, as told by the server.
-	TunnelURL      string `json:"tunnelUrl"`
-	MachineID      string `json:"machineId"`
-	OrganizationID string `json:"organizationId"`
+	Server    string `json:"server"`
+	MachineID string `json:"machineId"`
 	// Token is the machine's only credential. It is never logged.
 	Token string `json:"token"`
 }
@@ -54,7 +52,7 @@ func Load() (Machine, error) {
 	if err := json.Unmarshal(raw, &machine); err != nil {
 		return Machine{}, fmt.Errorf("%s is not readable: %w", path, err)
 	}
-	if machine.Token == "" || machine.TunnelURL == "" {
+	if machine.Token == "" || machine.Server == "" {
 		return Machine{}, ErrNotEnrolled
 	}
 	return machine, nil

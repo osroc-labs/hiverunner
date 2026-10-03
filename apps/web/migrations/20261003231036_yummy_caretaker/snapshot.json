@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e58af38e-69dd-4dca-843e-e6743c7d1009",
+  "id": "ec702612-a895-486a-b8cc-f4ee5a8c6c42",
   "prevIds": ["2537376d-71b7-473b-8c5c-d4ffc1492254"],
   "ddl": [
     {
@@ -97,11 +97,19 @@
       "entityType": "tables"
     },
     {
+      "name": "job",
+      "entityType": "tables"
+    },
+    {
       "name": "ledger_entry",
       "entityType": "tables"
     },
     {
       "name": "machine",
+      "entityType": "tables"
+    },
+    {
+      "name": "machine_pool",
       "entityType": "tables"
     },
     {
@@ -2374,6 +2382,236 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "machine_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "repository",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "github_job_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "job_name",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vcpus",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "speed_score",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rate",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "compute_units",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "amount",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tax",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "earning",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payee_type",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payee_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "receipt",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "receipt_signature",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "receipt_key_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "ledger_entry"
     },
     {
@@ -2443,16 +2681,6 @@
       "default": null,
       "generated": null,
       "name": "id",
-      "entityType": "columns",
-      "table": "machine"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "organization_id",
       "entityType": "columns",
       "table": "machine"
     },
@@ -2567,26 +2795,6 @@
       "table": "machine"
     },
     {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'offline'",
-      "generated": null,
-      "name": "presence",
-      "entityType": "columns",
-      "table": "machine"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_seen_at",
-      "entityType": "columns",
-      "table": "machine"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -2605,6 +2813,76 @@
       "name": "revoked_at",
       "entityType": "columns",
       "table": "machine"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "machine_id",
+      "entityType": "columns",
+      "table": "machine_pool"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "machine_pool"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'active'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "machine_pool"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'offline'",
+      "generated": null,
+      "name": "presence",
+      "entityType": "columns",
+      "table": "machine_pool"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_seen_at",
+      "entityType": "columns",
+      "table": "machine_pool"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "machine_pool"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revoked_at",
+      "entityType": "columns",
+      "table": "machine_pool"
     },
     {
       "type": "text",
@@ -3004,9 +3282,20 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_machine_organization_id_organization_id_fk",
+      "name": "fk_job_organization_id_organization_id_fk",
       "entityType": "fks",
-      "table": "machine"
+      "table": "job"
+    },
+    {
+      "columns": ["machine_id"],
+      "tableTo": "machine",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_job_machine_id_machine_id_fk",
+      "entityType": "fks",
+      "table": "job"
     },
     {
       "columns": ["user_id"],
@@ -3018,6 +3307,28 @@
       "name": "fk_machine_user_id_user_id_fk",
       "entityType": "fks",
       "table": "machine"
+    },
+    {
+      "columns": ["machine_id"],
+      "tableTo": "machine",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_machine_pool_machine_id_machine_id_fk",
+      "entityType": "fks",
+      "table": "machine_pool"
+    },
+    {
+      "columns": ["organization_id"],
+      "tableTo": "organization",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_machine_pool_organization_id_organization_id_fk",
+      "entityType": "fks",
+      "table": "machine_pool"
     },
     {
       "columns": ["organization_id"],
@@ -3040,6 +3351,13 @@
       "name": "fk_project_organization_id_organization_id_fk",
       "entityType": "fks",
       "table": "project"
+    },
+    {
+      "columns": ["machine_id", "organization_id"],
+      "nameExplicit": false,
+      "name": "machine_pool_pk",
+      "entityType": "pks",
+      "table": "machine_pool"
     },
     {
       "columns": ["id"],
@@ -3200,6 +3518,13 @@
       "nameExplicit": false,
       "name": "github_installation_pk",
       "table": "github_installation",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "job_pk",
+      "table": "job",
       "entityType": "pks"
     },
     {
@@ -3756,6 +4081,42 @@
     {
       "columns": [
         {
+          "value": "organization_id",
+          "isExpression": false
+        },
+        {
+          "value": "started_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "job_org_idx",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
+          "value": "machine_id",
+          "isExpression": false
+        },
+        {
+          "value": "started_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "job_machine_idx",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
           "value": "account_type",
           "isExpression": false
         },
@@ -3774,24 +4135,6 @@
       "name": "ledger_entry_account_idx",
       "entityType": "indexes",
       "table": "ledger_entry"
-    },
-    {
-      "columns": [
-        {
-          "value": "organization_id",
-          "isExpression": false
-        },
-        {
-          "value": "status",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "machine_org_idx",
-      "entityType": "indexes",
-      "table": "machine"
     },
     {
       "columns": [
@@ -3820,6 +4163,24 @@
       "name": "machine_token_idx",
       "entityType": "indexes",
       "table": "machine"
+    },
+    {
+      "columns": [
+        {
+          "value": "organization_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "machine_pool_org_idx",
+      "entityType": "indexes",
+      "table": "machine_pool"
     },
     {
       "columns": [

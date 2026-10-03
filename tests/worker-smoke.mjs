@@ -323,7 +323,14 @@ const enrolled = await json(
   201
 )
 assert.ok(enrolled.token.startsWith("hwm_"))
-assert.equal(enrolled.organizationId, organizationId)
+assert.deepEqual(enrolled.pools, [{ id: organizationId, name: "acme" }])
+const me = (token) =>
+  fetch(`${origin}/api/machines/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+assert.deepEqual((await json(await me(enrolled.token))).pools, enrolled.pools)
+assert.equal((await me("hwm_nope")).status, 401)
+assert.equal((await me(ownerToken)).status, 401)
 // The sign-in token did its one job and is gone.
 assert.equal(
   (await ownerDaemon.daemon("/api/machines", mac, ownerToken)).status,
@@ -349,14 +356,24 @@ const memberMachine = await json(
 )
 assert.ok((await page(owner, "/machines")).includes("Mac16,10"))
 // Members can remove their own machine, not anyone else's.
+const remove = (request, machineId, pool = organizationId) =>
+  request("/api/machines/revoke", { machineId, organizationId: pool })
+assert.equal((await remove(member, enrolled.machineId)).status, 403)
+assert.equal((await remove(outsider, enrolled.machineId)).status, 404)
+// Retiring a machine outright is its owner's call alone, and nobody can
+// volunteer someone else's machine for a pool.
 assert.equal(
   (await member("/api/machines/revoke", { machineId: enrolled.machineId }))
     .status,
-  403
+  404
 )
 assert.equal(
-  (await outsider("/api/machines/revoke", { machineId: enrolled.machineId }))
-    .status,
+  (
+    await member("/api/machines/pools", {
+      machineId: enrolled.machineId,
+      organizationId,
+    })
+  ).status,
   404
 )
 console.log("Device sign-in, enrollment, team limits and removal rules passed.")

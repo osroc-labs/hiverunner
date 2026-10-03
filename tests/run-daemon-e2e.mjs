@@ -1,5 +1,6 @@
 // The real daemon binary against the real web and coordinator Workers, on a
-// fresh local D1: sign in, enroll, connect, go offline, get revoked.
+// fresh local D1: sign in, enroll, connect, serve a second organization
+// without being touched, leave it, and be retired.
 // macOS only, because that is the only host the daemon supports.
 import { spawn, spawnSync } from "node:child_process"
 import {
@@ -136,6 +137,11 @@ try {
       "INSERT INTO user (id,name,email,email_verified,created_at,updated_at) VALUES ('owner','Owner','owner@example.test',1,0,0);",
       `INSERT INTO account (id,account_id,provider_id,user_id,password,created_at,updated_at) VALUES ('pw','owner','credential','owner','${await hashPassword(password)}',0,0);`,
       "INSERT INTO member (id,organization_id,user_id,role,created_at) VALUES ('m','gh-501','owner','owner',0);",
+      // A second organization the same person belongs to.
+      "INSERT INTO organization (id,name,slug,created_at) VALUES ('gh-502','globex','gh-502',0);",
+      "INSERT INTO github_installation (account_id,installation_id,organization_id,account_login,account_type,repository_selection,status,created_at,updated_at) VALUES (502,9002,'gh-502','globex','Organization','all','active',0,0);",
+      "INSERT INTO pool_settings (organization_id,allowed_teams,earnings_destination,version,updated_at) VALUES ('gh-502','[]','organization',1,0);",
+      "INSERT INTO member (id,organization_id,user_id,role,created_at) VALUES ('m2','gh-502','owner','member',0);",
     ].join("\n")
   )
   if (
@@ -193,7 +199,7 @@ try {
   }
 
   // hived login: the daemon shows a code, the owner approves it in a browser.
-  const login = hived(["login", "--no-browser"])
+  const login = hived(["login", "--no-browser", "--pool", "gh-501"])
   await eventually(
     () => /user_code=/.test(login.output),
     "the daemon never showed a code"
@@ -230,12 +236,9 @@ try {
   await browser("/api/auth/device/approve", { userCode })
   const [loginCode] = await once(login, "exit")
   assert.equal(loginCode, 0, login.output)
-  assert.match(login.output, /is in the pool/)
-  const [machine] = sql(
-    "select id, presence, os, arch, speed_score from machine"
-  )
+  assert.match(login.output, /now serves: acme/)
+  const [machine] = sql("select id, os, arch, speed_score from machine")
   assert.equal(machine.os, "darwin")
-  assert.equal(machine.presence, "offline")
   assert.ok(machine.speed_score > 0)
   assert.equal(
     sql("select count(*) n from session where user_id='owner'")[0].n,
@@ -247,7 +250,9 @@ try {
   )
 
   // hived run: presence reaches the dashboard's database through the tunnel.
-  const presence = () => sql("select presence from machine")[0].presence
+  const presence = (pool = "gh-501") =>
+    sql(`select presence from machine_pool where organization_id='${pool}'`)[0]
+      ?.presence
   let run = hived(["run"])
   await eventually(
     () => presence() !== "offline",
@@ -255,6 +260,35 @@ try {
   )
   const state = presence()
   assert.ok(["online", "paused"].includes(state), state)
+  console.log(`hived run connected to acme (${state}).`)
+
+  // Added to a second organization from the dashboard: the running daemon
+  // picks it up by itself and serves both.
+  assert.equal(presence("gh-502"), undefined)
+  await browser("/api/machines/pools", {
+    machineId: machine.id,
+    organizationId: "gh-502",
+  })
+  await eventually(
+    () => presence("gh-502") === state,
+    `globex never saw the machine\n${run.output}`
+  )
+  assert.equal(presence(), state)
+  // Dropped from it again: that tunnel goes, the first stays.
+  await browser("/api/machines/revoke", {
+    machineId: machine.id,
+    organizationId: "gh-502",
+  })
+  await eventually(
+    () => /no longer serving a pool/.test(run.output),
+    "the daemon did not notice"
+  )
+  await delay(1500)
+  assert.equal(presence("gh-502"), "offline")
+  assert.equal(presence(), state)
+  assert.equal(run.exitCode, null, "the daemon keeps serving acme")
+  console.log("The same machine served a second organization, then left it.")
+
   run.kill("SIGTERM")
   const [stopCode] = await once(run, "exit")
   assert.equal(stopCode, 0, run.output)
@@ -262,24 +296,23 @@ try {
     () => presence() === "offline",
     "stopping the daemon did not mark it offline"
   )
-  console.log(`hived run connected (${state}) and went offline cleanly.`)
+  console.log("hived went offline cleanly.")
 
-  // Removed from the pool while connected: the daemon stops and says why.
+  // Retired while running: the daemon stops and says why, and stays out.
   run = hived(["run"])
   await eventually(
     () => presence() !== "offline",
     "the machine did not reconnect"
   )
   await browser("/api/machines/revoke", { machineId: machine.id })
-  const [revokedCode] = await once(run, "exit")
-  assert.equal(revokedCode, 1, run.output)
-  assert.match(run.output, /removed from its pool/)
-  // And it does not come back.
+  const [retiredCode] = await once(run, "exit")
+  assert.equal(retiredCode, 1, run.output)
+  assert.match(run.output, /no longer enrolled/)
   const again = hived(["run"])
   const [againCode] = await once(again, "exit")
   assert.equal(againCode, 1)
-  assert.match(again.output, /removed from its pool/)
-  console.log("Revocation stopped the daemon and it stays out.")
+  assert.match(again.output, /no longer enrolled/)
+  console.log("Retiring the machine stopped the daemon and it stays out.")
   passed = true
 } finally {
   for (const child of children) {

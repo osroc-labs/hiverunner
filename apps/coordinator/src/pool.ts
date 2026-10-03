@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers"
-import { eq, inArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/d1"
-import { githubInstallation, machine } from "@workspace/db/schema"
+import { githubInstallation, machine, machinePool } from "@workspace/db/schema"
 import {
   CLOSE,
   PING,
@@ -15,7 +15,7 @@ import {
 import { pickMachine, type Candidate } from "./schedule"
 
 /** Rides along with each socket, and survives the object hibernating. */
-type Attachment = Candidate & { greeted: boolean }
+type Attachment = Candidate & { organizationId: string; greeted: boolean }
 
 export type Assignment = {
   assignmentId: string
@@ -49,9 +49,14 @@ export class Pool extends DurableObject<CoordinatorEnv> {
   /** The Worker has already authenticated the machine token. */
   async fetch(request: Request) {
     const machineId = request.headers.get("x-hive-machine")
+    const organizationId = request.headers.get("x-hive-pool")
     const cores = Number(request.headers.get("x-hive-cores"))
     const speedScore = Number(request.headers.get("x-hive-speed"))
-    if (!machineId || request.headers.get("upgrade") !== "websocket")
+    if (
+      !machineId ||
+      !organizationId ||
+      request.headers.get("upgrade") !== "websocket"
+    )
       return new Response("Expected a tunnel", { status: 400 })
 
     // One connection per machine. A daemon that reconnects after a network
@@ -63,6 +68,7 @@ export class Pool extends DurableObject<CoordinatorEnv> {
     this.ctx.acceptWebSocket(server, [machineId])
     this.attach(server, {
       machineId,
+      organizationId,
       cores,
       speedScore,
       presence: "offline",
@@ -151,23 +157,35 @@ export class Pool extends DurableObject<CoordinatorEnv> {
   async alarm() {
     const sockets = this.ctx.getWebSockets()
     if (!sockets.length) return
+    const organizationId = this.attachment(sockets[0]!).organizationId
     const ids = sockets.map((socket) => this.attachment(socket).machineId)
     const active = new Set<string>()
     for (let i = 0; i < ids.length; i += 50) {
       const rows = await this.db
         .select({
           id: machine.id,
-          status: machine.status,
+          machine: machine.status,
+          pool: machinePool.status,
           installation: githubInstallation.status,
         })
-        .from(machine)
+        .from(machinePool)
+        .innerJoin(machine, eq(machine.id, machinePool.machineId))
         .innerJoin(
           githubInstallation,
-          eq(githubInstallation.organizationId, machine.organizationId)
+          eq(githubInstallation.organizationId, machinePool.organizationId)
         )
-        .where(inArray(machine.id, ids.slice(i, i + 50)))
+        .where(
+          and(
+            eq(machinePool.organizationId, organizationId),
+            inArray(machinePool.machineId, ids.slice(i, i + 50))
+          )
+        )
       for (const row of rows)
-        if (row.status === "active" && row.installation === "active")
+        if (
+          row.machine === "active" &&
+          row.pool === "active" &&
+          row.installation === "active"
+        )
           active.add(row.id)
     }
     const now = new Date()
@@ -175,13 +193,19 @@ export class Pool extends DurableObject<CoordinatorEnv> {
     for (const socket of sockets) {
       const state = this.attachment(socket)
       if (active.has(state.machineId)) seen.push(state.machineId)
-      else socket.close(CLOSE.REVOKED, "This machine is no longer in the pool")
+      else
+        socket.close(CLOSE.REVOKED, "This machine no longer serves this pool")
     }
     for (let i = 0; i < seen.length; i += 50)
       await this.db
-        .update(machine)
+        .update(machinePool)
         .set({ lastSeenAt: now })
-        .where(inArray(machine.id, seen.slice(i, i + 50)))
+        .where(
+          and(
+            eq(machinePool.organizationId, organizationId),
+            inArray(machinePool.machineId, seen.slice(i, i + 50))
+          )
+        )
     await this.scheduleSweep()
   }
 
@@ -193,9 +217,9 @@ export class Pool extends DurableObject<CoordinatorEnv> {
     state.presence = presence
     this.attach(socket, state)
     await this.db
-      .update(machine)
+      .update(machinePool)
       .set({ presence, lastSeenAt: new Date() })
-      .where(eq(machine.id, state.machineId))
+      .where(this.row(state))
   }
 
   private async gone(socket: WebSocket) {
@@ -206,9 +230,17 @@ export class Pool extends DurableObject<CoordinatorEnv> {
       .some((other) => other !== socket)
     if (!successor)
       await this.db
-        .update(machine)
+        .update(machinePool)
         .set({ presence: "offline", lastSeenAt: new Date() })
-        .where(eq(machine.id, state.machineId))
+        .where(this.row(state))
+  }
+
+  /** This machine's row in this pool. */
+  private row(state: Attachment) {
+    return and(
+      eq(machinePool.machineId, state.machineId),
+      eq(machinePool.organizationId, state.organizationId)
+    )
   }
 
   private async scheduleSweep() {

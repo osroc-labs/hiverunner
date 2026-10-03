@@ -65,7 +65,7 @@ Adding a Better Auth plugin means adding its tables. Better Auth validates the s
 
 `apps/coordinator` is a separate Worker because deploying a Worker drops the WebSockets its Durable Objects hold. It shares D1 with `apps/web` but never applies migrations; `apps/web` owns them.
 
-A `Pool` object holds one hibernating WebSocket per machine. Keep it hibernatable: no timers, no in-memory state that matters. State that must outlive an eviction goes in the socket's attachment; anything the dashboard reads is written through to D1.
+A machine belongs to a person and may serve several organizations; `machine_pool` is the authorization, checked per pool. Never put an organization on `machine`. A `Pool` object holds one hibernating WebSocket per machine serving it, so a machine in three pools holds three tunnels. Keep it hibernatable: no timers, no in-memory state that matters. State that must outlive an eviction goes in the socket's attachment; anything the dashboard reads is written through to D1.
 
 Frames from a daemon are untrusted input. They go through `parseDaemonMessage` and nothing else. A change to `packages/protocol` must keep `fixtures/*.json` decodable by both the TypeScript and Go tests.
 

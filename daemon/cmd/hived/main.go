@@ -22,8 +22,7 @@ import (
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/bench"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/tunnel"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/pools"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -86,7 +85,7 @@ func server() string {
 
 func login(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("login", flag.ExitOnError)
-	pool := flags.String("pool", "", "the pool to join, if you belong to several")
+	pool := flags.String("pool", "", "pool ids to serve, separated by commas, if you belong to several")
 	noBrowser := flags.Bool("no-browser", false, "print the sign-in link instead of opening it")
 	_ = flags.Parse(args)
 
@@ -113,20 +112,22 @@ func login(ctx context.Context, args []string) error {
 	}
 
 	machine := api.Machine{
-		OrganizationID: *pool,
-		Name:           facts.Name,
-		Model:          facts.Model,
-		OS:             facts.OS,
-		Arch:           facts.Arch,
-		Cores:          facts.Cores,
-		MemoryBytes:    facts.MemoryBytes,
-		DaemonVersion:  version,
-		SpeedScore:     score,
+		Name:          facts.Name,
+		Model:         facts.Model,
+		OS:            facts.OS,
+		Arch:          facts.Arch,
+		Cores:         facts.Cores,
+		MemoryBytes:   facts.MemoryBytes,
+		DaemonVersion: version,
+		SpeedScore:    score,
+	}
+	if *pool != "" {
+		machine.OrganizationIDs = strings.Split(*pool, ",")
 	}
 	enrollment, err := client.Enroll(ctx, token, machine)
 	var choose *api.ChoosePoolError
 	if errors.As(err, &choose) {
-		machine.OrganizationID, err = askPool(choose.Pools)
+		machine.OrganizationIDs, err = askPools(choose.Pools)
 		if err != nil {
 			return err
 		}
@@ -136,33 +137,52 @@ func login(ctx context.Context, args []string) error {
 		return err
 	}
 	if err := config.Save(config.Machine{
-		Server:         client.Server,
-		TunnelURL:      enrollment.TunnelURL,
-		MachineID:      enrollment.MachineID,
-		OrganizationID: enrollment.OrganizationID,
-		Token:          enrollment.Token,
+		Server:    client.Server,
+		MachineID: enrollment.MachineID,
+		Token:     enrollment.Token,
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("\n%s is in the pool. Start it with: hived run\n", facts.Name)
+	names := make([]string, len(enrollment.Pools))
+	for i, joined := range enrollment.Pools {
+		names[i] = joined.Name
+	}
+	fmt.Printf("\n%s now serves: %s\n", facts.Name, strings.Join(names, ", "))
+	for _, refused := range enrollment.Refused {
+		fmt.Printf("Not added to %s: %s\n", refused.Name, refused.Message)
+	}
+	fmt.Println("Start it with: hived run")
 	return nil
 }
 
-func askPool(pools []api.Pool) (string, error) {
-	fmt.Println("\nYou belong to more than one pool. Which should this machine join?")
+// askPools lets someone in several organizations choose which of them this
+// machine should serve. It can serve all of them at once.
+func askPools(pools []api.Pool) ([]string, error) {
+	fmt.Println("\nYou belong to more than one pool. Which should this machine serve?")
 	for i, pool := range pools {
 		fmt.Printf("  %d. %s\n", i+1, pool.Name)
 	}
-	fmt.Print("> ")
+	fmt.Print("Numbers separated by commas, or \"all\": ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
-		return "", errors.New("no pool chosen; run again with --pool")
+		return nil, errors.New("no pool chosen; run again with --pool")
 	}
-	choice, err := strconv.Atoi(strings.TrimSpace(line))
-	if err != nil || choice < 1 || choice > len(pools) {
-		return "", errors.New("that is not one of the pools listed")
+	answer := strings.TrimSpace(line)
+	var chosen []string
+	if strings.EqualFold(answer, "all") {
+		for _, pool := range pools {
+			chosen = append(chosen, pool.ID)
+		}
+		return chosen, nil
 	}
-	return pools[choice-1].ID, nil
+	for _, part := range strings.Split(answer, ",") {
+		choice, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || choice < 1 || choice > len(pools) {
+			return nil, errors.New("that is not one of the pools listed")
+		}
+		chosen = append(chosen, pools[choice-1].ID)
+	}
+	return chosen, nil
 }
 
 func run(ctx context.Context) error {
@@ -172,17 +192,17 @@ func run(ctx context.Context) error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	log.Info("starting", "version", version, "machine", machine.MachineID)
-	return tunnel.Run(ctx, tunnel.Options{
-		URL:           machine.TunnelURL,
+	refresh := time.Minute
+	if seconds, err := strconv.Atoi(os.Getenv("HIVE_REFRESH_SECONDS")); err == nil && seconds > 0 {
+		refresh = time.Duration(seconds) * time.Second
+	}
+	return pools.Run(ctx, pools.Options{
+		Client:        api.New(machine.Server),
 		Token:         machine.Token,
 		DaemonVersion: version,
+		RefreshEvery:  refresh,
 		Log:           log,
-		Presence: func() protocol.Presence {
-			if host.ReadPower().Available() {
-				return protocol.Online
-			}
-			return protocol.Paused
-		},
+		Available:     func() bool { return host.ReadPower().Available() },
 	})
 }
 
@@ -192,7 +212,18 @@ func status() error {
 		return err
 	}
 	power := host.ReadPower()
-	fmt.Printf("Machine:  %s\nPool:     %s\nServer:   %s\nTunnel:   %s\n", machine.MachineID, machine.OrganizationID, machine.Server, machine.TunnelURL)
+	fmt.Printf("Machine:  %s\nServer:   %s\n", machine.MachineID, machine.Server)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if assignment, err := api.New(machine.Server).Me(ctx, machine.Token); err != nil {
+		fmt.Printf("Pools:    unknown (%v)\n", err)
+	} else {
+		names := make([]string, len(assignment.Pools))
+		for i, pool := range assignment.Pools {
+			names[i] = pool.Name
+		}
+		fmt.Printf("Pools:    %s\n", strings.Join(names, ", "))
+	}
 	switch {
 	case power.OnBattery:
 		fmt.Println("Jobs:     paused (on battery)")

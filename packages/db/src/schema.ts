@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -67,18 +68,15 @@ export const poolSettings = sqliteTable("pool_settings", {
 })
 
 /**
- * A developer's computer, enrolled in one pool. The daemon holds the machine
- * token and nothing else; only its hash is stored, so a database read cannot
- * impersonate a machine.
+ * A developer's computer. It belongs to a person, not to a pool: which pools
+ * it serves is `machinePool`. The daemon holds the machine token and nothing
+ * else; only its hash is stored, so a database read cannot impersonate it.
  */
 export const machine = sqliteTable(
   "machine",
   {
     id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    /** Whose machine it is. Their leaving the organization revokes it. */
+    /** Whose machine it is. */
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -100,8 +98,34 @@ export const machine = sqliteTable(
     status: text("status", { enum: ["active", "revoked"] })
       .notNull()
       .default("active"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("machine_user_idx").on(table.userId),
+    uniqueIndex("machine_token_idx").on(table.tokenHash),
+  ]
+)
+
+/**
+ * A machine authorized to run one organization's jobs. One machine can serve
+ * several organizations its owner belongs to; each is authorized, and
+ * revoked, separately. The daemon holds one tunnel per row.
+ */
+export const machinePool = sqliteTable(
+  "machine_pool",
+  {
+    machineId: text("machine_id")
+      .notNull()
+      .references(() => machine.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["active", "revoked"] })
+      .notNull()
+      .default("active"),
     /**
-     * Last state the coordinator saw, written through from the pool's
+     * Last state this pool's coordinator saw, written through from its
      * Durable Object so the dashboard can read it without waking the object.
      */
     presence: text("presence", {
@@ -114,9 +138,8 @@ export const machine = sqliteTable(
     revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
   },
   (table) => [
-    index("machine_org_idx").on(table.organizationId, table.status),
-    index("machine_user_idx").on(table.userId),
-    uniqueIndex("machine_token_idx").on(table.tokenHash),
+    primaryKey({ columns: [table.machineId, table.organizationId] }),
+    index("machine_pool_org_idx").on(table.organizationId, table.status),
   ]
 )
 

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -17,16 +18,56 @@ import (
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
 )
 
-// Fatal errors end the daemon instead of reconnecting: trying again would get
+// Verdicts that end a tunnel instead of reconnecting: trying again would get
 // the same answer.
 var (
-	ErrRevoked     = errors.New("this machine was removed from its pool; run `hived login` to enroll again")
+	// ErrRevoked ends this pool's tunnel, not the daemon: the machine may
+	// still serve other pools.
+	ErrRevoked     = errors.New("this machine no longer serves this pool")
 	ErrReplaced    = errors.New("another daemon connected as this machine; only one can run at a time")
 	ErrUnsupported = errors.New("this daemon is too old for the coordinator; update HiveWorker")
 )
 
+// Jobs is the machine's single job slot, shared by every pool's tunnel. A
+// machine serving three organizations still runs one job at a time, and
+// whichever pool's offer arrives first gets it.
+type Jobs struct {
+	mu      sync.Mutex
+	current string
+}
+
+// Claim takes the slot for an assignment, or reports that it is taken.
+func (j *Jobs) Claim(assignmentID string) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.current != "" {
+		return false
+	}
+	j.current = assignmentID
+	return true
+}
+
+// Release frees the slot if this assignment holds it.
+func (j *Jobs) Release(assignmentID string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.current == assignmentID {
+		j.current = ""
+	}
+}
+
+// Busy reports whether a job holds the slot.
+func (j *Jobs) Busy() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.current != ""
+}
+
 type Options struct {
-	URL           string
+	// URL is this pool's tunnel, including its `pool` query parameter.
+	URL string
+	// Pool names the pool in log lines.
+	Pool          string
 	Token         string
 	DaemonVersion string
 	// Presence is asked whenever the daemon needs to say what state the
@@ -36,7 +77,9 @@ type Options struct {
 	PresenceEvery time.Duration
 	// PingEvery is the keepalive period. Defaults to 30s.
 	PingEvery time.Duration
-	Log       *slog.Logger
+	// Jobs is shared between tunnels. Nil means this tunnel has its own.
+	Jobs *Jobs
+	Log  *slog.Logger
 }
 
 // Run holds the tunnel open until ctx is cancelled or the coordinator says
@@ -49,6 +92,10 @@ func Run(ctx context.Context, options Options) error {
 	if options.PingEvery == 0 {
 		options.PingEvery = 30 * time.Second
 	}
+	if options.Jobs == nil {
+		options.Jobs = &Jobs{}
+	}
+	options.Log = options.Log.With("pool", options.Pool)
 	backoff := time.Second
 	for {
 		connected, err := session(ctx, options)
@@ -170,12 +217,17 @@ func session(ctx context.Context, options Options) (bool, error) {
 					return welcomed, err
 				}
 				welcomed = true
-				options.Log.Info("connected to the pool", "machine", message.MachineID, "presence", presence)
+				options.Log.Info("connected", "machine", message.MachineID, "presence", presence)
 			case *protocol.JobAssign:
-				// The VM runner is not in this build. Say so at once, so the
-				// coordinator offers the job elsewhere instead of waiting.
-				options.Log.Info("declining a job: this build cannot run jobs yet", "label", message.Label)
-				if err := send(protocol.NewJobRejected(message.AssignmentID, "this daemon build cannot run jobs yet")); err != nil {
+				reason := "this machine is running a job for another pool"
+				if options.Jobs.Claim(message.AssignmentID) {
+					// The VM runner is not in this build. Say so at once, so
+					// the coordinator offers the job elsewhere.
+					options.Jobs.Release(message.AssignmentID)
+					reason = "this daemon build cannot run jobs yet"
+				}
+				options.Log.Info("declining a job", "label", message.Label, "reason", reason)
+				if err := send(protocol.NewJobRejected(message.AssignmentID, reason)); err != nil {
 					return welcomed, err
 				}
 			case *protocol.Drain:

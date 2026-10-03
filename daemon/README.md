@@ -6,7 +6,7 @@ organization's pool and holds the single outbound tunnel jobs arrive through.
 ```sh
 go build -o hived ./cmd/hived
 ./hived login       # sign in with GitHub in the browser, enroll this machine
-./hived run         # connect and wait for jobs
+./hived run         # connect to every pool it serves and wait for jobs
 ./hived status
 ./hived benchmark
 ```
@@ -14,10 +14,19 @@ go build -o hived ./cmd/hived
 `HIVE_SERVER` points it at another server (`http://localhost:3000` for local
 development) and `HIVE_CONFIG` at another machine file.
 
+## One machine, several organizations
+
+A machine belongs to its owner, not to a pool. At `hived login` someone in
+several organizations chooses which of them the machine serves, and can add or
+remove pools later from the dashboard without touching the machine: the
+running daemon asks the server every minute and opens or closes a tunnel per
+pool to match. It runs one job at a time across all of them.
+
 ## What it keeps
 
 One file, `~/Library/Application Support/HiveWorker/machine.json`, readable
-by its owner only: the machine id and the machine token. The GitHub sign-in is
+by its owner only: the server, the machine id and the machine token. Which
+pools it serves is not stored; the server is asked. The GitHub sign-in is
 used once to obtain that token and is not kept. Moving the token to the
 Keychain is planned.
 

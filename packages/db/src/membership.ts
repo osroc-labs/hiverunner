@@ -4,7 +4,12 @@ import type { AuthDb } from "@workspace/auth/db"
 import { account, member, session } from "@workspace/auth/schema"
 import type { GitHubApp } from "@workspace/github"
 
-import { githubInstallation, machine, poolSettings } from "@workspace/db/schema"
+import {
+  githubInstallation,
+  machine,
+  machinePool,
+  poolSettings,
+} from "@workspace/db/schema"
 
 /** The slice of the App this module needs; the tests pass a fake. */
 export type MembershipSource = Pick<
@@ -17,20 +22,29 @@ export type SyncResult = {
   organizationIds: string[]
 }
 
-/** Their machines go when they do. */
+/**
+ * Their machines leave this pool when they do. The machines themselves stay
+ * enrolled: the same laptop may still serve another organization.
+ */
 export async function revokeMachinesForUser(
   db: AuthDb,
   input: { organizationId: string; userId: string },
   now = new Date()
 ) {
   await db
-    .update(machine)
-    .set({ status: "revoked", revokedAt: now })
+    .update(machinePool)
+    .set({ status: "revoked", presence: "offline", revokedAt: now })
     .where(
       and(
-        eq(machine.organizationId, input.organizationId),
-        eq(machine.userId, input.userId),
-        eq(machine.status, "active")
+        eq(machinePool.organizationId, input.organizationId),
+        eq(machinePool.status, "active"),
+        inArray(
+          machinePool.machineId,
+          db
+            .select({ id: machine.id })
+            .from(machine)
+            .where(eq(machine.userId, input.userId))
+        )
       )
     )
 }

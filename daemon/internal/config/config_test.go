@@ -14,7 +14,7 @@ func TestSaveLoadRemove(t *testing.T) {
 	if _, err := Load(); !errors.Is(err, ErrNotEnrolled) {
 		t.Fatalf("Load() before enrolling: %v", err)
 	}
-	want := Machine{Server: "https://example.test", TunnelURL: "wss://c.example.test/v1/tunnel", MachineID: "m", OrganizationID: "gh-1", Token: "hwm_secret"}
+	want := Machine{Server: "https://example.test", MachineID: "m", Token: "hwm_secret"}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}

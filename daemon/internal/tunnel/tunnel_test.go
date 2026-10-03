@@ -148,3 +148,24 @@ func TestADroppedConnectionIsRetried(t *testing.T) {
 		t.Fatal("the daemon did not reconnect")
 	}
 }
+
+func TestOneJobSlotIsSharedBetweenPools(t *testing.T) {
+	var jobs Jobs
+	if !jobs.Claim("acme-1") {
+		t.Fatal("an idle machine refused a job")
+	}
+	if jobs.Claim("globex-1") {
+		t.Fatal("a busy machine took a second pool's job")
+	}
+	if !jobs.Busy() {
+		t.Fatal("Busy() = false while a job holds the slot")
+	}
+	jobs.Release("globex-1")
+	if !jobs.Busy() {
+		t.Fatal("another pool's release freed the slot")
+	}
+	jobs.Release("acme-1")
+	if jobs.Busy() || !jobs.Claim("globex-1") {
+		t.Fatal("the slot was not freed")
+	}
+}

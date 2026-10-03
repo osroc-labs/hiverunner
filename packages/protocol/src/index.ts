@@ -28,7 +28,10 @@ export type Presence = (typeof PRESENCE)[number]
 export const CLOSE = {
   /** Another connection for the same machine took over. Do not reconnect. */
   REPLACED: 4000,
-  /** The machine token is no longer valid. Do not reconnect; enroll again. */
+  /**
+   * The machine no longer serves this pool. Do not reconnect to it; ask the
+   * server which pools remain.
+   */
   REVOKED: 4001,
   /** The daemon is too old to speak to this coordinator. */
   UNSUPPORTED: 4002,

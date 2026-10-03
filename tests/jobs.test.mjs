@@ -44,9 +44,14 @@ async function pool(t, speedScore = 1.5) {
     .run()
   sqlite
     .prepare(
-      "insert into machine (id,organization_id,user_id,name,model,os,arch,cores,memory_bytes,speed_score,daemon_version,token_hash,created_at) values ('mac',?,'ada','Mac','Mac15,9','darwin','arm64',12,1,?,'0.1.0','h',0)"
+      "insert into machine (id,user_id,name,model,os,arch,cores,memory_bytes,speed_score,daemon_version,token_hash,created_at) values ('mac','ada','Mac','Mac15,9','darwin','arm64',12,1,?,'0.1.0','h',0)"
     )
-    .run(orgId, speedScore)
+    .run(speedScore)
+  sqlite
+    .prepare(
+      "insert into machine_pool (machine_id,organization_id,created_at) values ('mac',?,0)"
+    )
+    .run(orgId)
   return { db, sqlite }
 }
 const started = new Date("2026-10-03T12:00:00Z")
@@ -163,7 +168,7 @@ test("the price is locked when the job starts", async (t) => {
   assert.equal(result.amount, 15_000)
 })
 
-test("a machine cannot be billed to another pool, and a clock skew cannot go negative", async (t) => {
+test("a machine cannot be billed to a pool it does not serve, and a clock skew cannot go negative", async (t) => {
   const { db } = await pool(t)
   assert.equal(await start(db, 2, { organizationId: "gh-999" }), null)
   const jobId = await start(db, 3)

@@ -9,7 +9,13 @@ import {
   type ReceiptFacts,
   type ReceiptSigner,
 } from "@workspace/db/receipts"
-import { job, ledgerEntry, machine, poolSettings } from "@workspace/db/schema"
+import {
+  job,
+  ledgerEntry,
+  machine,
+  machinePool,
+  poolSettings,
+} from "@workspace/db/schema"
 
 export const jobIdFor = (organizationId: string, runnerRequestId: number) =>
   `${organizationId}:${runnerRequestId}`
@@ -47,16 +53,20 @@ export type JobStart = {
  * machine's speed score and the rate as they are now. Idempotent.
  */
 export async function startJob(db: AuthDb, input: JobStart) {
+  // A machine runs jobs only for pools it is authorized for.
   const [runner] = await db
-    .select({
-      speedScore: machine.speedScore,
-      organizationId: machine.organizationId,
-    })
-    .from(machine)
-    .where(eq(machine.id, input.machineId))
+    .select({ speedScore: machine.speedScore })
+    .from(machinePool)
+    .innerJoin(machine, eq(machine.id, machinePool.machineId))
+    .where(
+      and(
+        eq(machinePool.machineId, input.machineId),
+        eq(machinePool.organizationId, input.organizationId),
+        eq(machinePool.status, "active")
+      )
+    )
     .limit(1)
-  // A machine can only run its own pool's jobs.
-  if (!runner || runner.organizationId !== input.organizationId) return null
+  if (!runner) return null
   const id = jobIdFor(input.organizationId, input.runnerRequestId)
   await db
     .insert(job)

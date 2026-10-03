@@ -142,19 +142,23 @@ membership. They expire after eight hours and we do not refresh them.
 2. The developer signs in with GitHub if needed, checks the code matches, and
    approves.
 3. Daemon exchanges the device code for a session token and calls
-   `POST /api/machines` with it as a bearer token: hardware facts and benchmark
-   result in, machine ID and **machine token** out. Someone in several pools
-   gets the list back and the daemon asks which.
+   `POST /api/machines` with it as a bearer token: hardware facts, benchmark
+   result and the pools to serve in; machine ID and **machine token** out.
+   Someone in several pools gets the list back and chooses any or all.
 4. The server ends that session as it answers. The machine token (opaque,
-   stored only as a hash, revocable per machine) is the only credential the
-   daemon keeps, and it authenticates the tunnel.
+   stored only as a hash) is the only credential the daemon keeps.
 
-Enrollment re-checks GitHub membership and the pool's team limit at that
-moment, caps machines per person per pool, and accepts Apple Silicon macOS
-only. A person's machines are revoked when GitHub says they left.
+**A machine belongs to a person and can serve several organizations.** Each
+pool is authorized separately (`machine_pool`): GitHub membership and that
+pool's team limit are checked when it is added, and there is a cap per person
+per pool. A machine already running can be added to another of its owner's
+pools from the dashboard; the daemon asks `GET /api/machines/me` on a timer
+and opens or closes tunnels to match, so nothing is reinstalled. Leaving an
+organization on GitHub removes that person's machines from that pool only.
+The machine's owner can retire it everywhere; an organization owner can
+remove it from their own pool.
 
-A separate machine token means a session expiry never takes a machine offline,
-and removing a person revokes exactly their machines.
+Apple Silicon macOS only.
 
 **Passwords.** Enabled on localhost only, for seeded users and the smoke test.
 
@@ -223,8 +227,11 @@ repositories by default. That is the right default for a private pool.
 
 ### Durable Objects
 
-**`Pool`**, one per organization. Holds one hibernatable WebSocket per machine,
-their presence, and free capacity by size. Single-threaded, so two jobs cannot
+**`Pool`**, one per organization. Holds one hibernatable WebSocket per machine
+serving it, their presence, and free capacity by size. A machine serving three
+organizations holds three tunnels, one to each object, and keeps a single job
+slot between them: when two pools offer it a job at once, it takes the first
+and declines the second, which stays queued at GitHub for another machine. Single-threaded, so two jobs cannot
 be handed the same machine. Its SQLite holds only live state; anything worth
 querying is written through to D1.
 
@@ -254,8 +261,9 @@ scale set client in a Cloudflare Container fronted by the same object.
 
 ### Tunnel
 
-`wss://connect.<domain>/v1/tunnel`, machine token in the `Authorization`
-header, one outbound connection, JSON messages defined in `packages/protocol`.
+`wss://connect.<domain>/v1/tunnel?pool=<organization>`, machine token in the
+`Authorization` header, outbound only, one connection per pool served, JSON
+messages defined in `packages/protocol`.
 
 | Direction      | Messages                                                                   |
 | -------------- | -------------------------------------------------------------------------- |
@@ -323,7 +331,8 @@ Better Auth tables (`user`, `session`, `account`, `verification`,
 | `github_installation` | installation ID, account ID + login, organization ID, status, permission set                                                                                          |
 | `pool_settings`       | organization ID, allowed team slugs, earnings destination (`org` or `developer`), public overflow                                                                     |
 | `scale_set`           | organization ID, name, vCPUs, GitHub scale set ID                                                                                                                     |
-| `machine`             | organization ID, user ID, name, model, cores, memory, speed score, token hash, status, last seen, daemon version                                                      |
+| `machine`             | user ID, name, model, cores, memory, speed score, token hash, status, daemon version                                                                                  |
+| `machine_pool`        | machine ID, organization ID, status, presence, last seen                                                                                                              |
 | `job`                 | organization ID, scale set, repo, run ID, job ID, runner name, machine ID, vCPUs, speed score, rate, queued/started/completed, result, compute units, amount, receipt |
 | `ledger_entry`        | account (org, user, or treasury), kind (`grant`, `purchase`, `charge`, `earning`, `tax`), amount, job ID                                                              |
 | `webhook_delivery`    | GitHub delivery ID, for dedupe                                                                                                                                        |

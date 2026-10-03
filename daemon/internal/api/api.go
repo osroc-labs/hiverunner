@@ -46,7 +46,8 @@ type Pool struct {
 	Name string `json:"name"`
 }
 
-// ChoosePoolError means the person is in several pools and must pick one.
+// ChoosePoolError means the person is in several pools and must say which of
+// them this machine should serve.
 type ChoosePoolError struct{ Pools []Pool }
 
 func (e *ChoosePoolError) Error() string { return "choose a pool" }
@@ -69,24 +70,46 @@ func (e *Error) Error() string {
 
 // Machine is what enrolling asks about this computer.
 type Machine struct {
-	OrganizationID string  `json:"organizationId,omitempty"`
-	Name           string  `json:"name"`
-	Model          string  `json:"model"`
-	OS             string  `json:"os"`
-	Arch           string  `json:"arch"`
-	Cores          int     `json:"cores"`
-	MemoryBytes    int64   `json:"memoryBytes"`
-	DaemonVersion  string  `json:"daemonVersion"`
-	SpeedScore     float64 `json:"speedScore"`
+	// OrganizationIDs are the pools to serve. Empty lets the server choose,
+	// which it can only do for someone in exactly one pool.
+	OrganizationIDs []string `json:"organizationIds,omitempty"`
+	Name            string   `json:"name"`
+	Model           string   `json:"model"`
+	OS              string   `json:"os"`
+	Arch            string   `json:"arch"`
+	Cores           int      `json:"cores"`
+	MemoryBytes     int64    `json:"memoryBytes"`
+	DaemonVersion   string   `json:"daemonVersion"`
+	SpeedScore      float64  `json:"speedScore"`
 }
 
-// Enrollment is the server's answer: who this machine now is.
-type Enrollment struct {
-	MachineID      string `json:"machineId"`
-	OrganizationID string `json:"organizationId"`
-	Token          string `json:"token"`
-	TunnelURL      string `json:"tunnelUrl"`
+// Refused is a pool the machine asked to serve and may not, with the reason.
+type Refused struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Message string `json:"message"`
 }
+
+// Enrollment is the server's answer: who this machine now is, and which of
+// the pools it asked for it was authorized to serve.
+type Enrollment struct {
+	MachineID string    `json:"machineId"`
+	Token     string    `json:"token"`
+	Pools     []Pool    `json:"pools"`
+	Refused   []Refused `json:"refused"`
+}
+
+// Assignment is what a running daemon should be connected to right now.
+type Assignment struct {
+	MachineID string `json:"machineId"`
+	// TunnelURL is the coordinator's endpoint; each pool is a `pool` query
+	// parameter on it.
+	TunnelURL string `json:"tunnelUrl"`
+	Pools     []Pool `json:"pools"`
+}
+
+// ErrUnknownMachine means the machine token is no longer accepted at all.
+var ErrUnknownMachine = errors.New("this machine is no longer enrolled; run `hived login`")
 
 func (c *Client) post(ctx context.Context, path, bearer string, body, out any) (int, []byte, error) {
 	encoded, err := json.Marshal(body)
@@ -218,7 +241,7 @@ func (c *Client) Enroll(ctx context.Context, token string, machine Machine) (Enr
 	if status >= 300 {
 		return Enrollment{}, serverError(status, raw)
 	}
-	if enrollment.Token == "" || enrollment.TunnelURL == "" {
+	if enrollment.Token == "" || len(enrollment.Pools) == 0 {
 		return Enrollment{}, errors.New("server did not return a machine token")
 	}
 	return enrollment, nil
@@ -245,4 +268,37 @@ func serverError(status int, raw []byte) error {
 		message = fmt.Sprintf("the server answered %d", status)
 	}
 	return &Error{Status: status, Code: body.Code, Message: message, Fields: body.Fields}
+}
+
+// Me asks which pools this machine serves. A daemon polls it: that is how it
+// learns it was added to a pool from the dashboard, or dropped from one.
+func (c *Client) Me(ctx context.Context, machineToken string) (Assignment, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Server+"/api/machines/me", nil)
+	if err != nil {
+		return Assignment{}, err
+	}
+	request.Header.Set("Authorization", "Bearer "+machineToken)
+	response, err := c.HTTP.Do(request)
+	if err != nil {
+		return Assignment{}, err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return Assignment{}, err
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		return Assignment{}, ErrUnknownMachine
+	}
+	if response.StatusCode >= 300 {
+		return Assignment{}, serverError(response.StatusCode, raw)
+	}
+	var assignment Assignment
+	if err := json.Unmarshal(raw, &assignment); err != nil {
+		return Assignment{}, fmt.Errorf("unexpected response from /api/machines/me: %w", err)
+	}
+	if assignment.TunnelURL == "" {
+		return Assignment{}, errors.New("server did not say where the coordinator is")
+	}
+	return assignment, nil
 }

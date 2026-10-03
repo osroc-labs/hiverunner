@@ -75,10 +75,14 @@ try {
       "INSERT INTO organization (id,name,slug,created_at) VALUES ('gh-501','acme','gh-501',0);",
       "INSERT INTO github_installation (account_id,installation_id,organization_id,account_login,account_type,repository_selection,status,created_at,updated_at) VALUES (501,9001,'gh-501','acme','Organization','all','active',0,0);",
       "INSERT INTO user (id,name,email,email_verified,created_at,updated_at) VALUES ('ada','Ada','ada@example.test',1,0,0);",
-      ...Object.entries(tokens).map(
-        ([id, token], i) =>
-          `INSERT INTO machine (id,organization_id,user_id,name,model,os,arch,cores,memory_bytes,speed_score,daemon_version,token_hash,created_at) VALUES ('${id}','gh-501','ada','Mac ${id}','Mac15,9','darwin','arm64',12,1,${1 + i},'0.0.0','${hash(token)}',0);`
-      ),
+      "INSERT INTO organization (id,name,slug,created_at) VALUES ('gh-502','globex','gh-502',0);",
+      "INSERT INTO github_installation (account_id,installation_id,organization_id,account_login,account_type,repository_selection,status,created_at,updated_at) VALUES (502,9002,'gh-502','globex','Organization','all','active',0,0);",
+      ...Object.entries(tokens).flatMap(([id, token], i) => [
+        `INSERT INTO machine (id,user_id,name,model,os,arch,cores,memory_bytes,speed_score,daemon_version,token_hash,created_at) VALUES ('${id}','ada','Mac ${id}','Mac15,9','darwin','arm64',12,1,${1 + i},'0.0.0','${hash(token)}',0);`,
+        `INSERT INTO machine_pool (machine_id,organization_id,created_at) VALUES ('${id}','gh-501',0);`,
+      ]),
+      // Machine a also serves a second organization.
+      "INSERT INTO machine_pool (machine_id,organization_id,created_at) VALUES ('a','gh-502',0);",
     ].join("\n")
   )
   if (
@@ -131,10 +135,13 @@ try {
   if (!ready) throw new Error("Coordinator did not become healthy")
 
   /** A daemon's end of the tunnel, with its frames queued for the test. */
-  async function connect(token) {
-    const socket = new WebSocket(`ws://localhost:${port}/v1/tunnel`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+  async function connect(token, pool = "gh-501") {
+    const socket = new WebSocket(
+      `ws://localhost:${port}/v1/tunnel?pool=${pool}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    )
     const frames = []
     const waiting = []
     let closed
@@ -168,8 +175,10 @@ try {
       close: () => socket.close(),
     }
   }
-  const presence = (id) =>
-    sql(`select presence from machine where id='${id}'`)[0].presence
+  const presence = (id, pool = "gh-501") =>
+    sql(
+      `select presence from machine_pool where machine_id='${id}' and organization_id='${pool}'`
+    )[0].presence
   async function eventually(check, message) {
     for (let i = 0; i < 60; i++) {
       if (await check()) return
@@ -185,12 +194,12 @@ try {
   })
 
   /** The HTTP status a tunnel request gets, without completing an upgrade. */
-  const tunnelStatus = (headers) =>
+  const tunnelStatus = (headers, pool = "gh-501") =>
     new Promise((resolve, reject) => {
       const request = httpRequest({
         port,
         host: "localhost",
-        path: "/v1/tunnel",
+        path: `/v1/tunnel?pool=${pool}`,
         headers: {
           Connection: "Upgrade",
           Upgrade: "websocket",
@@ -214,6 +223,11 @@ try {
   assert.equal((await fetch(`${origin}/v1/tunnel`)).status, 426)
   assert.equal(await tunnelStatus({}), 401)
   assert.equal(await tunnelStatus({ Authorization: "Bearer hwm_nope" }), 401)
+  // A valid machine, but not one that serves the pool it asks for.
+  assert.equal(
+    await tunnelStatus({ Authorization: `Bearer ${tokens.b}` }, "gh-502"),
+    401
+  )
 
   const a = await connect(tokens.a)
   assert.deepEqual(await a.next(), {
@@ -269,7 +283,7 @@ try {
   await b2.next()
   b2.send(hello())
   await eventually(() => presence("b") === "online", "b is online")
-  sql("update machine set status='revoked' where id='b'")
+  sql("update machine_pool set status='revoked' where machine_id='b'")
   assert.equal(await b2.closedWith(), 4001)
   await eventually(
     () => presence("b") === "offline",
@@ -279,8 +293,26 @@ try {
   assert.equal(await tunnelStatus({ Authorization: `Bearer ${tokens.b}` }), 401)
   console.log("Reconnect, version refusal and revocation passed.")
 
+  // One machine, two organizations: a tunnel and a presence for each.
+  const g = await connect(tokens.a, "gh-502")
+  assert.equal((await g.next()).type, "welcome")
+  g.send(hello("busy"))
+  await eventually(
+    () => presence("a", "gh-502") === "busy",
+    "globex sees it busy"
+  )
+  assert.equal(presence("a"), "online", "acme's view is its own")
+  // Removed from one pool: that tunnel closes, the other is untouched.
+  sql(
+    "update machine_pool set status='revoked' where machine_id='a' and organization_id='gh-502'"
+  )
+  assert.equal(await g.closedWith(), 4001)
+  await delay(1500)
+  assert.equal(presence("a"), "online")
+  console.log("One machine serving two pools passed.")
+
   // Uninstalling the App silences the whole pool.
-  sql("update github_installation set status='removed'")
+  sql("update github_installation set status='removed' where account_id=501")
   assert.equal(await a2.closedWith(), 4001)
   await eventually(() => presence("a") === "offline", "the pool empties")
   console.log("Installation removal passed.")

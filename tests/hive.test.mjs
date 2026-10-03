@@ -18,8 +18,13 @@ import {
   validatePoolSettings,
 } from "../packages/db/src/settings.ts"
 import {
+  addMachineToPool,
   authenticateMachine,
+  authenticateMachineForPool,
   enrollMachine,
+  listMachinePools,
+  listMachines,
+  removeMachineFromPool,
   revokeMachine,
   MAX_MACHINES_PER_PERSON,
 } from "../packages/db/src/machines.ts"
@@ -388,36 +393,49 @@ const mac = {
   memoryBytes: 36 * 2 ** 30,
   daemonVersion: "0.1.0",
 }
+const globex = {
+  id: 9002,
+  account: { id: 502, login: "globex", type: "Organization" },
+  suspended: false,
+  repositorySelection: "all",
+}
+const globexId = organizationIdFor(502)
+const viewer = { id: 1, login: "ada" }
+const sync = { userId: "ada", userToken: "token" }
+const inAcme = () =>
+  github({ viewer, installations: [9001], roles: { "acme/ada": "member" } })
+const inBoth = () =>
+  github({
+    viewer,
+    installations: [9001, 9002],
+    roles: { "acme/ada": "member", "globex/ada": "member" },
+  })
 
 test("machines enroll once, authenticate by token, and stop when revoked", async (t) => {
   const { db, sqlite } = database(t)
   await provisionInstallation(db, acme)
   person(sqlite, "ada", 1)
-  const viewer = { id: 1, login: "ada" }
-  const asMember = github({
-    viewer,
-    installations: [9001],
-    roles: { "acme/ada": "member" },
-  })
   const input = {
     userId: "ada",
-    organizationId: orgId,
+    organizationIds: [orgId],
     facts: { ...mac, speedScore: 99 },
   }
 
   // Not a member yet: nothing to enroll into.
-  assert.equal((await enrollMachine(db, asMember, input)).code, "FORBIDDEN")
-  await syncMemberships(db, asMember, { userId: "ada", userToken: "token" })
+  assert.equal((await enrollMachine(db, inAcme(), input)).code, "FORBIDDEN")
+  assert.equal(sqlite.prepare("select count(*) n from machine").get().n, 0)
+  await syncMemberships(db, inAcme(), sync)
 
-  const bad = await enrollMachine(db, asMember, {
+  const bad = await enrollMachine(db, inAcme(), {
     ...input,
     facts: { ...mac, os: "linux", arch: "x64", cores: 0 },
   })
   assert.equal(bad.code, "INVALID_INPUT")
   assert.ok(bad.fields.os && bad.fields.cores)
 
-  const enrolled = await enrollMachine(db, asMember, input)
+  const enrolled = await enrollMachine(db, inAcme(), input)
   assert.equal(enrolled.ok, true)
+  assert.deepEqual(enrolled.joined, [orgId])
   const row = sqlite.prepare("select * from machine").get()
   assert.equal(row.speed_score, 8, "a claimed score is clamped")
   assert.ok(
@@ -425,43 +443,137 @@ test("machines enroll once, authenticate by token, and stop when revoked", async
     "only the hash is stored"
   )
 
+  const forAcme = (token = enrolled.token) =>
+    authenticateMachineForPool(db, token, orgId)
+  assert.equal((await forAcme()).id, enrolled.machineId)
+  assert.equal(await forAcme(`${enrolled.token}x`), null)
+  assert.equal(await forAcme("not-a-machine-token"), null)
   assert.equal(
-    (await authenticateMachine(db, enrolled.token)).id,
-    enrolled.machineId
+    await authenticateMachineForPool(db, enrolled.token, "gh-999"),
+    null
   )
-  assert.equal(await authenticateMachine(db, `${enrolled.token}x`), null)
-  assert.equal(await authenticateMachine(db, "not-a-machine-token"), null)
 
-  // A suspended installation silences its machines without revoking them.
+  // A suspended installation silences its pool without revoking anything.
   await provisionInstallation(db, { ...acme, suspended: true })
-  assert.equal(await authenticateMachine(db, enrolled.token), null)
-  await provisionInstallation(db, acme)
+  assert.equal(await forAcme(), null)
   assert.ok(await authenticateMachine(db, enrolled.token))
+  await provisionInstallation(db, acme)
+  assert.ok(await forAcme())
 
   await revokeMachine(db, enrolled.machineId)
+  assert.equal(await forAcme(), null)
   assert.equal(await authenticateMachine(db, enrolled.token), null)
 })
 
-test("leaving the organization revokes that person's machines", async (t) => {
+test("one machine serves several organizations, each authorized separately", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  await provisionInstallation(db, globex)
+  person(sqlite, "ada", 1)
+  person(sqlite, "bob", 2)
+  await syncMemberships(db, inAcme(), sync)
+
+  // She asks for both pools but belongs to one: she gets that one, and is
+  // told about the other.
+  const enrolled = await enrollMachine(db, inAcme(), {
+    userId: "ada",
+    organizationIds: [orgId, globexId],
+    facts: mac,
+  })
+  assert.deepEqual(enrolled.joined, [orgId])
+  assert.deepEqual(
+    enrolled.refused.map((refusal) => refusal.organizationId),
+    [globexId]
+  )
+  const pools = async () =>
+    (await listMachinePools(db, enrolled.machineId)).map((pool) => pool.name)
+  assert.deepEqual(await pools(), ["acme"])
+  assert.equal(
+    await authenticateMachineForPool(db, enrolled.token, globexId),
+    null
+  )
+
+  // Later she joins globex on GitHub, and adds the same machine from the
+  // dashboard: same token, nothing reinstalled.
+  const add = {
+    userId: "ada",
+    machineId: enrolled.machineId,
+    organizationId: globexId,
+  }
+  assert.equal((await addMachineToPool(db, inAcme(), add)).code, "FORBIDDEN")
+  await syncMemberships(db, inBoth(), sync)
+  assert.equal(await addMachineToPool(db, inBoth(), add), null)
+  assert.equal(
+    await addMachineToPool(db, inBoth(), add),
+    null,
+    "adding twice is harmless"
+  )
+  assert.deepEqual((await pools()).sort(), ["acme", "globex"])
+  assert.ok(await authenticateMachineForPool(db, enrolled.token, globexId))
+  assert.equal((await listMachines(db, globexId)).length, 1)
+
+  // Nobody else can volunteer her machine.
+  assert.equal(
+    (await addMachineToPool(db, inBoth(), { ...add, userId: "bob" })).code,
+    "NOT_FOUND"
+  )
+
+  // Leaving acme takes the machine out of acme only.
+  await syncMemberships(
+    db,
+    github({
+      viewer,
+      installations: [9001, 9002],
+      roles: { "globex/ada": "member" },
+    }),
+    sync
+  )
+  assert.equal(
+    await authenticateMachineForPool(db, enrolled.token, orgId),
+    null
+  )
+  assert.ok(await authenticateMachineForPool(db, enrolled.token, globexId))
+  assert.deepEqual(await pools(), ["globex"])
+
+  // Rejoining acme and adding it back reuses the row.
+  await syncMemberships(db, inBoth(), sync)
+  assert.equal(
+    await addMachineToPool(db, inBoth(), { ...add, organizationId: orgId }),
+    null
+  )
+  assert.ok(await authenticateMachineForPool(db, enrolled.token, orgId))
+
+  // An owner can drop it from their pool without touching the other.
+  assert.equal(
+    await removeMachineFromPool(db, {
+      machineId: enrolled.machineId,
+      organizationId: globexId,
+    }),
+    true
+  )
+  assert.equal(
+    await removeMachineFromPool(db, {
+      machineId: enrolled.machineId,
+      organizationId: globexId,
+    }),
+    false
+  )
+  assert.deepEqual(await pools(), ["acme"])
+})
+
+test("leaving the organization takes that person's machines out of its pool", async (t) => {
   const { db, sqlite } = database(t)
   await provisionInstallation(db, acme)
   person(sqlite, "ada", 1)
-  const viewer = { id: 1, login: "ada" }
-  const asMember = github({
-    viewer,
-    installations: [9001],
-    roles: { "acme/ada": "member" },
-  })
-  const sync = { userId: "ada", userToken: "token" }
-  await syncMemberships(db, asMember, sync)
-  const input = { userId: "ada", organizationId: orgId, facts: mac }
+  await syncMemberships(db, inAcme(), sync)
+  const input = { userId: "ada", organizationIds: [orgId], facts: mac }
 
-  const first = await enrollMachine(db, asMember, input)
+  const first = await enrollMachine(db, inAcme(), input)
   await syncMemberships(db, github({ viewer, installations: [9001] }), sync)
-  assert.equal(await authenticateMachine(db, first.token), null)
+  assert.equal(await authenticateMachineForPool(db, first.token, orgId), null)
 
-  await syncMemberships(db, asMember, sync)
-  const second = await enrollMachine(db, asMember, input)
+  await syncMemberships(db, inAcme(), sync)
+  const second = await enrollMachine(db, inAcme(), input)
   await applyGitHubEvent(db, {
     deliveryId: "bye",
     event: "organization",
@@ -471,22 +583,16 @@ test("leaving the organization revokes that person's machines", async (t) => {
       membership: { user: { id: 1 } },
     },
   })
-  assert.equal(await authenticateMachine(db, second.token), null)
+  assert.equal(await authenticateMachineForPool(db, second.token, orgId), null)
 })
 
 test("a person cannot fill a pool with machines", async (t) => {
   const { db, sqlite } = database(t)
   await provisionInstallation(db, acme)
   person(sqlite, "ada", 1)
-  const viewer = { id: 1, login: "ada" }
-  const asMember = github({
-    viewer,
-    installations: [9001],
-    roles: { "acme/ada": "member" },
-  })
-  await syncMemberships(db, asMember, { userId: "ada", userToken: "token" })
-  const input = { userId: "ada", organizationId: orgId, facts: mac }
+  await syncMemberships(db, inAcme(), sync)
+  const input = { userId: "ada", organizationIds: [orgId], facts: mac }
   for (let i = 0; i < MAX_MACHINES_PER_PERSON; i++)
-    assert.equal((await enrollMachine(db, asMember, input)).ok, true)
-  assert.equal((await enrollMachine(db, asMember, input)).code, "CONFLICT")
+    assert.equal((await enrollMachine(db, inAcme(), input)).ok, true)
+  assert.equal((await enrollMachine(db, inAcme(), input)).code, "CONFLICT")
 })
