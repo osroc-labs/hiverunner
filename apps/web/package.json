@@ -21,6 +21,7 @@
     "@workspace/auth": "workspace:*",
     "@workspace/email": "workspace:*",
     "@workspace/mcp": "workspace:*",
+    "@workspace/pricing": "workspace:*",
     "@workspace/stripe": "workspace:*",
     "@workspace/ui": "workspace:*",
     "@workspace/ui-data": "workspace:*",

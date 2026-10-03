@@ -9,6 +9,7 @@
     "paths": {
       "@/*": ["./*"],
       "@workspace/mcp": ["../../packages/mcp/src/index.ts"],
+      "@workspace/pricing": ["../../packages/pricing/src/index.ts"],
       "@workspace/email": ["../../packages/email/src/index.ts"],
       "@workspace/ui/globals.css": ["../../packages/ui/src/styles/globals.css"],
       "@workspace/ui/*": ["../../packages/ui/src/*"],

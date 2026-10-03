@@ -1,0 +1,19 @@
+{
+  "name": "@workspace/pricing",
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "Compute-unit math, the price floor, and the comparison rates shown on the site.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

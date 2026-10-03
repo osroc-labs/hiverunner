@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     "@workspace/auth",
     "@workspace/mcp",
+    "@workspace/pricing",
     "@workspace/email",
     "@workspace/stripe",
     "@workspace/ui",

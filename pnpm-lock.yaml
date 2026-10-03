@@ -262,6 +262,9 @@ importers:
       '@workspace/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
+      '@workspace/pricing':
+        specifier: workspace:*
+        version: link:../../packages/pricing
       '@workspace/stripe':
         specifier: workspace:*
         version: link:../../packages/stripe
@@ -418,6 +421,15 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.2
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  packages/pricing:
+    devDependencies:
       '@workspace/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
