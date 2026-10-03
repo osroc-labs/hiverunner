@@ -39,7 +39,12 @@ export default async function MachinesPage() {
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
           >
             <div>
-              <p className="font-medium">{machine.name}</p>
+              <p className="font-medium">
+                {machine.name}{" "}
+                <span className="ml-2 rounded-full border px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                  {machine.presence}
+                </span>
+              </p>
               <p className="text-sm text-muted-foreground">
                 {machine.model} · {machine.cores} cores ·{" "}
                 {gib(machine.memoryBytes)} · speed{" "}

@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a2876aa9-d9ae-4bc0-9731-dae63718ec35",
+  "id": "e58af38e-69dd-4dca-843e-e6743c7d1009",
   "prevIds": ["2537376d-71b7-473b-8c5c-d4ffc1492254"],
   "ddl": [
     {
@@ -2563,6 +2563,16 @@
       "default": "'active'",
       "generated": null,
       "name": "status",
+      "entityType": "columns",
+      "table": "machine"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'offline'",
+      "generated": null,
+      "name": "presence",
       "entityType": "columns",
       "table": "machine"
     },

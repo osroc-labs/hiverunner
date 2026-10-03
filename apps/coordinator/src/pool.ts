@@ -1,0 +1,231 @@
+import { DurableObject } from "cloudflare:workers"
+import { eq, inArray } from "drizzle-orm"
+import { drizzle } from "drizzle-orm/d1"
+import { githubInstallation, machine } from "@workspace/db/schema"
+import {
+  CLOSE,
+  PING,
+  PONG,
+  PROTOCOL_VERSION,
+  parseDaemonMessage,
+  type CoordinatorMessage,
+  type Presence,
+} from "@workspace/protocol"
+
+import { pickMachine, type Candidate } from "./schedule"
+
+/** Rides along with each socket, and survives the object hibernating. */
+type Attachment = Candidate & { greeted: boolean }
+
+export type Assignment = {
+  assignmentId: string
+  label: string
+  vcpus: number
+  jitConfig: string
+  timeoutMinutes: number
+}
+
+/**
+ * One organization's pool: a socket per connected machine, and the only
+ * place a machine is chosen for a job. A Durable Object runs one event at a
+ * time, so two jobs cannot be handed the same machine.
+ *
+ * Sockets use the hibernation API. An idle pool with fifty laptops connected
+ * costs nothing: the object is evicted and the sockets stay open.
+ *
+ * Nothing durable lives here. Who is connected is the sockets themselves;
+ * what the dashboard shows is written through to D1.
+ */
+export class Pool extends DurableObject<CoordinatorEnv> {
+  private readonly db
+
+  constructor(ctx: DurableObjectState, env: CoordinatorEnv) {
+    super(ctx, env)
+    this.db = drizzle(env.DB)
+    // Keepalives are answered at the edge without waking the object.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG))
+  }
+
+  /** The Worker has already authenticated the machine token. */
+  async fetch(request: Request) {
+    const machineId = request.headers.get("x-hive-machine")
+    const cores = Number(request.headers.get("x-hive-cores"))
+    const speedScore = Number(request.headers.get("x-hive-speed"))
+    if (!machineId || request.headers.get("upgrade") !== "websocket")
+      return new Response("Expected a tunnel", { status: 400 })
+
+    // One connection per machine. A daemon that reconnects after a network
+    // change wins over the half-dead socket it left behind.
+    for (const old of this.ctx.getWebSockets(machineId))
+      old.close(CLOSE.REPLACED, "Replaced by a newer connection")
+
+    const { 0: client, 1: server } = new WebSocketPair()
+    this.ctx.acceptWebSocket(server, [machineId])
+    this.attach(server, {
+      machineId,
+      cores,
+      speedScore,
+      presence: "offline",
+      greeted: false,
+    })
+    this.send(server, {
+      type: "welcome",
+      machineId,
+      protocol: PROTOCOL_VERSION,
+    })
+    await this.scheduleSweep()
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  async webSocketMessage(socket: WebSocket, raw: string | ArrayBuffer) {
+    const message = typeof raw === "string" ? parseDaemonMessage(raw) : null
+    if (!message)
+      return this.send(socket, {
+        type: "error",
+        message: "Unrecognized message",
+      })
+    const state = this.attachment(socket)
+
+    if (message.type === "hello") {
+      if (message.protocol !== PROTOCOL_VERSION)
+        return socket.close(CLOSE.UNSUPPORTED, "Update the HiveWorker daemon")
+      state.greeted = true
+      await this.db
+        .update(machine)
+        .set({ daemonVersion: message.daemonVersion })
+        .where(eq(machine.id, state.machineId))
+      return this.setPresence(socket, state, message.presence)
+    }
+    if (!state.greeted)
+      return this.send(socket, { type: "error", message: "Say hello first" })
+
+    if (message.type === "presence")
+      return this.setPresence(socket, state, message.presence)
+    if (message.type === "job.accepted") {
+      if (message.assignmentId !== state.assignmentId) return
+      return this.setPresence(socket, state, "busy")
+    }
+    // Rejected or exited: the machine is free again. What it is free *for*
+    // is the daemon's to say, in its next presence message.
+    if (message.assignmentId === state.assignmentId) {
+      state.assignmentId = undefined
+      this.attach(socket, state)
+    }
+  }
+
+  async webSocketClose(socket: WebSocket) {
+    await this.gone(socket)
+  }
+
+  async webSocketError(socket: WebSocket) {
+    await this.gone(socket)
+  }
+
+  /**
+   * Offers a job to the best free machine. Returns the machine, or null when
+   * nothing in the pool can take it, in which case the caller leaves the job
+   * queued at GitHub.
+   */
+  async assign(assignment: Assignment) {
+    const sockets = this.ctx.getWebSockets()
+    const chosen = pickMachine(
+      sockets.map((socket) => this.attachment(socket)),
+      assignment.vcpus
+    )
+    if (!chosen) return null
+    const socket = sockets.find(
+      (candidate) => this.attachment(candidate).machineId === chosen.machineId
+    )!
+    const state = this.attachment(socket)
+    state.assignmentId = assignment.assignmentId
+    this.attach(socket, state)
+    this.send(socket, { type: "job.assign", ...assignment })
+    return { machineId: chosen.machineId, speedScore: chosen.speedScore }
+  }
+
+  /**
+   * Revocation is a row changing in D1, written by the web app. Rather than
+   * have every writer remember to tell the pool, the pool asks: while anyone
+   * is connected, it re-checks them against D1 on a timer.
+   */
+  async alarm() {
+    const sockets = this.ctx.getWebSockets()
+    if (!sockets.length) return
+    const ids = sockets.map((socket) => this.attachment(socket).machineId)
+    const active = new Set<string>()
+    for (let i = 0; i < ids.length; i += 50) {
+      const rows = await this.db
+        .select({
+          id: machine.id,
+          status: machine.status,
+          installation: githubInstallation.status,
+        })
+        .from(machine)
+        .innerJoin(
+          githubInstallation,
+          eq(githubInstallation.organizationId, machine.organizationId)
+        )
+        .where(inArray(machine.id, ids.slice(i, i + 50)))
+      for (const row of rows)
+        if (row.status === "active" && row.installation === "active")
+          active.add(row.id)
+    }
+    const now = new Date()
+    const seen: string[] = []
+    for (const socket of sockets) {
+      const state = this.attachment(socket)
+      if (active.has(state.machineId)) seen.push(state.machineId)
+      else socket.close(CLOSE.REVOKED, "This machine is no longer in the pool")
+    }
+    for (let i = 0; i < seen.length; i += 50)
+      await this.db
+        .update(machine)
+        .set({ lastSeenAt: now })
+        .where(inArray(machine.id, seen.slice(i, i + 50)))
+    await this.scheduleSweep()
+  }
+
+  private async setPresence(
+    socket: WebSocket,
+    state: Attachment,
+    presence: Presence
+  ) {
+    state.presence = presence
+    this.attach(socket, state)
+    await this.db
+      .update(machine)
+      .set({ presence, lastSeenAt: new Date() })
+      .where(eq(machine.id, state.machineId))
+  }
+
+  private async gone(socket: WebSocket) {
+    const state = this.attachment(socket)
+    // A replaced socket closing must not mark its successor offline.
+    const successor = this.ctx
+      .getWebSockets(state.machineId)
+      .some((other) => other !== socket)
+    if (!successor)
+      await this.db
+        .update(machine)
+        .set({ presence: "offline", lastSeenAt: new Date() })
+        .where(eq(machine.id, state.machineId))
+  }
+
+  private async scheduleSweep() {
+    if ((await this.ctx.storage.getAlarm()) !== null) return
+    const seconds = Math.max(Number(this.env.SWEEP_SECONDS) || 60, 1)
+    await this.ctx.storage.setAlarm(Date.now() + seconds * 1000)
+  }
+
+  private attachment(socket: WebSocket) {
+    return socket.deserializeAttachment() as Attachment
+  }
+
+  private attach(socket: WebSocket, state: Attachment) {
+    socket.serializeAttachment(state)
+  }
+
+  private send(socket: WebSocket, message: CoordinatorMessage) {
+    socket.send(JSON.stringify(message))
+  }
+}

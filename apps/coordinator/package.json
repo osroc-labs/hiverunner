@@ -1,0 +1,23 @@
+{
+  "name": "coordinator",
+  "version": "0.0.1",
+  "license": "AGPL-3.0-only",
+  "description": "Holds machine tunnels and scale set sessions. Never in a job's data path.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --port 8788 --persist-to ../web/.wrangler/state",
+    "cf:typegen": "wrangler types --env-interface CoordinatorEnv worker-env.d.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "@workspace/protocol": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5-5935859"
+  },
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "catalog:",
+    "wrangler": "4.135.0"
+  }
+}

@@ -25,6 +25,7 @@ CREATE TABLE `machine` (
 	`daemon_version` text NOT NULL,
 	`token_hash` text NOT NULL,
 	`status` text DEFAULT 'active' NOT NULL,
+	`presence` text DEFAULT 'offline' NOT NULL,
 	`last_seen_at` integer,
 	`created_at` integer NOT NULL,
 	`revoked_at` integer,

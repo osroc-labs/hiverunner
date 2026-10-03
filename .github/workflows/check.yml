@@ -19,3 +19,5 @@ jobs:
       - run: mise run check
       - name: Test the built Worker with isolated local data and simulated mail
         run: node tests/run-worker-smoke.mjs
+      - name: Drive the coordinator as a daemon would
+        run: node tests/run-coordinator-smoke.mjs

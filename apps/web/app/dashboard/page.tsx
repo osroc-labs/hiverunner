@@ -83,9 +83,14 @@ export default async function DashboardPage({
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
             {machines.length ? (
-              <Link className="underline" href="/machines">
-                See the pool
-              </Link>
+              <>
+                {machines.filter((m) => m.presence === "online").length} ready
+                for jobs, {machines.filter((m) => m.presence === "busy").length}{" "}
+                running one.{" "}
+                <Link className="underline" href="/machines">
+                  See the pool
+                </Link>
+              </>
             ) : (
               <>
                 No machines in this pool yet.{" "}

@@ -1,0 +1,19 @@
+{
+  "name": "@workspace/protocol",
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "The tunnel protocol between the daemon and the coordinator.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

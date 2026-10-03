@@ -100,6 +100,15 @@ export const machine = sqliteTable(
     status: text("status", { enum: ["active", "revoked"] })
       .notNull()
       .default("active"),
+    /**
+     * Last state the coordinator saw, written through from the pool's
+     * Durable Object so the dashboard can read it without waking the object.
+     */
+    presence: text("presence", {
+      enum: ["offline", "paused", "online", "busy", "draining"],
+    })
+      .notNull()
+      .default("offline"),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
