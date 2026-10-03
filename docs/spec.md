@@ -81,9 +81,11 @@ Durable Objects. Marketing copy changes must not disconnect the fleet.
 
 `<domain>` is `hiveworkr.thecomputerplumbers.com` for now (staging:
 `hiveworkr-staging.thecomputerplumbers.com`); the product domain is undecided.
-While it is a subdomain, sibling hosts are flat (`hiveworkr-connect.…`,
-`hiveworkr-get.…`), not nested, because the zone's certificate covers only one
-level of subdomain. Hosts come from configuration, never from string-building,
+Sibling hosts nest under it (`connect.hiveworkr.…`, `get.hiveworkr.…`). That
+is two levels below the zone, which the zone's default certificate does not
+cover, so it relies on Advanced Certificate Manager for
+`*.hiveworkr.thecomputerplumbers.com`. **Verify** on the coordinator's first
+deploy. Hosts come from configuration, never from string-building,
 so the move to a real domain is a config change plus new GitHub App URLs. The
 daemon reads its coordinator host from the release manifest for the same reason.
 
