@@ -10,6 +10,7 @@ import {
 } from "@workspace/ui-shell/components/site-footer"
 import product from "@/config/product.json"
 import { HiveMark } from "./hive-mark"
+import { RouteLink } from "@/components/route-link"
 
 const COLUMNS = [
   {
@@ -62,7 +63,14 @@ export function MarketingFooter() {
             {column.links.map((link) => (
               <SiteFooterLink
                 key={link.href}
-                render={<Link href={link.href} />}
+                render={
+                  // A route handler that redirects to GitHub, not a page.
+                  link.href === "/install" ? (
+                    <RouteLink to="/install" />
+                  ) : (
+                    <Link href={link.href} />
+                  )
+                }
               >
                 {link.label}
               </SiteFooterLink>

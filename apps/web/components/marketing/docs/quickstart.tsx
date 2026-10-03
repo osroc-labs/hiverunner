@@ -3,6 +3,7 @@ import { RUNNER_SIZES } from "@workspace/pricing"
 import { Code, CodeBlock } from "../code"
 import { INSTALL_COMMAND } from "../site"
 import { WorkflowDiff } from "../workflow-diff"
+import { RouteLink } from "@/components/route-link"
 
 export function Quickstart() {
   return (
@@ -15,10 +16,10 @@ export function Quickstart() {
 
       <h2 id="install">1. Install the GitHub App</h2>
       <p>
-        Go to <Link href="/install">Install</Link> and choose your organization.
-        You need to be an organization owner. If you are not, GitHub sends the
-        request to the owners and the install completes when one of them
-        approves it.
+        Go to <RouteLink to="/install">Install</RouteLink> and choose your
+        organization. You need to be an organization owner. If you are not,
+        GitHub sends the request to the owners and the install completes when
+        one of them approves it.
       </p>
       <p>Installing creates three things:</p>
       <ul>

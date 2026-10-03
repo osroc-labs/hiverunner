@@ -11,6 +11,7 @@ import product from "@/config/product.json"
 import { HiveMark } from "./hive-mark"
 import { NavLink } from "./nav-link"
 import { MARKETING_NAV } from "./site"
+import { RouteLink } from "@/components/route-link"
 
 export function MarketingHeader() {
   return (
@@ -39,7 +40,7 @@ export function MarketingHeader() {
           >
             Sign in
           </Button>
-          <Button nativeButton={false} render={<Link href="/install" />}>
+          <Button nativeButton={false} render={<RouteLink to="/install" />}>
             Install
           </Button>
         </SiteHeaderActions>

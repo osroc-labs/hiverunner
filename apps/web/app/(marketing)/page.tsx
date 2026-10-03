@@ -13,6 +13,7 @@ import { IsolationDiagram } from "@/components/marketing/isolation-diagram"
 import { textLink } from "@/components/marketing/page-parts"
 import { INSTALL_COMMAND } from "@/components/marketing/site"
 import { WorkflowDiff } from "@/components/marketing/workflow-diff"
+import { RouteLink } from "@/components/route-link"
 
 export const metadata = {
   title: { absolute: "HiveWorker: GitHub Actions on your team's own Macs" },
@@ -54,7 +55,7 @@ export default function HomePage() {
                 nativeButton={false}
                 size="lg"
                 className="h-11 px-5 text-base"
-                render={<Link href="/install" />}
+                render={<RouteLink to="/install" />}
               >
                 Install the GitHub App
               </Button>
@@ -194,7 +195,7 @@ export default function HomePage() {
               nativeButton={false}
               size="lg"
               className="h-11 bg-primary-foreground px-5 text-base text-primary hover:bg-primary-foreground/85"
-              render={<Link href="/install" />}
+              render={<RouteLink to="/install" />}
             >
               Install the GitHub App
             </Button>
