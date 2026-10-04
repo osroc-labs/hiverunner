@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "hiveworker",
-      "database_id": "REPLACE_WITH_YOUR_PRODUCTION_D1_DATABASE_ID",
+      "database_id": "baef55aa-e1c6-4ddc-b9f9-0de634c15a45",
       "migrations_dir": "migrations",
       "migrations_pattern": "migrations/*/migration.sql",
     },
@@ -45,44 +45,6 @@
     "APP_URL": "https://hiveworkr.thecomputerplumbers.com",
     "COORDINATOR_URL": "wss://connect.hiveworkr.thecomputerplumbers.com/v1/tunnel",
     "EMAIL_FROM": "auth@thecomputerplumbers.com",
-  },
-  "env": {
-    "staging": {
-      "name": "hiveworker-staging",
-      "vars": {
-        "APP_URL": "https://hiveworkr-staging.thecomputerplumbers.com",
-        "COORDINATOR_URL": "wss://connect.hiveworkr-staging.thecomputerplumbers.com/v1/tunnel",
-        "EMAIL_FROM": "auth@thecomputerplumbers.com",
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "hiveworker-staging",
-          "database_id": "REPLACE_WITH_YOUR_STAGING_D1_DATABASE_ID",
-          "migrations_dir": "migrations",
-          "migrations_pattern": "migrations/*/migration.sql",
-        },
-      ],
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "APP_DATABASE",
-            "class_name": "AppDatabase",
-          },
-        ],
-      },
-      "send_email": [
-        {
-          "name": "EMAIL",
-        },
-      ],
-      "routes": [
-        {
-          "pattern": "hiveworkr-staging.thecomputerplumbers.com",
-          "custom_domain": true,
-        },
-      ],
-    },
   },
   "routes": [
     {

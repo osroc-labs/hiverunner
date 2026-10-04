@@ -113,12 +113,6 @@ if (environment === "local") {
   )
   const required = [
     "BETTER_AUTH_SECRET",
-    "GITHUB_APP_ID",
-    "GITHUB_APP_SLUG",
-    "GITHUB_APP_PRIVATE_KEY",
-    "GITHUB_WEBHOOK_SECRET",
-    "GITHUB_CLIENT_ID",
-    "GITHUB_CLIENT_SECRET",
     ...(product.features.billing
       ? [
           "STRIPE_SECRET_KEY",
@@ -135,5 +129,17 @@ if (environment === "local") {
       secrets.some((secret) => secret.name === name),
       name
     )
+  // Without the GitHub App the site still serves; sign-in and install say
+  // "not open yet". Reported, but not a reason to refuse a deploy.
+  for (const name of [
+    "GITHUB_APP_ID",
+    "GITHUB_APP_SLUG",
+    "GITHUB_APP_PRIVATE_KEY",
+    "GITHUB_WEBHOOK_SECRET",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+  ])
+    if (!secrets.some((secret) => secret.name === name))
+      console.log(`NOT SET ${name} (GitHub sign-in and install stay closed)`)
 }
 process.exitCode = failures ? 1 : 0

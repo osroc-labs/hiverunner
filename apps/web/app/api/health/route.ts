@@ -46,7 +46,8 @@ export async function GET() {
     emailFromConfigured: Boolean(env.EMAIL_FROM),
   }
 
-  // Which parts of the GitHub App are configured, never their values.
+  // Which parts of the GitHub App are configured, never their values. Not
+  // part of `ok`: without the App the site serves and sign-in is closed.
   const github = {
     app: Boolean(
       env.GITHUB_APP_ID &&
@@ -65,9 +66,6 @@ export async function GET() {
     durableObject.ok &&
     (local ||
       (auth.secretConfigured &&
-        github.app &&
-        github.signIn &&
-        github.installLink &&
         auth.emailBound &&
         auth.emailFromConfigured &&
         (!product.features.billing || billing.configured)))
