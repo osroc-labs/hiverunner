@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -22,7 +23,9 @@ import (
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/bench"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/pools"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -36,6 +39,7 @@ const usage = `hived, the HiveWorker daemon
   hived run         Connect to the pool and wait for jobs
   hived status      Show what this machine is enrolled as
   hived logout      Forget this machine's token
+  hived selftest    Boot a throwaway VM and report what it finds
   hived benchmark   Measure this machine's speed score
   hived version
 
@@ -60,6 +64,10 @@ func main() {
 		err = status()
 	case "logout":
 		err = config.Remove()
+	case "selftest":
+		err = selftest(ctx)
+	case "dev-job":
+		err = devJob(ctx, os.Args[2:])
 	case "benchmark":
 		err = benchmark(os.Args[2:])
 	case "version", "--version":
@@ -196,14 +204,158 @@ func run(ctx context.Context) error {
 	if seconds, err := strconv.Atoi(os.Getenv("HIVE_REFRESH_SECONDS")); err == nil && seconds > 0 {
 		refresh = time.Duration(seconds) * time.Second
 	}
+	// Everything started here is stopped, and waited for, before run
+	// returns: a job's VM, the warm VM, and their files on disk.
+	ctx, stop := context.WithCancel(ctx)
+	tended := make(chan struct{})
+	close(tended)
+	unlock := func() {}
+	defer func() {
+		stop()
+		<-tended
+		// Last: the work directory stays ours until every VM is gone, so a
+		// daemon started as this one exits cannot sweep one mid-teardown.
+		unlock()
+	}()
+
+	// Without a guest image the machine still connects and reports presence;
+	// it declines jobs and says why.
+	var runner jobs.Runner
+	if vmRunner, err := newRunner(log); err != nil {
+		log.Warn("this machine cannot run jobs yet", "reason", err)
+	} else {
+		runner = vmRunner
+		// One hived per work directory. Holding it is also what makes the
+		// sweep below safe: with the lock held, nothing else can be
+		// using what is in there.
+		release, err := vm.LockWorkDir(vmRunner.WorkDir)
+		if err != nil {
+			return err
+		}
+		unlock = release
+		// A daemon that was killed leaves its VMs' disks, and possibly a
+		// job's runner configuration, on disk. Remove them before anything
+		// else runs.
+		if swept, err := vm.SweepWorkDir(vmRunner.WorkDir); err != nil {
+			log.Warn("could not clear what a previous run left behind", "error", err)
+		} else if swept > 0 {
+			log.Info("cleared what a previous run left behind", "directories", swept)
+		}
+		// One VM of the default size stays booted while the machine is
+		// available, so a job skips the boot. HIVE_WARM=0 turns it off.
+		if os.Getenv("HIVE_WARM") != "0" {
+			vmRunner.WarmVCPUs = 2
+			tended = make(chan struct{})
+			go func() {
+				defer close(tended)
+				vmRunner.Tend(ctx, func() bool { return host.ReadPower().Available() })
+			}()
+		}
+		log.Info("ready to run jobs", "runner", vmRunner.Image.RunnerVersion, "image", vmRunner.Image.ImageVersion, "warm", vmRunner.WarmVCPUs)
+	}
 	return pools.Run(ctx, pools.Options{
 		Client:        api.New(machine.Server),
 		Token:         machine.Token,
 		DaemonVersion: version,
 		RefreshEvery:  refresh,
+		Runner:        runner,
 		Log:           log,
-		Available:     func() bool { return host.ReadPower().Available() },
+		// Paused, not online, when the machine cannot take a job: the pool
+		// then stops offering it any, instead of being declined each time.
+		Available: func() bool {
+			if unusable, ok := runner.(jobs.Unusable); ok && unusable.Unusable() != "" {
+				return false
+			}
+			return host.ReadPower().Available()
+		},
 	})
+}
+
+func newRunner(log *slog.Logger) (*vm.Runner, error) {
+	dir, err := vm.DefaultImageDir()
+	if err != nil {
+		return nil, err
+	}
+	image, err := vm.LoadImage(dir)
+	if err != nil {
+		return nil, err
+	}
+	// Beside the image, so a job's disk is a clone and not a copy, and named
+	// after it, so two daemons on different images (as in development) keep
+	// separate job directories and separate network identities.
+	work := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-jobs")
+	return &vm.Runner{Image: image, WorkDir: work, Log: log}, nil
+}
+
+func selftest(ctx context.Context) error {
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	runner, err := newRunner(log)
+	if err != nil {
+		return err
+	}
+	// Held while the VM exists, so a daemon starting meanwhile cannot sweep
+	// it away as a leftover.
+	release, err := vm.LockWorkDir(runner.WorkDir)
+	if err != nil {
+		return err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	started := time.Now()
+	report, err := runner.SelfTest(ctx, 2)
+	fmt.Print(report)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(report, "NETWORK=ok") {
+		return errors.New("the VM booted but could not reach GitHub")
+	}
+	fmt.Printf("A VM booted, ran and was destroyed in %.1fs.\n", time.Since(started).Seconds())
+	return nil
+}
+
+// devJob runs one job from a JIT config in a file, with no coordinator
+// involved. It is how the VM runner is exercised against GitHub on its own.
+// The file is a credential; it is read and never echoed.
+func devJob(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("dev-job", flag.ExitOnError)
+	file := flags.String("jitconfig-file", "", "path to a file holding an encoded JIT runner config")
+	vcpus := flags.Int("vcpus", 2, "vCPUs for the VM")
+	minutes := flags.Int("timeout-minutes", 30, "destroy the VM after this long")
+	_ = flags.Parse(args)
+	if *file == "" {
+		return errors.New("--jitconfig-file is required")
+	}
+	raw, err := os.ReadFile(*file)
+	if err != nil {
+		return err
+	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	runner, err := newRunner(log)
+	if err != nil {
+		return err
+	}
+	release, err := vm.LockWorkDir(runner.WorkDir)
+	if err != nil {
+		return err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(*minutes)*time.Minute)
+	defer cancel()
+	code, err := runner.Run(ctx, jobs.Job{
+		AssignmentID: "dev",
+		JITConfig:    strings.TrimSpace(string(raw)),
+		RunnerName:   "dev",
+		VCPUs:        *vcpus,
+	})
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("the runner exited %d", code)
+	}
+	return nil
 }
 
 func status() error {
@@ -225,8 +377,6 @@ func status() error {
 		fmt.Printf("Pools:    %s\n", strings.Join(names, ", "))
 	}
 	switch {
-	case power.OnBattery:
-		fmt.Println("Jobs:     paused (on battery)")
 	case power.LidClosed:
 		fmt.Println("Jobs:     paused (lid closed)")
 	default:

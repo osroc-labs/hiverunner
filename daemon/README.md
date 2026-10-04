@@ -4,12 +4,18 @@ The HiveWorker daemon. One static Go binary that enrolls a Mac in its
 organization's pool and holds the single outbound tunnel jobs arrive through.
 
 ```sh
-go build -o hived ./cmd/hived
+./image/build.sh    # once: builds the guest image (needs Docker)
+./build.sh          # builds ./hived, signed so macOS lets it create VMs
+./hived selftest    # boots a throwaway VM and reports what it finds
 ./hived login       # sign in with GitHub in the browser, enroll this machine
 ./hived run         # connect to every pool it serves and wait for jobs
 ./hived status
 ./hived benchmark
 ```
+
+Use `./build.sh`, not a bare `go build`: creating a virtual machine needs the
+`com.apple.security.virtualization` entitlement, and an unsigned binary is
+refused by macOS.
 
 `HIVE_SERVER` points it at another server (`http://localhost:3000` for local
 development) and `HIVE_CONFIG` at another machine file.
@@ -30,14 +36,75 @@ pools it serves is not stored; the server is asked. The GitHub sign-in is
 used once to obtain that token and is not kept. Moving the token to the
 Keychain is planned.
 
+## How a job runs
+
+Each job gets its own Linux virtual machine under Apple's
+Virtualization.framework, and the machine is destroyed when the job ends.
+
+1. The coordinator offers a job (`job.assign`). The daemon takes its one job
+   slot and accepts, or declines if it is busy with another pool's job.
+2. The coordinator sends GitHub's one-time runner configuration (`job.start`).
+3. The daemon clones the guest disk (copy-on-write, instant on APFS), creates
+   an empty directory for the job, writes the configuration into it, and boots
+   the VM by direct kernel boot. Boot to running is about three seconds.
+4. The guest's agent reads the configuration, deletes it, and runs GitHub's
+   runner as an unprivileged user. The runner talks to GitHub directly.
+5. The guest writes its exit code and powers off. The daemon deletes the disk
+   and the directory and reports `job.exited`.
+
+What the guest can reach: the internet, outbound, through NAT. What it can see
+of the Mac: that one directory. Nothing listens in the guest and nothing can
+log in to it. A released job, or one past its timeout, has its VM stopped at
+once.
+
+The guest image is Ubuntu 24.04 arm64 with GitHub's runner, pinned by the hash
+GitHub publishes. It has git, curl, sudo and the usual archive tools; jobs
+install toolchains with `setup-*` actions, as they would anywhere.
+
+A VM of the default size is kept booted while the lid is open, including on
+battery, so a job of that size starts in under a second instead of about
+three. It is replaced after each job.
+
+## Keeping the guest image current
+
+The guest pins a version of GitHub's runner. GitHub stops accepting old
+versions, and a runner it refuses does not update itself: it exits without
+taking the job, which stays queued. Measured on 2026-10-04:
+
+| Guest runner | Released   | What happened                                          |
+| ------------ | ---------- | ------------------------------------------------------ |
+| 2.337.0      | 2026-08-26 | Current. Ran the job                                   |
+| 2.336.0      | 2026-07-20 | Ran the job, without updating itself                   |
+| 2.335.0      | 2026-06-08 | Refused. The runner exited in five seconds with no job |
+
+The daemon recognises the refusal (the runner exits 7). It logs that the image
+must be rebuilt, reports the machine as paused so the pool stops offering it
+jobs, and declines any offer with that reason. It stays that way until it is
+restarted on a new image: bump `RUNNER_VERSION` and its hash in
+`image/build.sh`, run it, and restart `hived`.
+
+There is no way to know in advance that a version has been retired, and its
+age is not a guide: the current release is over a month old and valid. So
+rebuild when GitHub publishes a runner release, rather than waiting for the
+refusal.
+
+If the daemon is killed, or the Mac loses power, a job's disk and directory
+are left behind. The next `hived run` removes them before it starts anything.
+It can do that safely because every command that boots a VM (`run`,
+`selftest`, `dev-job`) first takes an exclusive lock on the work directory,
+which sits beside the guest image and is named after it. A second command on
+the same directory exits, saying it is in use; stop the daemon to run a
+self-test against its image.
+
 ## What it does not do yet
 
-It does not run jobs. It answers a job offer with a refusal so the coordinator
-offers the job elsewhere. The VM runner (Virtualization.framework, a warm VM,
-copy-on-write job disks) is the next milestone; see `docs/spec.md` §6a.
-
-It pauses on battery and with the lid closed. Throttling when the owner is
-active arrives with the VM runner, since there is nothing to throttle before.
+- **Container jobs.** `container:` and `services:` need Docker in the guest.
+- **A pre-registered runner.** The runner still registers with GitHub when the
+  job arrives, which is most of what is left of the start-up time.
+- **Caches between jobs.** Each job starts from the same clean disk.
+- **Throttling for the owner.** It pauses with the lid closed,
+  but does not yet slow a running job when the owner is busy.
+- **A menu bar item, and the Keychain** for the machine token.
 
 ## Layout
 
@@ -53,6 +120,7 @@ active arrives with the VM runner, since there is nothing to throttle before.
 
 ## Tests
 
-`go test ./...` runs everywhere, against stand-in servers. `pnpm test:daemon`
+`go test ./...` runs everywhere, against stand-in servers. `./test-vm.sh`
+boots real VMs and needs the guest image. `pnpm test:daemon`
 from the repository root runs the built binary against the real web and
 coordinator Workers on a fresh local database (macOS only).

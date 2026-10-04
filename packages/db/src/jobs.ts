@@ -17,8 +17,10 @@ import {
   poolSettings,
 } from "@workspace/db/schema"
 
-export const jobIdFor = (organizationId: string, runnerRequestId: number) =>
-  `${organizationId}:${runnerRequestId}`
+export const jobIdFor = (
+  organizationId: string,
+  runnerRequestId: number | string
+) => `${organizationId}:${runnerRequestId}`
 
 /**
  * Whether the pool may take another job. An organization that has spent its
@@ -36,7 +38,7 @@ export async function canAcquireJobs(db: AuthDb, organizationId: string) {
 
 export type JobStart = {
   organizationId: string
-  runnerRequestId: number
+  runnerRequestId: number | string
   machineId: string
   label: string
   vcpus: number
@@ -44,6 +46,8 @@ export type JobStart = {
   jobName?: string
   workflowRunId?: number
   githubJobId?: number
+  /** The quote locked by the coordinator when the machine accepted. */
+  speedScore?: number
   /** GitHub's time, not the machine's. */
   startedAt: Date
 }
@@ -53,6 +57,13 @@ export type JobStart = {
  * machine's speed score and the rate as they are now. Idempotent.
  */
 export async function startJob(db: AuthDb, input: JobStart) {
+  if (!Number.isFinite(input.startedAt.getTime()))
+    throw new Error("Invalid GitHub job start time")
+  if (
+    input.speedScore !== undefined &&
+    (!Number.isFinite(input.speedScore) || input.speedScore <= 0)
+  )
+    throw new Error("Invalid assignment speed score")
   // A machine runs jobs only for pools it is authorized for.
   const [runner] = await db
     .select({ speedScore: machine.speedScore })
@@ -62,7 +73,11 @@ export async function startJob(db: AuthDb, input: JobStart) {
       and(
         eq(machinePool.machineId, input.machineId),
         eq(machinePool.organizationId, input.organizationId),
-        eq(machinePool.status, "active")
+        // A verified assignment remains billable if its pool is revoked
+        // while the runner is finishing. New assignments never use this path.
+        input.speedScore === undefined
+          ? eq(machinePool.status, "active")
+          : undefined
       )
     )
     .limit(1)
@@ -80,7 +95,7 @@ export async function startJob(db: AuthDb, input: JobStart) {
       workflowRunId: input.workflowRunId,
       githubJobId: input.githubJobId,
       vcpus: input.vcpus,
-      speedScore: runner.speedScore,
+      speedScore: input.speedScore ?? runner.speedScore,
       rate: FLOOR_RATE,
       startedAt: input.startedAt,
     })
@@ -115,7 +130,13 @@ export async function settleJob(
     .where(eq(job.id, input.jobId))
     .limit(1)
   if (!row) return { settled: false, reason: "unknown-job" }
-  if (row.completedAt) return { settled: false, reason: "already-settled" }
+  if (row.completedAt) {
+    // A previous delivery may have committed the receipt before crashing.
+    await settleLedger(db, row.id)
+    return { settled: false, reason: "already-settled" }
+  }
+  if (!Number.isFinite(input.completedAt.getTime()))
+    throw new Error("Invalid GitHub job completion time")
 
   const seconds = Math.max(
     0,
@@ -179,7 +200,10 @@ export async function settleJob(
     })
     .where(and(eq(job.id, row.id), isNull(job.completedAt)))
     .returning({ id: job.id })
-  if (!claimed.length) return { settled: false, reason: "already-settled" }
+  if (!claimed.length) {
+    await settleLedger(db, row.id)
+    return { settled: false, reason: "already-settled" }
+  }
 
   await settleLedger(db, row.id)
   return {

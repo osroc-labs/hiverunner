@@ -4,6 +4,9 @@
 // macOS only, because that is the only host the daemon supports.
 import { spawn, spawnSync } from "node:child_process"
 import {
+  existsSync,
+  readFileSync,
+  readdirSync,
   mkdtempSync,
   openSync,
   closeSync,
@@ -32,6 +35,7 @@ async function freePort() {
 }
 const webPort = await freePort()
 const coordinatorPort = await freePort()
+const inspectorPorts = [await freePort(), await freePort()]
 const origin = `http://localhost:${webPort}`
 const log = openSync(`${storage}/workers.log`, "w")
 const password = crypto.randomUUID()
@@ -44,25 +48,6 @@ function wrangler(app, args, options = {}) {
     ...options,
   })
 }
-function sql(command) {
-  const result = wrangler(
-    "web",
-    [
-      "d1",
-      "execute",
-      "DB",
-      "--local",
-      "--persist-to",
-      storage,
-      "--json",
-      "--command",
-      command,
-    ],
-    { stdio: ["ignore", "pipe", log], encoding: "utf8" }
-  )
-  if (result.status !== 0) throw new Error(`SQL failed: ${command}`)
-  return JSON.parse(result.stdout)[0].results
-}
 function start(app, args) {
   const child = spawn(
     "pnpm",
@@ -73,6 +58,10 @@ function start(app, args) {
       "wrangler",
       "dev",
       ...args,
+      // Each Worker gets its own debugger port; the default collides when
+      // two run at once, here or in another checkout.
+      "--inspector-port",
+      String(inspectorPorts.pop()),
       "--persist-to",
       storage,
     ],
@@ -105,14 +94,10 @@ async function eventually(check, message) {
 }
 
 try {
-  const built = spawnSync(
-    "go",
-    ["build", "-o", `${storage}/hived`, "./cmd/hived"],
-    {
-      cwd: "daemon",
-      stdio: "inherit",
-    }
-  )
+  // Signed, so it may create virtual machines.
+  const built = spawnSync("daemon/build.sh", [`${storage}/hived`], {
+    stdio: ["ignore", log, log],
+  })
   if (built.status !== 0) throw new Error("The daemon did not build")
 
   if (
@@ -185,6 +170,8 @@ try {
     ...process.env,
     HIVE_SERVER: origin,
     HIVE_CONFIG: `${storage}/machine.json`,
+    // Ask the server which pools to serve every second, not every minute.
+    HIVE_REFRESH_SECONDS: "1",
   }
   const hived = (args) => {
     const child = spawn(`${storage}/hived`, args, {
@@ -224,6 +211,30 @@ try {
     )
     return response
   }
+  const page = async (path) => {
+    const response = await fetch(`${origin}${path}`, {
+      headers: { Cookie: cookies.join("; ") },
+    })
+    assert.ok(response.ok, `${path}: ${response.status}`)
+    return response.text()
+  }
+  // What the pool's owner sees on the Machines page for one organization.
+  // Read through the app, as a person would: nothing else opens the
+  // database while the Workers are using it. Undefined when the machine is
+  // not listed in that pool.
+  let viewing
+  const presence = async (organizationId = "gh-501") => {
+    // Switch pools only when the question changes: sign-in endpoints are
+    // rate limited, and this is asked in a loop.
+    if (viewing !== organizationId) {
+      await browser("/api/auth/organization/set-active", { organizationId })
+      viewing = organizationId
+    }
+    const html = await page("/machines")
+    return html.match(
+      /rounded-full[^>]*>(?:<!-- -->)?(offline|paused|online|busy|draining)</
+    )?.[1]
+  }
   await browser("/api/auth/sign-in/email", {
     email: "owner@example.test",
     password,
@@ -237,43 +248,42 @@ try {
   const [loginCode] = await once(login, "exit")
   assert.equal(loginCode, 0, login.output)
   assert.match(login.output, /now serves: acme/)
-  const [machine] = sql("select id, os, arch, speed_score from machine")
-  assert.equal(machine.os, "darwin")
-  assert.ok(machine.speed_score > 0)
-  assert.equal(
-    sql("select count(*) n from session where user_id='owner'")[0].n,
-    1,
-    "only the browser session remains"
-  )
-  console.log(
-    `hived login enrolled ${machine.id} (speed score ${machine.speed_score}).`
-  )
+  const machine = {
+    id: JSON.parse(readFileSync(env.HIVE_CONFIG, "utf8")).machineId,
+  }
+  assert.match(machine.id, /^[0-9a-f-]{36}$/)
+  assert.equal(await presence(), "offline")
+  // The daemon's sign-in session ended as it was given its machine token.
+  const sessions = await (
+    await fetch(`${origin}/api/auth/list-sessions`, {
+      headers: { Cookie: cookies.join("; ") },
+    })
+  ).json()
+  assert.equal(sessions.length, 1, "only the browser session remains")
+  console.log(`hived login enrolled ${machine.id}.`)
 
-  // hived run: presence reaches the dashboard's database through the tunnel.
-  const presence = (pool = "gh-501") =>
-    sql(`select presence from machine_pool where organization_id='${pool}'`)[0]
-      ?.presence
+  // hived run: presence reaches the dashboard through the tunnel.
   let run = hived(["run"])
   await eventually(
-    () => presence() !== "offline",
+    async () => (await presence()) !== "offline",
     `the machine never came online\n${run.output}`
   )
-  const state = presence()
+  const state = await presence()
   assert.ok(["online", "paused"].includes(state), state)
   console.log(`hived run connected to acme (${state}).`)
 
   // Added to a second organization from the dashboard: the running daemon
   // picks it up by itself and serves both.
-  assert.equal(presence("gh-502"), undefined)
+  assert.equal(await presence("gh-502"), undefined)
   await browser("/api/machines/pools", {
     machineId: machine.id,
     organizationId: "gh-502",
   })
   await eventually(
-    () => presence("gh-502") === state,
+    async () => (await presence("gh-502")) === state,
     `globex never saw the machine\n${run.output}`
   )
-  assert.equal(presence(), state)
+  assert.equal(await presence(), state)
   // Dropped from it again: that tunnel goes, the first stays.
   await browser("/api/machines/revoke", {
     machineId: machine.id,
@@ -284,16 +294,58 @@ try {
     "the daemon did not notice"
   )
   await delay(1500)
-  assert.equal(presence("gh-502"), "offline")
-  assert.equal(presence(), state)
+  assert.equal(
+    await presence("gh-502"),
+    undefined,
+    "no longer listed in globex"
+  )
+  assert.equal(await presence(), state)
   assert.equal(run.exitCode, null, "the daemon keeps serving acme")
   console.log("The same machine served a second organization, then left it.")
 
+  // With a guest image installed the daemon keeps a VM warm. Stopping it
+  // must take that VM, and its files, with it before the process exits.
+  const jobs = process.env.HIVE_IMAGE ? `${process.env.HIVE_IMAGE}-jobs` : null
+  // With the lid closed the daemon reports paused and, rightly,
+  // keeps no VM waiting; there is nothing to check then.
+  const image = jobs && existsSync(`${process.env.HIVE_IMAGE}/manifest.json`)
+  const warm = image && state === "online"
+  if (warm) {
+    await eventually(
+      () => /a VM is booted and waiting/.test(run.output),
+      `no warm VM\n${run.output}`
+    )
+    assert.ok(
+      readdirSync(jobs).some((name) => name.startsWith("job-")),
+      "the warm VM has no directory"
+    )
+  }
+  // One hived per work directory: a second daemon, or a self-test, is
+  // refused while the first runs, and so can never sweep its live VM.
+  if (image) {
+    for (const command of ["run", "selftest"]) {
+      const second = hived([command])
+      const [secondCode] = await once(second, "exit")
+      assert.equal(secondCode, 1, second.output)
+      assert.match(second.output, /using this work directory/)
+    }
+    if (warm)
+      assert.ok(readdirSync(jobs).some((name) => name.startsWith("job-")))
+    console.log("A second hived on the same work directory was refused.")
+  }
   run.kill("SIGTERM")
   const [stopCode] = await once(run, "exit")
   assert.equal(stopCode, 0, run.output)
+  if (warm) {
+    assert.deepEqual(
+      readdirSync(jobs).filter((name) => name.startsWith("job-")),
+      [],
+      "stopping left VM files on disk"
+    )
+    console.log("Stopping the daemon destroyed its warm VM and left nothing.")
+  }
   await eventually(
-    () => presence() === "offline",
+    async () => (await presence()) === "offline",
     "stopping the daemon did not mark it offline"
   )
   console.log("hived went offline cleanly.")
@@ -301,7 +353,7 @@ try {
   // Retired while running: the daemon stops and says why, and stays out.
   run = hived(["run"])
   await eventually(
-    () => presence() !== "offline",
+    async () => (await presence()) !== "offline",
     "the machine did not reconnect"
   )
   await browser("/api/machines/revoke", { machineId: machine.id })
