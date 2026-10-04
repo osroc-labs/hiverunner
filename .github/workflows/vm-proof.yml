@@ -13,7 +13,7 @@ jobs:
     runs-on: [self-hosted, hive-dev-proof]
     timeout-minutes: 15
     steps:
-      - name: Which runner am I
+      - name: Which runner am I now
         run: |
           cat /etc/hive-release
           cat /opt/runner/.runner 2>/dev/null | head -c 0
