@@ -54,6 +54,6 @@
     "drizzle-kit": "1.0.0-rc.5-5935859",
     "typescript": "catalog:",
     "vite": "8.3.0",
-    "wrangler": "4.135.0"
+    "wrangler": "4.147.0"
   }
 }
