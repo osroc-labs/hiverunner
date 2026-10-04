@@ -83,13 +83,12 @@ Durable Objects. Marketing copy changes must not disconnect the fleet.
 `hiveworkr-staging.thecomputerplumbers.com`); the product domain is undecided.
 Sibling hosts nest under it (`connect.hiveworkr.…`, `get.hiveworkr.…`). That
 is two levels below the zone, which the zone's default certificate does not
-cover, so it relies on Advanced Certificate Manager for
-`*.hiveworkr.thecomputerplumbers.com`. **Verify** on the coordinator's first
-deploy. Hosts come from configuration, never from string-building,
+cover; Cloudflare issued a certificate for the coordinator's custom domain
+on its first deploy, so this works as configured. Hosts come from configuration, never from string-building,
 so the move to a real domain is a config change plus new GitHub App URLs. The
 daemon reads its coordinator host from the release manifest for the same reason.
 
-Each has a `-staging` twin, with its own GitHub App (§5). Web reaches the
+Production only for now; there is no staging environment. Web reaches the
 coordinator through a service binding for dashboard reads of live presence.
 
 Secrets: `BETTER_AUTH_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`,

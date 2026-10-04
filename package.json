@@ -7,7 +7,7 @@
     "build": "turbo build",
     "cf:typegen": "pnpm --filter web cf:typegen",
     "db:generate": "pnpm --filter web db:generate",
-    "deploy": "node scripts/deploy.mjs",
+    "release": "node scripts/deploy.mjs",
     "dev": "turbo dev",
     "lint": "oxlint",
     "format": "oxfmt",

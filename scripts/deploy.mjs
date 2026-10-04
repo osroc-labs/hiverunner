@@ -69,24 +69,39 @@ run("pnpm", [
   "--config",
   "dist/server/wrangler.json",
 ])
-for (let attempt = 0; attempt < 12; attempt++) {
+// The coordinator shares the database and is deployed after the migrations
+// it depends on. Deploying it drops every machine's tunnel; daemons reconnect
+// by themselves, and running jobs are unaffected.
+run("pnpm", [
+  "--filter",
+  "coordinator",
+  "exec",
+  "wrangler",
+  "deploy",
+  ...wranglerArgs(environment),
+])
+// A custom domain's first deploy can take a few minutes to resolve.
+let verified = false
+for (let attempt = 0; attempt < 36 && !verified; attempt++) {
   try {
     const response = await fetch(`${config.vars.APP_URL}/api/health`, {
         signal: AbortSignal.timeout(10000),
         cache: "no-store",
       }),
       health = await response.json()
-    if (response.ok && health.ok && health.buildId === buildId) {
-      console.log(
-        `Verified ${environment}: ${config.vars.APP_URL} (${buildId})`
-      )
-      process.exit(0)
-    }
+    const coordinator = await fetch(
+      new URL("/health", config.vars.COORDINATOR_URL.replace(/^ws/, "http")),
+      { signal: AbortSignal.timeout(10000), cache: "no-store" }
+    )
+    verified =
+      response.ok && health.ok && health.buildId === buildId && coordinator.ok
   } catch {
     /* Wait for propagation. */
   }
-  await delay(5000)
+  if (!verified) await delay(5000)
 }
-throw new Error(
-  "Deployment uploaded, but independent health/build verification failed. Inspect the Worker before promoting or retrying."
-)
+if (!verified)
+  throw new Error(
+    "Deployment uploaded, but independent health/build verification failed. Inspect the Workers before promoting or retrying."
+  )
+console.log(`Verified ${environment}: ${config.vars.APP_URL} (${buildId})`)

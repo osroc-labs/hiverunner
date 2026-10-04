@@ -1,5 +1,19 @@
 # Checks and deployment
 
+**Live:** production only, in The Computer Plumbers Cloudflare account.
+
+| What        | Where                                           |
+| ----------- | ----------------------------------------------- |
+| Web         | https://hiveworkr.thecomputerplumbers.com       |
+| Coordinator | wss://connect.hiveworkr.thecomputerplumbers.com |
+| Database    | D1 `hiveworker`, shared by both Workers         |
+
+There is no staging environment. The sections below still describe how to add
+one; until then `pnpm release production` is the only release, and it deploys
+the web Worker, applies migrations, then deploys the coordinator.
+
+`pnpm release`, not `pnpm deploy`: the latter is a pnpm built-in.
+
 `.github/workflows/check.yml` runs on main pushes and pull requests: lint,
 formatting, typecheck, regression tests, production build and an isolated Worker
 smoke test. Tests need no Cloudflare account credentials and send no real email.
@@ -44,8 +58,8 @@ environment. It runs the isolated smoke tests first. You can run the same releas
 command locally from a clean, committed checkout:
 
 ```sh
-pnpm deploy staging
-pnpm deploy production
+pnpm release staging
+pnpm release production
 ```
 
 The command validates target configuration/secret inventory and code checks,
