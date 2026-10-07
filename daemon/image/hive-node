@@ -1,0 +1,34 @@
+#!/usr/bin/perl
+# Stands in front of the Node the runner starts each JavaScript action with.
+#
+# The runner tells an action where GitHub's results service is, and that is
+# where `actions/cache` looks for caches. When the host is offering its own
+# cache to this job, the action is told the host's address instead. The host
+# answers the cache calls and passes everything else on to GitHub.
+#
+# It only ever swaps the one address it knows the host passes on to. Any
+# other value, or no cache on offer, and the action runs exactly as GitHub
+# set it up.
+#
+# Perl and not a shell script, on purpose: an action's inputs arrive as
+# environment variables with hyphens in their names (INPUT_GITHUB-TOKEN),
+# and a shell drops every variable whose name it could not have set itself.
+# Perl hands the environment on exactly as it received it.
+use strict;
+use warnings;
+
+my $offered  = '/etc/hive-results-url';
+my $upstream = 'https://results-receiver.actions.githubusercontent.com';
+my $given    = $ENV{ACTIONS_RESULTS_URL} // '';
+
+if ( ( $given eq $upstream || $given eq "$upstream/" ) && open( my $file, '<', $offered ) ) {
+    my $url = <$file>;
+    close $file;
+    if ( defined $url ) {
+        chomp $url;
+        # Only ever this VM's own loopback, whatever the file says.
+        $ENV{ACTIONS_RESULTS_URL} = $url if $url =~ m{^http://127\.0\.0\.1:\d+/$};
+    }
+}
+
+exec { "$0.real" } $0, @ARGV or die "hive-node: cannot start $0.real: $!\n";
