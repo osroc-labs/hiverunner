@@ -73,13 +73,15 @@ export function LabelsAndSizes() {
     runs-on: hive
     steps:
       - uses: actions/checkout@v7
-      - run: make test
+      - uses: oven-sh/setup-bun@v2
+      - run: bun test
 
   build:
     runs-on: hive-8cpu
     steps:
       - uses: actions/checkout@v7
-      - run: make build`}</CodeBlock>
+      - uses: oven-sh/setup-bun@v2
+      - run: bun run build`}</CodeBlock>
 
       <h2 id="what-runs">What a job runs on</h2>
       <ul>
