@@ -27,12 +27,15 @@ export function createMailer(binding: EmailBinding, from: string) {
     message,
     url,
     label,
+    footer = "If you did not request this, you can ignore this email.",
   }: {
     to: string
     subject: string
     message: string
     url: string
     label: string
+    /** Why the person is getting this; the default suits mail they asked for. */
+    footer?: string
   }) => {
     const parsed = new URL(url)
     if (!["https:", "http:"].includes(parsed.protocol))
@@ -41,8 +44,8 @@ export function createMailer(binding: EmailBinding, from: string) {
       from,
       to,
       subject,
-      text: `${message}\n\n${label}: ${url}\n\nIf you did not request this, you can ignore this email.`,
-      html: `<p>${escape(message)}</p><p><a href="${escape(url)}">${escape(label)}</a></p><p>If you did not request this, you can ignore this email.</p>`,
+      text: `${message}\n\n${label}: ${url}\n\n${footer}`,
+      html: `<p>${escape(message)}</p><p><a href="${escape(url)}">${escape(label)}</a></p><p>${escape(footer)}</p>`,
     })
   }
 }

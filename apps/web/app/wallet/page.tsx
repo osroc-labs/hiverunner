@@ -1,4 +1,5 @@
 import { roleAtLeast } from "@workspace/auth"
+import { getBudget, spentThisMonth } from "@workspace/db/budget"
 import { countGifts } from "@workspace/db/gift"
 import { getBalance, listEntries } from "@workspace/db/ledger"
 import { getBalanceHistory, getLiveSnapshot } from "@workspace/db/live"
@@ -7,6 +8,8 @@ import {
   AUTO_TOP_UP_BELOW_USD,
   AUTO_TOP_UP_BELOW_USD_OPTIONS,
   AUTO_TOP_UP_MONTHLY_CAP_USD_OPTIONS,
+  BUDGET_MAX_USD,
+  MICRO,
   GIFT_PRIZES,
   RUNNER_SIZES,
   TOP_UP_AMOUNTS_USD,
@@ -28,6 +31,7 @@ import { requirePool } from "@/lib/session"
 import { canTakeCards } from "@/lib/stripe"
 import { AddFunds } from "./add-funds"
 import { AutoTopUp } from "./auto-top-up"
+import { Budget } from "./budget"
 import { Gift } from "./gift"
 
 export const metadata = { title: "Billing" }
@@ -53,7 +57,7 @@ export default async function WalletPage({
     accountId: organizationId,
   }
   const db = getDb()
-  const [balance, entries, saved, { funded }, live, history] =
+  const [balance, entries, saved, { funded }, live, history, budget, spent] =
     await Promise.all([
       getBalance(db, account),
       listEntries(db, account),
@@ -61,7 +65,12 @@ export default async function WalletPage({
       searchParams,
       getLiveSnapshot(db, organizationId),
       getBalanceHistory(db, organizationId),
+      getBudget(db, organizationId),
+      spentThisMonth(db, organizationId),
     ])
+  const budgetMicro = budget ? (budget.monthlyCents * MICRO) / 100 : null
+  const budgetHeld =
+    budget?.atLimit === "pause" && budgetMicro !== null && spent >= budgetMicro
   const weekSpend =
     live.hours.slice(-24 * 7).reduce((sum, hour) => sum + hour.price, 0) / 7
   const runway = weekSpend > 0 ? Math.round(balance / weekSpend) : null
@@ -112,6 +121,14 @@ export default async function WalletPage({
           The balance has run out, so new jobs are waiting in GitHub&apos;s
           queue. Jobs already running will finish. Add funds to start the queue
           moving again.
+        </Notice>
+      )}
+      {budgetHeld && (
+        <Notice tone="alert">
+          This month&apos;s budget of {formatMoney(budgetMicro ?? 0)} is spent,
+          so new jobs are waiting in GitHub&apos;s queue. Jobs already running
+          will finish. Raise or remove the budget below to start the queue
+          moving again, or it starts again on the 1st.
         </Notice>
       )}
       <Panel
@@ -209,6 +226,21 @@ export default async function WalletPage({
           )}
         </Panel>
       </div>
+
+      <Panel
+        title="monthly budget"
+        aside="calendar month, UTC"
+        bodyClassName="flex flex-col gap-3"
+      >
+        <Budget
+          spent={spent / MICRO}
+          budget={budget ? budget.monthlyCents / 100 : null}
+          atLimit={budget?.atLimit ?? "warn"}
+          max={BUDGET_MAX_USD}
+          mayChange={mayPay}
+          hive={installation.accountLogin}
+        />
+      </Panel>
 
       <Panel title="activity" aside={`last ${entries.length}`}>
         {!entries.length && <p>Nothing yet.</p>}
