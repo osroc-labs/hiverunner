@@ -310,7 +310,7 @@ export async function getBalanceHistory(
         day: day.as("day"),
         net: sql<number>`sum(${ledgerEntry.amount})`.as("net"),
         added:
-          sql<number>`coalesce(sum(case when ${ledgerEntry.kind} in ('grant', 'purchase') then ${ledgerEntry.amount} else 0 end), 0)`.as(
+          sql<number>`coalesce(sum(case when ${ledgerEntry.kind} in ('grant', 'purchase', 'gift') then ${ledgerEntry.amount} else 0 end), 0)`.as(
             "added"
           ),
       })
