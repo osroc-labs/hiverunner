@@ -33,3 +33,22 @@ func TestBar(t *testing.T) {
 		}
 	}
 }
+
+func TestHeldBar(t *testing.T) {
+	plain := Screen{}
+	for _, test := range []struct {
+		held, part, whole int
+		want              string
+	}{
+		{0, 9, 18, "███░░░"},
+		{3, 9, 18, "▓██░░░"},
+		{1, 90, 180, "▓██░░░"},
+		{9, 9, 18, "▓▓▓░░░"},
+		{18, 9, 18, "▓▓▓░░░"},
+		{2, 0, 18, "░░░░░░"},
+	} {
+		if got := plain.HeldBar(test.held, test.part, test.whole, 6); got != test.want {
+			t.Errorf("%d held of %d of %d: %s", test.held, test.part, test.whole, got)
+		}
+	}
+}

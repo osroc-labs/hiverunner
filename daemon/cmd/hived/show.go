@@ -137,7 +137,7 @@ func status() error {
 	}
 	fmt.Print(indent(screen.Box(strings.ToUpper(thisMachine[:1])+thisMachine[1:], rows...)))
 	fmt.Println()
-	fmt.Print(indent(screen.Box("What you lend", lending(screen, facts, current)...)))
+	fmt.Print(indent(screen.Box("What you lend", lending(screen, facts, current, holding == "")...)))
 	fmt.Println()
 	fmt.Print(indent(screen.Box("Actions cache", cacheRows(screen, current, false)...)))
 	fmt.Println()
@@ -168,9 +168,14 @@ func most(facts host.Facts, current settings.Settings) []int {
 	return jobsAtOnce
 }
 
+// warmVCPUs is the size of the VM the daemon keeps booted between jobs.
+const warmVCPUs = 2
+
 // lending draws how much of the machine its jobs use when it is as full as
-// its owner allows, and which job sizes it takes at all.
-func lending(screen ui.Screen, facts host.Facts, current settings.Settings) []string {
+// its owner allows, how much of that is in use before any job arrives, and
+// which job sizes it takes at all. The warm VM is given to the first job
+// that fits it, so what it holds is part of the fullest and not on top.
+func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taking bool) []string {
 	cores, memory := 0, 0
 	fullest := most(facts, current)
 	for _, vcpus := range fullest {
@@ -181,11 +186,21 @@ func lending(screen ui.Screen, facts host.Facts, current settings.Settings) []st
 	if current.MaxJobs > 1 {
 		atOnce = fmt.Sprintf("Up to %d jobs at a time.", current.MaxJobs)
 	}
+	heldCores, heldMemory := 0, 0
+	idle := screen.Dim("Nothing is in use between jobs: warm is off.")
+	switch {
+	case current.Warm && !taking:
+		idle = screen.Dim("Nothing is in use until it takes jobs again.")
+	case current.Warm:
+		heldCores, heldMemory = warmVCPUs, int(vm.GuestMemoryBytes(warmVCPUs, uint64(facts.MemoryBytes))/gib)
+		idle = screen.Ember(ui.Held) + fmt.Sprintf(" In use between jobs too: %d cores, %d GB.", heldCores, heldMemory) + screen.Dim(" warm is on.")
+	}
 	const bar = 30
 	rows := []string{
-		field("Cores", screen.Bar(cores, facts.Cores, bar)+fmt.Sprintf("  %d of %d", cores, facts.Cores)),
-		field("Memory", screen.Bar(memory, int(facts.MemoryBytes/gib), bar)+fmt.Sprintf("  %d of %d GB", memory, facts.MemoryBytes/gib)),
+		field("Cores", screen.HeldBar(heldCores, cores, facts.Cores, bar)+fmt.Sprintf("  %d of %d", cores, facts.Cores)),
+		field("Memory", screen.HeldBar(heldMemory, memory, int(facts.MemoryBytes/gib), bar)+fmt.Sprintf("  %d of %d GB", memory, facts.MemoryBytes/gib)),
 		field("", screen.Dim("At its fullest. "+atOnce)),
+		field("", idle),
 		"",
 	}
 	for _, vcpus := range settings.Sizes {

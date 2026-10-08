@@ -32,8 +32,10 @@ func (s Screen) paint(code, text string) string {
 	return "\x1b[" + code + "m" + text + "\x1b[0m"
 }
 
-// Honey is the one colour: what is yours, and what is on.
+// Honey is the colour of what is yours, and what is on. Ember is kept for
+// the one thing that is in use while the machine waits: the warm VM.
 func (s Screen) Honey(text string) string { return s.paint("38;5;214", text) }
+func (s Screen) Ember(text string) string { return s.paint("38;5;203", text) }
 func (s Screen) Dim(text string) string   { return s.paint("2", text) }
 func (s Screen) Bold(text string) string  { return s.paint("1", text) }
 
@@ -67,11 +69,24 @@ func (s Screen) Box(title string, rows ...string) string {
 // Bar draws part of a whole, width columns wide. Any part at all shows at
 // least one filled column.
 func (s Screen) Bar(part, whole, width int) string {
-	filled := 0
+	return s.HeldBar(0, part, whole, width)
+}
+
+// Held marks what is in use already, before any job arrives. It is its own
+// shape as well as its own colour, so it reads where there is no colour.
+const Held = "▓"
+
+// HeldBar is Bar with the first held of the part drawn as Held. Any held
+// at all shows at least one such column, within the filled ones.
+func (s Screen) HeldBar(held, part, whole, width int) string {
+	filled, marked := 0, 0
 	if whole > 0 && part > 0 {
 		filled = min(width, max(1, part*width/whole))
+		if held > 0 {
+			marked = min(filled, max(1, held*width/whole))
+		}
 	}
-	return s.Honey(strings.Repeat("█", filled)) + s.Dim(strings.Repeat("░", width-filled))
+	return s.Ember(strings.Repeat(Held, marked)) + s.Honey(strings.Repeat("█", filled-marked)) + s.Dim(strings.Repeat("░", width-filled))
 }
 
 // Dot marks a state: filled and honey when on, hollow when not.
