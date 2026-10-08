@@ -1,7 +1,9 @@
+import { createMailer } from "@workspace/email"
 import product from "../config/product.json"
 import { getDb } from "../db"
 import { logError, observeRequest } from "../lib/diagnostics"
 import { canTakeCards, stripe } from "../lib/stripe"
+import { sendBillingNotices } from "../operations/billing-notices"
 import { chargeDueTopUps } from "../operations/top-up"
 import vinextWorker from "vinext/server/app-router-entry"
 
@@ -52,13 +54,24 @@ export default {
       return vinextWorker.fetch(request, env, ctx)
     })
   },
-  /** Every few minutes: charge the saved cards whose balance has run low. */
-  async scheduled(_controller, _env, ctx) {
-    if (!canTakeCards()) return
-    ctx.waitUntil(
-      chargeDueTopUps(getDb(), stripe()).catch((error) =>
-        logError(error, "top-up.sweep")
+  /**
+   * Every few minutes: charge the saved cards whose balance has run low, and
+   * tell owners what has changed about their hive's money.
+   */
+  async scheduled(_controller, env, ctx) {
+    if (canTakeCards())
+      ctx.waitUntil(
+        chargeDueTopUps(getDb(), stripe()).catch((error) =>
+          logError(error, "top-up.sweep")
+        )
       )
-    )
+    if (env.EMAIL && env.EMAIL_FROM && env.APP_URL)
+      ctx.waitUntil(
+        sendBillingNotices(
+          getDb(),
+          createMailer(env.EMAIL, env.EMAIL_FROM),
+          env.APP_URL
+        ).catch((error) => logError(error, "billing-notices.sweep"))
+      )
   },
 } satisfies ExportedHandler<CloudflareEnv>

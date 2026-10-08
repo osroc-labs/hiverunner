@@ -55,6 +55,19 @@ export function topUpAllowed(dollars: unknown): dollars is number {
 }
 
 /**
+ * PLACEHOLDER. The balance, in USD, under which a hive's owners are told it
+ * is running low. Under the trial grant, so a new hive is not warned the
+ * moment it runs its first job.
+ */
+export const LOW_BALANCE_USD = 2
+
+/** The share of a monthly budget at which a hive's owners are first told. */
+export const BUDGET_WARNING_SHARE = 0.8
+
+/** The largest monthly budget a hive can set, in whole USD. */
+export const BUDGET_MAX_USD = 100_000
+
+/**
  * The balances an organization can choose to top up below, in USD. The first
  * is the default: enough left that jobs keep running while the charge goes
  * through.

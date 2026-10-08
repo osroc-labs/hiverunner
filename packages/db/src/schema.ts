@@ -309,3 +309,42 @@ export const webhookDelivery = sqliteTable("webhook_delivery", {
   event: text("event").notNull(),
   receivedAt: integer("received_at", { mode: "timestamp_ms" }).notNull(),
 })
+
+/**
+ * The most a hive means to spend on jobs in a calendar month, and what
+ * happens when it has. No row is no budget.
+ */
+export const spendBudget = sqliteTable("spend_budget", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  monthlyCents: integer("monthly_cents").notNull(),
+  /**
+   * `warn` tells the owners and carries on. `pause` also stops new jobs
+   * being acquired until the month turns or the budget is raised; a job
+   * already running is never cut off.
+   */
+  atLimit: text("at_limit", { enum: ["warn", "pause"] })
+    .notNull()
+    .default("warn"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+})
+
+/**
+ * A notice about money that has been sent, so it is sent once. The id names
+ * the condition: `low-balance:<org>` while the balance is low, or
+ * `budget-reached:<org>:2026-10` for one month's budget. A row for a
+ * condition that has passed is removed, so the next time is told again.
+ */
+export const billingNotice = sqliteTable(
+  "billing_notice",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("billing_notice_org_idx").on(table.organizationId)]
+)

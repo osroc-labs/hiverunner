@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers"
 import Link from "next/link"
 import { RUNNER_SIZES, TRIAL_GRANT_USD } from "@workspace/pricing"
+import { budgetHolds } from "@workspace/db/budget"
 import { getLiveSnapshot } from "@workspace/db/live"
 import { getPoolSettings } from "@workspace/db/settings"
 import { roleAtLeast } from "@workspace/auth"
@@ -30,10 +31,11 @@ export default async function DashboardPage({
   const { installed } = await searchParams
   const { organizationId, installation, membership } = pool
   const db = getDb()
-  const [live, settings, released] = await Promise.all([
+  const [live, settings, released, held] = await Promise.all([
     getLiveSnapshot(db, organizationId),
     getPoolSettings(db, organizationId),
     releasedDaemonVersion(),
+    budgetHolds(db, organizationId),
   ])
   const online = live.machines.filter(
     (machine) => machine.presence === "online" || machine.presence === "busy"
@@ -56,6 +58,16 @@ export default async function DashboardPage({
           {installation.status === "suspended"
             ? "The GitHub App is suspended on this organization. Jobs will not be picked up until an owner unsuspends it on GitHub."
             : "The GitHub App was uninstalled from this organization. Reinstall it to run jobs; your balance and history are kept."}
+        </Notice>
+      )}
+      {held && (
+        <Notice tone="alert">
+          This month&apos;s budget is spent, so new jobs are waiting in
+          GitHub&apos;s queue.{" "}
+          <Link className="underline" href="/wallet">
+            Raise or remove the budget
+          </Link>{" "}
+          to start it moving again.
         </Notice>
       )}
       {live.balance <= 0 && (
