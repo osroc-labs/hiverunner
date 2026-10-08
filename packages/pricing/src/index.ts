@@ -53,6 +53,64 @@ export const AUTO_TOP_UP_MONTHLY_CAP_USD_OPTIONS = [
 ] as const
 
 /**
+ * PLACEHOLDER. The gift that comes with a card payment made by hand: a share
+ * of what was paid, added again as credit, and which share is left to chance.
+ * Every gift is worth something. `weight` is how many rolls in `GIFT_ROLLS`
+ * land on a prize, so the shares average out to a little over a fifth of
+ * what is paid in: generous on purpose, for now. Ordered from the commonest
+ * to the rarest.
+ */
+export const GIFT_PRIZES = [
+  { share: 0.05, weight: 400 },
+  { share: 0.1, weight: 300 },
+  { share: 0.25, weight: 180 },
+  { share: 0.5, weight: 80 },
+  { share: 1, weight: 30 },
+  { share: 5, weight: 10 },
+] as const
+
+/** PLACEHOLDER. The most one gift is worth, in USD, whatever was paid. */
+export const GIFT_CAP_USD = 250
+
+/**
+ * PLACEHOLDER. The most an organization's gifts add up to in a calendar
+ * month, in USD. Without it, many small payments are many tries at the top
+ * prize.
+ */
+export const GIFT_MONTHLY_CAP_USD = 500
+
+export const GIFT_ROLLS = GIFT_PRIZES.reduce(
+  (sum, prize) => sum + prize.weight,
+  0
+)
+
+/** How long after a payment its gift can still be opened. */
+export const GIFT_WINDOW_DAYS = 30
+
+/**
+ * Which prize a roll lands on, as an index into `GIFT_PRIZES`. A roll is a
+ * whole number from 0 up to, and not including, `GIFT_ROLLS`.
+ */
+export function giftPrize(roll: number) {
+  if (!Number.isInteger(roll) || roll < 0 || roll >= GIFT_ROLLS)
+    throw new Error("A gift roll is a whole number below GIFT_ROLLS")
+  let left = roll
+  return GIFT_PRIZES.findIndex((prize) => (left -= prize.weight) < 0)
+}
+
+/**
+ * What a prize is worth on a payment, in micro-tokens, to the whole cent and
+ * no more than one gift may be.
+ */
+export function giftAmount(paid: number, prize: number) {
+  const cent = MICRO / 100
+  return Math.min(
+    Math.round((paid * GIFT_PRIZES[prize]!.share) / cent) * cent,
+    usdToMicroTokens(GIFT_CAP_USD)
+  )
+}
+
+/**
  * What kind of machine a job runs on. Two are the architecture of a job's
  * Linux VM, and so of the machine that runs it. `macos` is not a VM at all:
  * the job runs on an Apple Silicon Mac itself, as a separate user, for the

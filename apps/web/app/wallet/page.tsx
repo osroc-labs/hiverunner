@@ -1,4 +1,5 @@
 import { roleAtLeast } from "@workspace/auth"
+import { countGifts } from "@workspace/db/gift"
 import { getBalance, listEntries } from "@workspace/db/ledger"
 import { getBalanceHistory, getLiveSnapshot } from "@workspace/db/live"
 import { autoChargedThisMonth, getAutoTopUp } from "@workspace/db/top-up"
@@ -6,6 +7,7 @@ import {
   AUTO_TOP_UP_BELOW_USD,
   AUTO_TOP_UP_BELOW_USD_OPTIONS,
   AUTO_TOP_UP_MONTHLY_CAP_USD_OPTIONS,
+  GIFT_PRIZES,
   RUNNER_SIZES,
   TOP_UP_AMOUNTS_USD,
   TRIAL_GRANT_USD,
@@ -23,6 +25,7 @@ import { requirePool } from "@/lib/session"
 import { canTakeCards } from "@/lib/stripe"
 import { AddFunds } from "./add-funds"
 import { AutoTopUp } from "./auto-top-up"
+import { Gift } from "./gift"
 
 export const metadata = { title: "Billing" }
 
@@ -30,6 +33,7 @@ export const metadata = { title: "Billing" }
 const kinds: Record<string, string> = {
   grant: "Trial credit",
   purchase: "Added by card",
+  gift: "Gift with a top-up",
   charge: "Job",
   earning: "Earned back by your machines",
   tax: "HiveWorker fee",
@@ -70,6 +74,8 @@ export default async function WalletPage({
     Math.floor(balance / 1_000_000 / privatePoolUsdPerMinute(size.vcpus).net)
   )
   const mayPay = roleAtLeast(membership.role, "admin")
+  const mayOpenGifts = mayPay && canTakeCards()
+  const gifts = mayOpenGifts ? await countGifts(db, organizationId) : 0
   // Only an amount this app offers is echoed back, whatever the URL says.
   const paid = TOP_UP_AMOUNTS_USD.find((amount) => String(amount) === funded)
 
@@ -80,6 +86,13 @@ export default async function WalletPage({
           Thanks. Your ${paid} payment was received and is added to the balance
           as soon as the card network confirms it, usually within a few seconds.
         </Notice>
+      )}
+      {mayOpenGifts && (
+        <Gift
+          waiting={gifts}
+          expecting={Boolean(paid)}
+          shares={GIFT_PRIZES.map((prize) => prize.share)}
+        />
       )}
       {saved?.lastError && (
         <Notice tone="alert">
@@ -224,7 +237,9 @@ export default async function WalletPage({
                     {entry.amount > 0 ? "+" : "−"}
                     {formatMoney(
                       Math.abs(entry.amount),
-                      entry.kind === "grant" || entry.kind === "purchase"
+                      entry.kind === "grant" ||
+                        entry.kind === "purchase" ||
+                        entry.kind === "gift"
                         ? "cents"
                         : "fine"
                     )}

@@ -253,7 +253,7 @@ export const ledgerEntry = sqliteTable(
     /** Organization or user id; `treasury` for the treasury. */
     accountId: text("account_id").notNull(),
     kind: text("kind", {
-      enum: ["grant", "purchase", "charge", "earning", "tax"],
+      enum: ["grant", "purchase", "gift", "charge", "earning", "tax"],
     }).notNull(),
     amount: integer("amount").notNull(),
     jobId: text("job_id"),
