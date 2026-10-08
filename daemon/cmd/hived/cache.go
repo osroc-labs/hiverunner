@@ -26,7 +26,7 @@ func cacheLimit(current settings.Settings, dir string) int64 {
 
 // openCache opens the machine's Actions cache with its owner's limit.
 func openCache(current func() settings.Settings) (*cache.Store, error) {
-	dir, err := cache.DefaultDir()
+	dir, err := cacheDir(current())
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +150,7 @@ hived cache clear <repo>    Delete one repository's, by the id shown
 The cache is on by default. Change it with:
   hived config set cache off
   hived config set cache-size 40     gigabytes, or auto
+  hived config set cache-dir <path>  keep it on another disk, or default
 `
 
 func cacheCommand(args []string) error {
@@ -162,10 +163,11 @@ func cacheCommand(args []string) error {
 	case len(args) == 0:
 		fmt.Println()
 		fmt.Print(indent(screen.Box("Actions cache", cacheRows(screen, current, true)...)))
-		if dir, err := cache.DefaultDir(); err == nil {
+		if dir, err := cacheDir(current); err == nil {
 			fmt.Println(indent(screen.Dim("Kept in " + dir)))
 		}
 		fmt.Println(indent(screen.Dim("Empty it with: hived cache clear     Resize it with: hived config set cache-size 40")))
+		fmt.Println(indent(screen.Dim("Keep it on another disk with: hived config set cache-dir /Volumes/Big/HiveWorker")))
 		return nil
 	case args[0] == "clear" && len(args) <= 2:
 		store, err := openCache(func() settings.Settings { return current })

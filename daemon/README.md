@@ -134,12 +134,45 @@ and `hived config set <name> <value>` changes one:
 | `hours`      | `22:00-07:00`, `any`  | When jobs may start, in local time               |
 | `cache`      | `on`, `off`           | Keep an Actions cache on this Mac                |
 | `cache-size` | `1` to `2000`, `auto` | The most disk the cache may use, in gigabytes    |
+| `data-dir`   | a path, `default`     | Where the image and each job's disk are kept     |
+| `cache-dir`  | a path, `default`     | Where the Actions cache is kept                  |
 
 `hived pause` and `hived resume` stop and restart lending altogether. A job
 already running always finishes.
 
 When the machine is not taking jobs, `hived status` says why and what to do
 about it: `lid closed`, then `open the lid or run hived config set lid on`.
+
+## On another disk
+
+What takes room can be kept somewhere else, such as an external drive on a
+Mac with a small one of its own:
+
+```sh
+./hived config set data-dir /Volumes/Big/HiveWorker    # the image, and each job's disk
+./hived config set cache-dir /Volumes/Big/HiveWorker   # the Actions cache
+./hived config set data-dir default                    # back where it was
+```
+
+Each names a home, and hived keeps a directory of its own inside it (`image`
+and `image-jobs`, `actions-cache`), so both may name the same place. What is
+already there is moved, not downloaded again: at once if no daemon is
+running, and otherwise by the daemon, which stops taking jobs, waits for the
+ones it has, moves, and starts itself again. Until then everything carries on
+from the old place, and `hived config` says a move is waiting. The image and
+the job disks go together because a job's disk is a clone of the image, which
+only works within one volume. The installer asks the daemon where the image
+is kept, so an update lands there too.
+
+The machine's token and its settings do not move. They stay in the home
+directory, where the file's permissions mean something; an external disk
+often has ownership switched off.
+
+A disk that is not attached is not stood in for. hived makes nothing in its
+place, takes no jobs (or runs them on GitHub's cache, if it is the cache that
+is missing), says so in `hived status` and `hived doctor`, and starts itself
+again when the disk is back. `HIVE_IMAGE` and `HIVE_CACHE` still come first,
+for development.
 
 ## A machine nobody sits at
 
@@ -168,6 +201,7 @@ is wrong:
 | `service`       | The background service is installed                                                          |
 | `jobs`          | Nothing is holding jobs now: not paused, in its hours                                        |
 | `power`         | Plugged in                                                                                   |
+| `storage`       | A disk named by `data-dir` or `cache-dir` is attached                                        |
 | `lid`           | `lid on`, on a machine with a lid                                                            |
 | `sleep`         | macOS: `SleepDisabled 1` on a MacBook, `sleep 0` on a desktop. Linux: logind ignores the lid |
 | `power cut`     | macOS desktops: starts up again by itself (`autorestart 1`)                                  |
@@ -261,7 +295,7 @@ and replaced its Node, or a results address other than github.com's.
 50 GB. Past the cap, the caches wanted longest ago go first. A save that
 would leave the Mac under 5 GB free is refused, and the job carries on
 without saving. The files are under `~/Library/Caches/HiveWorker`, which
-backups skip. Losing any of it is a cache miss and nothing more.
+backups skip, unless `cache-dir` says otherwise. Losing any of it is a cache miss and nothing more.
 
 ## What it keeps
 

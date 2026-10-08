@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -109,10 +108,27 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
+	if errors.Is(err, errStartAgain) {
+		// Everything run started is stopped by now. The same process, begun
+		// again, so it works the same under a service manager and without.
+		err = startAgain()
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hived:", err)
 		os.Exit(1)
 	}
+}
+
+// errStartAgain is how run asks to be begun again from the top: what it
+// read once at the start, where the image and the cache are, has changed.
+var errStartAgain = errors.New("starting again")
+
+func startAgain() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	return syscall.Exec(exe, os.Args, os.Environ())
 }
 
 func server() string {
@@ -302,10 +318,21 @@ func run(ctx context.Context) error {
 		native = nativeRunner
 	}
 
+	// What the owner asked to be kept somewhere else is moved there now,
+	// before either place is opened.
+	moved, err := settle(live.Get())
+	for _, what := range moved {
+		log.Info(what)
+	}
+	if err != nil {
+		log.Warn("could not move everything; carrying on from where it is", "error", err)
+	}
+	settled, gone := loadMoves(), absent(live.Get())
+
 	// Without a guest image the machine still connects and reports presence;
 	// it declines jobs and says why.
 	var runner jobs.Runner
-	if vmRunner, err := newRunner(log); err != nil {
+	if vmRunner, err := newRunner(log, live.Get()); err != nil {
 		log.Warn("this machine cannot run jobs yet", "reason", err)
 	} else {
 		runner = vmRunner
@@ -362,7 +389,18 @@ func run(ctx context.Context) error {
 		Updating:   &updating,
 	})
 
-	return pools.Run(ctx, pools.Options{
+	// A place that changed, or a disk that came back, is picked up by
+	// starting again once no job is running.
+	var moving, again atomic.Bool
+	go func() {
+		if waitToMove(ctx, live.Get, settled, gone, slot.Busy, &moving) {
+			log.Info("starting again: where this machine keeps its image or cache has changed")
+			again.Store(true)
+			stop()
+		}
+	}()
+
+	err = pools.Run(ctx, pools.Options{
 		Client:        api.New(machine.Server),
 		Token:         machine.Token,
 		DaemonVersion: version,
@@ -382,8 +420,8 @@ func run(ctx context.Context) error {
 			if !vm && !macOS() {
 				return false
 			}
-			// An update is waiting for the jobs in hand to finish.
-			if updating.Load() {
+			// An update, or a move, is waiting for the jobs in hand to finish.
+			if updating.Load() || moving.Load() {
 				return false
 			}
 			warnAsleep()
@@ -391,6 +429,50 @@ func run(ctx context.Context) error {
 		},
 		Limits: limits,
 	})
+	if again.Load() {
+		return errStartAgain
+	}
+	return err
+}
+
+// waitToMove returns true when the daemon should start again: its owner
+// has moved the image or the cache since it started, or a disk that was
+// missing then is attached now. It sets moving first, which stops new jobs,
+// and waits for the ones in hand. Only a change since the start counts, so a
+// move that failed then is not tried again in a loop.
+func waitToMove(ctx context.Context, current func() settings.Settings, settled moves, gone []string, busy func() bool, moving *atomic.Bool) bool {
+	changed := func() bool {
+		now := loadMoves()
+		if !sameMove(now.Data, settled.Data) || !sameMove(now.Cache, settled.Cache) {
+			return true
+		}
+		return len(gone) > 0 && len(absent(current())) == 0
+	}
+	tick := time.NewTicker(15 * time.Second)
+	defer tick.Stop()
+	for !changed() {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-tick.C:
+		}
+	}
+	moving.Store(true)
+	for busy() {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-tick.C:
+		}
+	}
+	return ctx.Err() == nil
+}
+
+func sameMove(a, b *move) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // updateCommand is `hived update`: the installer, run again, if there is a
@@ -414,8 +496,8 @@ func updateCommand(ctx context.Context) error {
 	return err
 }
 
-func newRunner(log *slog.Logger) (*vm.Runner, error) {
-	dir, err := vm.DefaultImageDir()
+func newRunner(log *slog.Logger, current settings.Settings) (*vm.Runner, error) {
+	dir, err := imageDir(current)
 	if err != nil {
 		return nil, err
 	}
@@ -428,16 +510,16 @@ func newRunner(log *slog.Logger) (*vm.Runner, error) {
 	if err := vm.Preflight(); err != nil {
 		return nil, err
 	}
-	// Beside the image, so a job's disk is a clone and not a copy, and named
-	// after it, so two daemons on different images (as in development) keep
-	// separate job directories and separate network identities.
-	work := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-jobs")
-	return &vm.Runner{Image: image, WorkDir: work, Log: log}, nil
+	return &vm.Runner{Image: image, WorkDir: workDir(dir), Log: log}, nil
 }
 
 func selftest(ctx context.Context) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	runner, err := newRunner(log)
+	current, err := settings.Load()
+	if err != nil {
+		return err
+	}
+	runner, err := newRunner(log, current)
 	if err != nil {
 		return err
 	}
@@ -450,10 +532,7 @@ func selftest(ctx context.Context) error {
 	defer release()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	offerCache(runner, log, func() settings.Settings {
-		current, _ := settings.Load()
-		return current
-	})
+	offerCache(runner, log, func() settings.Settings { return current })
 	started := time.Now()
 	report, err := runner.SelfTest(ctx, 2)
 	fmt.Print(report)
@@ -487,7 +566,11 @@ func devJob(ctx context.Context, args []string) error {
 		return err
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	runner, err := newRunner(log)
+	current, err := settings.Load()
+	if err != nil {
+		return err
+	}
+	runner, err := newRunner(log, current)
 	if err != nil {
 		return err
 	}

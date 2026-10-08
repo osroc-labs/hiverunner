@@ -27,6 +27,18 @@ fail() {
   exit 1
 }
 
+# Where the image goes: beside the settings, unless its owner keeps it on
+# another disk (hived config set data-dir). The daemon just installed is
+# asked, since the settings file is its to read. A disk that is not attached
+# stops the install: the image is not put somewhere its owner did not choose.
+image_home() {
+  chosen=$("$BIN_DIR/hived" config get data-dir 2>/dev/null) || chosen=""
+  [ -n "$chosen" ] || chosen="$DATA_DIR"
+  [ "$chosen" = "$DATA_DIR" ] || [ -d "$chosen" ] ||
+    fail "the image is kept in $chosen, which is not there. Attach its disk and run this again, or run: hived config set data-dir default"
+  printf '%s\n' "$chosen"
+}
+
 # What to type next, said at the end on either system.
 tips() { # what this machine is called, the shell's startup file
   say ""
@@ -102,7 +114,8 @@ install -m 0755 "$work/daemon/hived" "$BIN_DIR/hived"
 say "Installed $BIN_DIR/hived"
 
 step "Installing the Linux image jobs run in"
-image_dir="$DATA_DIR/image"
+image_home=$(image_home)
+image_dir="$image_home/image"
 have=""
 if [ -f "$image_dir/manifest.json" ]; then
   have="$(plutil -extract imageVersion raw -o - "$image_dir/manifest.json" 2>/dev/null || true)-$(plutil -extract runnerVersion raw -o - "$image_dir/manifest.json" 2>/dev/null || true)"
@@ -113,17 +126,17 @@ else
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   fetch -# -o "$work/image.aar" "$image_url"
   check "$work/image.aar" "$image_sha"
-  mkdir -p "$DATA_DIR"
-  rm -rf "$DATA_DIR/image.new"
-  mkdir "$DATA_DIR/image.new"
-  aa extract -d "$DATA_DIR/image.new" -i "$work/image.aar" || fail "could not unpack the image."
-  [ -f "$DATA_DIR/image.new/manifest.json" ] || fail "the image download is incomplete."
+  mkdir -p "$image_home"
+  rm -rf "$image_home/image.new"
+  mkdir "$image_home/image.new"
+  aa extract -d "$image_home/image.new" -i "$work/image.aar" || fail "could not unpack the image."
+  [ -f "$image_home/image.new/manifest.json" ] || fail "the image download is incomplete."
   # Swapped in whole. A daemon running jobs keeps using the image it has
   # open until it is restarted below.
-  rm -rf "$DATA_DIR/image.old"
-  [ -d "$image_dir" ] && mv "$image_dir" "$DATA_DIR/image.old"
-  mv "$DATA_DIR/image.new" "$image_dir"
-  rm -rf "$DATA_DIR/image.old"
+  rm -rf "$image_home/image.old"
+  [ -d "$image_dir" ] && mv "$image_dir" "$image_home/image.old"
+  mv "$image_home/image.new" "$image_dir"
+  rm -rf "$image_home/image.old"
   say "Installed image $image_version"
 fi
 
@@ -309,7 +322,8 @@ if [ -z "$virtiofsd" ]; then
 fi
 
 step "Installing the Linux image jobs run in"
-image_dir="$DATA_DIR/image"
+image_home=$(image_home)
+image_dir="$image_home/image"
 have=""
 if [ -f "$image_dir/manifest.json" ]; then
   number() { sed -n "s/.*\"$1\": *\"\{0,1\}\([^\",]*\).*/\1/p" "$image_dir/manifest.json" | head -1; }
@@ -327,16 +341,16 @@ else
     rm -f "$work/image.part"
   done
   check "$work/image.tar.gz" "$image_sha"
-  mkdir -p "$DATA_DIR"
-  rm -rf "$DATA_DIR/image.new"
-  mkdir "$DATA_DIR/image.new"
+  mkdir -p "$image_home"
+  rm -rf "$image_home/image.new"
+  mkdir "$image_home/image.new"
   # Sparse, so the disk takes the room its contents do and no more.
-  tar -xzSf "$work/image.tar.gz" -C "$DATA_DIR/image.new" || fail "could not unpack the image."
-  [ -f "$DATA_DIR/image.new/manifest.json" ] || fail "the image download is incomplete."
-  rm -rf "$DATA_DIR/image.old"
-  [ -d "$image_dir" ] && mv "$image_dir" "$DATA_DIR/image.old"
-  mv "$DATA_DIR/image.new" "$image_dir"
-  rm -rf "$DATA_DIR/image.old"
+  tar -xzSf "$work/image.tar.gz" -C "$image_home/image.new" || fail "could not unpack the image."
+  [ -f "$image_home/image.new/manifest.json" ] || fail "the image download is incomplete."
+  rm -rf "$image_home/image.old"
+  [ -d "$image_dir" ] && mv "$image_dir" "$image_home/image.old"
+  mv "$image_home/image.new" "$image_dir"
+  rm -rf "$image_home/image.old"
   say "Installed image $image_version"
 fi
 

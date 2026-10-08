@@ -52,6 +52,13 @@ type Settings struct {
 	// AutoUpdate lets the daemon update itself when a release is out and
 	// it has no job, by running the installer. Off, it only says so.
 	AutoUpdate bool `json:"autoUpdate"`
+	// DataDir is where the guest image and each job's disk are kept, for an
+	// owner who wants them on another disk. Empty means beside the machine
+	// file. The two cannot be apart: a job's disk is a clone of the image.
+	DataDir string `json:"dataDir,omitempty"`
+	// CacheDir is where the Actions cache is kept. Empty means with the
+	// user's other caches.
+	CacheDir string `json:"cacheDir,omitempty"`
 }
 
 // Sizes are the job sizes a machine can be offered, by guest vCPUs.
@@ -143,6 +150,11 @@ func (s Settings) validate() error {
 	if s.CacheGB < 0 || s.CacheGB > MostCacheGB {
 		return fmt.Errorf("cache-size must be auto or from 1 to %d", MostCacheGB)
 	}
+	for key, dir := range map[string]string{"data-dir": s.DataDir, "cache-dir": s.CacheDir} {
+		if dir != "" && !filepath.IsAbs(dir) {
+			return fmt.Errorf("%s must be a full path, or left out for the default", key)
+		}
+	}
 	_, _, err := parseHours(s.Hours)
 	return err
 }
@@ -157,10 +169,23 @@ func isSize(vcpus int) bool {
 }
 
 // Keys are the settings `hived config set` accepts, in the order shown.
-var Keys = []string{"max-jobs", "max-vcpus", "warm", "battery", "lid", "hours", "cache", "cache-size", "macos-jobs", "auto-update"}
+var Keys = []string{"max-jobs", "max-vcpus", "warm", "battery", "lid", "hours", "cache", "cache-size", "macos-jobs", "auto-update", "data-dir", "cache-dir"}
 
 // Set changes one setting from what was typed on a command line.
 func (s *Settings) Set(key, value string) error {
+	// A path is taken as typed: its case is part of it.
+	if key == "data-dir" || key == "cache-dir" {
+		dir, err := parseDir(key, value)
+		if err != nil {
+			return err
+		}
+		if key == "data-dir" {
+			s.DataDir = dir
+		} else {
+			s.CacheDir = dir
+		}
+		return nil
+	}
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch key {
 	case "max-jobs":
@@ -230,6 +255,25 @@ func parseSwitch(value string) (bool, error) {
 		return false, nil
 	}
 	return false, errors.New("not a switch")
+}
+
+// parseDir is a directory as typed, or "" for "default".
+func parseDir(key, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if strings.EqualFold(value, "default") {
+		return "", nil
+	}
+	if rest, ok := strings.CutPrefix(value, "~/"); ok {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		value = filepath.Join(home, rest)
+	}
+	if !filepath.IsAbs(value) {
+		return "", fmt.Errorf("%s takes a full path, like /Volumes/Big/HiveWorker, or default", key)
+	}
+	return filepath.Clean(value), nil
 }
 
 var errHours = errors.New(`hours takes a window like 22:00-07:00, or any`)
