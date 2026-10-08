@@ -31,10 +31,28 @@ export const TRIAL_GRANT_USD = 5
 export const TRIAL_GRANT_WITH_CARD_USD = 10
 
 /**
- * What an organization can add to its balance in one card payment, in USD.
- * The browser names one of these; it never names an amount of its own.
+ * The amounts offered as one-click card payments, in USD. They are also the
+ * only amounts automatic top-up will charge.
  */
 export const TOP_UP_AMOUNTS_USD = [10, 25, 50, 100] as const
+
+/**
+ * The least and the most one card payment made by hand may add, in USD. Any
+ * whole number of dollars between them can be paid; the browser names it and
+ * the server checks it with `topUpAllowed`.
+ */
+export const TOP_UP_MIN_USD = 1
+export const TOP_UP_MAX_USD = 1000
+
+/** Whether an amount named by a browser is one a card payment may be for. */
+export function topUpAllowed(dollars: unknown): dollars is number {
+  return (
+    typeof dollars === "number" &&
+    Number.isInteger(dollars) &&
+    dollars >= TOP_UP_MIN_USD &&
+    dollars <= TOP_UP_MAX_USD
+  )
+}
 
 /**
  * The balances an organization can choose to top up below, in USD. The first
