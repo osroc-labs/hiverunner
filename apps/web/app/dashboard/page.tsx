@@ -9,7 +9,11 @@ import { AccountPage } from "@/components/account-page"
 import { Notice, Panel, Snippet } from "@/components/console/panel"
 import { getDb } from "@/db"
 import { NoHiveSteps } from "@/components/no-hive-steps"
-import { DAEMON_RELEASED, INSTALL_COMMAND } from "@/components/marketing/site"
+import {
+  DAEMON_RELEASED,
+  INSTALL_COMMAND,
+  releasedDaemonVersion,
+} from "@/components/marketing/site"
 import { getPool } from "@/lib/session"
 import { LiveDashboard } from "./live-dashboard"
 
@@ -26,9 +30,10 @@ export default async function DashboardPage({
   const { installed } = await searchParams
   const { organizationId, installation, membership } = pool
   const db = getDb()
-  const [live, settings] = await Promise.all([
+  const [live, settings, released] = await Promise.all([
     getLiveSnapshot(db, organizationId),
     getPoolSettings(db, organizationId),
+    releasedDaemonVersion(),
   ])
   const online = live.machines.filter(
     (machine) => machine.presence === "online" || machine.presence === "busy"
@@ -74,6 +79,7 @@ export default async function DashboardPage({
       )}
 
       <LiveDashboard
+        released={released}
         invite={{
           organization: installation.accountLogin,
           url: `${env.APP_URL}/join/${installation.accountLogin}`,

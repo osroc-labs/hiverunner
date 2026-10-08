@@ -2,13 +2,21 @@ import { and, eq } from "drizzle-orm"
 
 import type { AuthDb } from "@workspace/auth/db"
 
-import { poolSettings } from "@workspace/db/schema"
+import {
+  poolSettings,
+  ROUTING_POLICIES,
+  type RoutingPolicy,
+} from "@workspace/db/schema"
+
+export { ROUTING_POLICIES, type RoutingPolicy }
 
 export type PoolSettingsInput = {
   allowedTeams: string[]
   earningsDestination: "organization" | "developer"
   /** Whether `hive-macos` jobs, run on members' Macs themselves, are allowed. */
   macosJobs: boolean
+  /** Which machine a job goes to when several could take it. */
+  routing: RoutingPolicy
   /** The version the editor loaded; a stale one is refused. */
   version: number
 }
@@ -29,6 +37,8 @@ export function validatePoolSettings(input: PoolSettingsInput) {
     fields.earningsDestination = "Choose who is paid"
   if (typeof input.macosJobs !== "boolean")
     fields.macosJobs = "Choose whether macOS jobs may run"
+  if (!ROUTING_POLICIES.includes(input.routing))
+    fields.routing = "Choose how jobs are routed"
   if (!Number.isInteger(input.version)) fields.version = "Reload and try again"
   return Object.keys(fields).length ? fields : null
 }
@@ -56,6 +66,23 @@ export async function macosJobsAllowed(db: AuthDb, organizationId: string) {
   return row?.macosJobs === true
 }
 
+/**
+ * How this hive chooses among the machines that could take a job. Read by
+ * its `Pool` at each offer; a hive that has never saved settings sends each
+ * job to the fastest.
+ */
+export async function routingPolicy(
+  db: AuthDb,
+  organizationId: string
+): Promise<RoutingPolicy> {
+  const [row] = await db
+    .select({ routing: poolSettings.routing })
+    .from(poolSettings)
+    .where(eq(poolSettings.organizationId, organizationId))
+    .limit(1)
+  return row?.routing ?? "fastest"
+}
+
 /** False when someone else saved first. */
 export async function updatePoolSettings(
   db: AuthDb,
@@ -69,6 +96,7 @@ export async function updatePoolSettings(
       allowedTeams: input.allowedTeams,
       earningsDestination: input.earningsDestination,
       macosJobs: input.macosJobs,
+      routing: input.routing,
       version: input.version + 1,
       updatedAt: now,
     })

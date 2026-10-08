@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { RUNNER_SIZES, privatePoolUsdPerMinute } from "@workspace/pricing"
 
-import { CombLegend, PoolComb } from "@/components/console/comb"
+import { CombLegend, CombVersions, PoolComb } from "@/components/console/comb"
 import {
   formatMinutes,
   formatMoney,
@@ -23,8 +23,11 @@ import { Panel, Snippet } from "@/components/console/panel"
  */
 export function LiveDashboard({
   invite,
+  released,
 }: {
   invite: { organization: string; url: string; teams: string[] }
+  /** The daemon version currently released, to mark machines behind it. */
+  released?: string | null
 }) {
   const { snapshot } = useLive()
   const router = useRouter()
@@ -69,8 +72,10 @@ export function LiveDashboard({
             machines={machines}
             running={running}
             seat={{ label: "+ invite", href: "#invite" }}
+            released={released}
           />
           <CombLegend machines={machines} />
+          <CombVersions machines={machines} released={released} />
         </Panel>
         <Panel
           title="running now"

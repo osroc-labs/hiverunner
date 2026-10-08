@@ -5,7 +5,7 @@ import Link from "next/link"
 import type { LiveJob, LiveMachine } from "@workspace/db/live"
 import { cn } from "@workspace/ui/lib/utils"
 
-import { gib } from "./format"
+import { behind, gib } from "./format"
 
 const RADIUS = 46
 const CELL_WIDTH = Math.sqrt(3) * RADIUS
@@ -61,10 +61,13 @@ export function PoolComb({
   machines,
   running,
   seat,
+  released,
   className,
 }: {
   machines: LiveMachine[]
   running: LiveJob[]
+  /** The daemon version currently released, to mark machines behind it. */
+  released?: string | null
   /** Marks the first empty cell as an open place, and where it leads. */
   seat?: { label: string; href?: string }
   className?: string
@@ -168,7 +171,7 @@ export function PoolComb({
               ) : null}
               <text
                 x={cell.x}
-                y={cell.y - 7}
+                y={cell.y - 13}
                 textAnchor="middle"
                 dominantBaseline="central"
                 className={cn(
@@ -186,7 +189,7 @@ export function PoolComb({
               </text>
               <text
                 x={cell.x}
-                y={cell.y + 10}
+                y={cell.y + 3}
                 textAnchor="middle"
                 dominantBaseline="central"
                 className={cn(
@@ -197,6 +200,23 @@ export function PoolComb({
                 {busy && vcpus
                   ? `${vcpus}/${machine.cores} vcpu`
                   : `${machine.cores} cores`}
+              </text>
+              <text
+                x={cell.x}
+                y={cell.y + 18}
+                textAnchor="middle"
+                dominantBaseline="central"
+                className={cn(
+                  "font-mono text-[9px]",
+                  busy
+                    ? "fill-primary-foreground/80"
+                    : behind(machine.daemonVersion, released)
+                      ? "fill-foreground"
+                      : "fill-muted-foreground"
+                )}
+              >
+                {short(machine.daemonVersion)}
+                {behind(machine.daemonVersion, released) ? " ↑" : ""}
               </text>
             </Link>
           )
@@ -218,12 +238,81 @@ export function PoolComb({
           <p className="text-muted-foreground">
             {focused.owner} · speed {focused.speedScore.toFixed(2)}×
           </p>
+          <p className="text-muted-foreground">
+            hived {focused.daemonVersion}
+            {behind(focused.daemonVersion, released) ? (
+              <span className="text-foreground"> · {released} is released</span>
+            ) : null}
+          </p>
           <p className="mt-1">
             {PRESENCE[focused.presence] ?? focused.presence}
           </p>
         </div>
       ) : null}
     </div>
+  )
+}
+
+/** A version as it fits in a cell: `v1.4.2`, cut short if it is a long one. */
+const short = (version: string) => {
+  const text = version.trim().replace(/^v?/, "v")
+  return text.length > 10 ? `${text.slice(0, 9)}…` : text
+}
+
+/**
+ * Which daemon versions the hive is on and how many Macs are on each, newest
+ * first as text sorts them, so a hive on one version says so in one line.
+ */
+export function CombVersions({
+  machines,
+  released,
+}: {
+  machines: LiveMachine[]
+  /** The daemon version currently released, to mark versions behind it. */
+  released?: string | null
+}) {
+  const counts = new Map<string, number>()
+  for (const machine of machines)
+    counts.set(
+      machine.daemonVersion,
+      (counts.get(machine.daemonVersion) ?? 0) + 1
+    )
+  if (!counts.size) return null
+  const versions = [...counts].sort(([a], [b]) =>
+    b.localeCompare(a, "en", { numeric: true })
+  )
+  const stale = versions.some(([version]) => behind(version, released))
+  return (
+    <p className="font-mono text-xs text-muted-foreground">
+      hived{" "}
+      {versions.map(([version, count], index) => (
+        <React.Fragment key={version}>
+          {index ? " · " : ""}
+          <span
+            className={
+              behind(version, released) ? "text-foreground" : undefined
+            }
+          >
+            {version}
+          </span>
+          {versions.length > 1 ? (
+            <span className="tabular-nums"> ×{count}</span>
+          ) : null}
+        </React.Fragment>
+      ))}
+      {versions.length === 1 && machines.length > 1 ? " on every Mac" : ""}
+      {stale ? (
+        <>
+          {" · "}
+          <span
+            className="text-foreground"
+            title="The daemon updates itself when idle unless its owner turned that off; or they run: hived update"
+          >
+            {released} is released
+          </span>
+        </>
+      ) : null}
+    </p>
   )
 }
 

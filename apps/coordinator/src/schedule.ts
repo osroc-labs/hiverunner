@@ -1,3 +1,4 @@
+import type { RoutingPolicy } from "@workspace/db/settings"
 import type { RunnerArch } from "@workspace/pricing"
 import type { Presence } from "@workspace/protocol"
 
@@ -71,21 +72,41 @@ export function room(candidate: Candidate, size: JobSize) {
 
 /**
  * The machine a job of this size should go to, or null if none can take it.
+ * Every policy chooses among the same machines, the ones with room; they
+ * differ only in which of those goes first.
  *
- * Among machines with room, the fastest: the job finishes sooner, and the
- * speed score already prices the difference. Between equals, the one doing
- * less, so work spreads before it stacks.
+ * - `fastest`: the fastest. The job finishes sooner, and the speed score
+ *   already prices the difference. Between equals, the one doing less, so
+ *   work spreads before it stacks.
+ * - `spread`: the one doing the least, so an idle machine is used before a
+ *   second job lands on a working one. Between equals, the fastest.
+ * - `round-robin`: the one that has waited longest since it was last given a
+ *   job, by `turns` (larger is more recent), so every machine gets work whatever its speed. One never
+ *   given a job goes first; between equals, the fastest.
  */
-export function pickMachine(candidates: Candidate[], size: JobSize) {
+export function pickMachine(
+  candidates: Candidate[],
+  size: JobSize,
+  policy: RoutingPolicy = "fastest",
+  turns: Record<string, number> = {}
+) {
+  const faster = (a: Candidate, b: Candidate) => b.speedScore - a.speedScore
+  const idler = (a: Candidate, b: Candidate) => load(a) - load(b)
+  const waited = (a: Candidate, b: Candidate) =>
+    (turns[a.machineId] ?? 0) - (turns[b.machineId] ?? 0)
+  const order = {
+    fastest: [faster, idler],
+    spread: [idler, faster],
+    "round-robin": [waited, faster],
+  }[policy]
   let best: Candidate | null = null
   for (const candidate of candidates) {
     if (candidate.presence !== "online" || !room(candidate, size)) continue
-    if (
-      !best ||
-      candidate.speedScore > best.speedScore ||
-      (candidate.speedScore === best.speedScore && load(candidate) < load(best))
-    )
-      best = candidate
+    // Negative when the candidate goes before the best so far.
+    const before = best
+      ? (order.map((by) => by(candidate, best!)).find(Boolean) ?? 0)
+      : -1
+    if (before < 0) best = candidate
   }
   return best
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `pool_settings` ADD `routing` text DEFAULT 'fastest' NOT NULL;

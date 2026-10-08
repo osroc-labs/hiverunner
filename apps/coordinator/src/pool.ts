@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers"
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/d1"
 import { githubInstallation, machine, machinePool } from "@workspace/db/schema"
+import { routingPolicy } from "@workspace/db/settings"
 import {
   ALL_RUNNER_SIZES,
   runnerArch,
@@ -207,11 +208,30 @@ export class Pool extends DurableObject<CoordinatorEnv> {
    */
   async offer(assignment: Assignment) {
     const sockets = this.ctx.getWebSockets()
+    if (!sockets.length) return null
+    const policy = await routingPolicy(
+      this.db,
+      this.attachment(sockets[0]!).organizationId
+    )
+    // Who was given a job when, as a count of offers. Kept in storage, not
+    // on the socket, so a laptop that reconnects does not come back to the
+    // front of the line.
+    const turns =
+      policy === "round-robin"
+        ? ((await this.ctx.storage.get<Record<string, number>>("turns")) ?? {})
+        : {}
     const chosen = pickMachine(
       sockets.map((socket) => this.attachment(socket)),
-      assignment
+      assignment,
+      policy,
+      turns
     )
     if (!chosen) return null
+    if (policy === "round-robin")
+      await this.ctx.storage.put("turns", {
+        ...turns,
+        [chosen.machineId]: Math.max(0, ...Object.values(turns)) + 1,
+      })
     const socket = sockets.find(
       (candidate) => this.attachment(candidate).machineId === chosen.machineId
     )!
