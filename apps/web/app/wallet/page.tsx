@@ -10,8 +10,11 @@ import {
   GIFT_PRIZES,
   RUNNER_SIZES,
   TOP_UP_AMOUNTS_USD,
+  TOP_UP_MAX_USD,
+  TOP_UP_MIN_USD,
   TRIAL_GRANT_USD,
   privatePoolUsdPerMinute,
+  topUpAllowed,
 } from "@workspace/pricing"
 
 import Link from "next/link"
@@ -76,8 +79,11 @@ export default async function WalletPage({
   const mayPay = roleAtLeast(membership.role, "admin")
   const mayOpenGifts = mayPay && canTakeCards()
   const gifts = mayOpenGifts ? await countGifts(db, organizationId) : 0
-  // Only an amount this app offers is echoed back, whatever the URL says.
-  const paid = TOP_UP_AMOUNTS_USD.find((amount) => String(amount) === funded)
+  // Only an amount this app takes is echoed back, whatever the URL says.
+  const paid =
+    funded && /^\d+$/.test(funded) && topUpAllowed(Number(funded))
+      ? Number(funded)
+      : null
 
   return (
     <AccountPage title="billing" live={live}>
@@ -153,6 +159,8 @@ export default async function WalletPage({
             <>
               <AddFunds
                 amounts={TOP_UP_AMOUNTS_USD}
+                min={TOP_UP_MIN_USD}
+                max={TOP_UP_MAX_USD}
                 below={(saved?.belowCents ?? AUTO_TOP_UP_BELOW_USD * 100) / 100}
                 offerAuto={!saved?.enabled}
               />

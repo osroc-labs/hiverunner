@@ -14,6 +14,10 @@ import {
   RUNNER_SIZES,
   runnerArch,
   runnerSize,
+  TOP_UP_AMOUNTS_USD,
+  TOP_UP_MAX_USD,
+  TOP_UP_MIN_USD,
+  topUpAllowed,
   usdToMicroTokens,
   X64_RUNNER_SIZES,
 } from "../packages/pricing/src/index.ts"
@@ -112,4 +116,25 @@ test("a machine's architecture is read in whichever words it uses", () => {
     assert.equal(runnerArch(said), "x64")
   for (const said of ["riscv64", "386", "", null, undefined, 64])
     assert.equal(runnerArch(said), null)
+})
+
+test("a top-up is any whole number of dollars within the limits", () => {
+  assert.equal(TOP_UP_MIN_USD, 1)
+  for (const dollars of [TOP_UP_MIN_USD, 7, TOP_UP_MAX_USD])
+    assert.equal(topUpAllowed(dollars), true, String(dollars))
+  for (const dollars of TOP_UP_AMOUNTS_USD)
+    assert.equal(topUpAllowed(dollars), true, String(dollars))
+  for (const dollars of [
+    0,
+    -5,
+    0.5,
+    12.34,
+    TOP_UP_MAX_USD + 1,
+    "10",
+    null,
+    undefined,
+    Number.NaN,
+    Infinity,
+  ])
+    assert.equal(topUpAllowed(dollars), false, String(dollars))
 })

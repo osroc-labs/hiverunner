@@ -1,6 +1,11 @@
 import { logError } from "@/lib/diagnostics"
 import { requireMembership } from "@workspace/auth"
-import { TOP_UP_AMOUNTS_USD } from "@workspace/pricing"
+import {
+  TOP_UP_AMOUNTS_USD,
+  TOP_UP_MAX_USD,
+  TOP_UP_MIN_USD,
+  topUpAllowed,
+} from "@workspace/pricing"
 import {
   createCheckoutSession,
   ensureCustomer,
@@ -18,8 +23,8 @@ import { appOrigin, canTakeCards, stripe } from "@/lib/stripe"
 /**
  * Starts a card payment that adds to the active organization's balance.
  *
- * The body names one of the amounts this app offers and nothing else. The
- * balance is credited by the webhook when Stripe says the payment was made,
+ * The body names a whole number of dollars within the limits this app sets
+ * and nothing else. The balance is credited by the webhook when Stripe says the payment was made,
  * not by the browser coming back from Checkout.
  */
 export async function POST(request: Request) {
@@ -39,14 +44,20 @@ export async function POST(request: Request) {
     amount?: unknown
     auto?: unknown
   }
-  // Asked for by the person paying, and never assumed for them.
-  const auto = body.auto === true
-  const dollars = TOP_UP_AMOUNTS_USD.find((offered) => offered === body.amount)
-  if (!dollars)
+  if (!topUpAllowed(body.amount))
     return Response.json(
-      { error: "Choose one of the amounts offered." },
+      {
+        error: `Choose a whole number of dollars from $${TOP_UP_MIN_USD} to $${TOP_UP_MAX_USD.toLocaleString("en-US")}.`,
+      },
       { status: 400 }
     )
+  const dollars = body.amount
+  // Asked for by the person paying, and never assumed for them. Automatic
+  // top-up charges only the amounts on offer, so an amount of the payer's
+  // own is a one-off.
+  const auto =
+    body.auto === true &&
+    TOP_UP_AMOUNTS_USD.some((offered) => offered === dollars)
 
   const db = getDb()
   // Checked against the database, not the session: someone removed from the
