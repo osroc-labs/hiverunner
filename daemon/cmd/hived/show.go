@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/cache"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
@@ -74,11 +73,14 @@ func status() error {
 	}
 
 	daemon, daemonUp := "not running; start it with: hived run", false
-	if dir, err := vm.DefaultImageDir(); err != nil {
+	var missing errAway
+	if dir, err := imageDir(current); errors.As(err, &missing) {
+		daemon = "its image is in " + missing.home + ", which is not there"
+	} else if err != nil {
 		daemon = "unknown"
 	} else if _, err := vm.LoadImage(dir); err != nil {
 		daemon = "no runner image installed, so it cannot run jobs"
-	} else if vm.WorkDirInUse(dir + "-jobs") {
+	} else if vm.WorkDirInUse(workDir(dir)) {
 		daemon, daemonUp = "running", true
 	}
 
@@ -226,14 +228,24 @@ func settingRows(screen ui.Screen, current settings.Settings) []string {
 	cacheSize := strconv.Itoa(current.CacheGB) + " GB"
 	if current.CacheGB == 0 {
 		cacheSize = "auto"
-		if dir, err := cache.DefaultDir(); err == nil {
+		if dir, err := cacheDir(current); err == nil {
 			cacheSize = "auto, " + bytesText(cacheLimit(current, dir))
 		}
 	}
 	row := func(key, value, meaning string) string {
 		return ui.Pad(key, 12) + ui.Pad(screen.Honey(value), 16) + screen.Dim(meaning)
 	}
-	return []string{
+	// A path has the row to itself: it is rarely short.
+	place := func(key, dir, meaning string) string {
+		if dir == "" {
+			return row(key, "default", meaning)
+		}
+		if room := ui.Inner - 12; ui.Width(dir) > room {
+			dir = "…" + dir[len(dir)-room+1:]
+		}
+		return ui.Pad(key, 12) + screen.Honey(dir)
+	}
+	rows := []string{
 		row("max-jobs", strconv.Itoa(current.MaxJobs), "how many jobs run at once"),
 		row("max-vcpus", limit, "the largest job "+thisMachine+" takes"),
 		row("warm", onOff(current.Warm), "keep one VM booted so jobs start sooner"),
@@ -244,8 +256,15 @@ func settingRows(screen ui.Screen, current settings.Settings) []string {
 		row("cache-size", cacheSize, "the most disk the cache may use"),
 		row("macos-jobs", onOff(current.MacOSJobs), "take hive-macos jobs on this Mac itself"),
 		row("auto-update", onOff(current.AutoUpdate), "update to new releases when idle"),
+		place("data-dir", current.DataDir, "where the image and job disks are kept"),
+		place("cache-dir", current.CacheDir, "where the Actions cache is kept"),
 		row("paused", yesNo(current.Paused), "hived pause, hived resume"),
 	}
+	pending := loadMoves()
+	if pending.Data != nil || pending.Cache != nil {
+		rows = append(rows, "", screen.Dim("A move is waiting for the daemon to have no job running."))
+	}
+	return rows
 }
 
 func field(name, value string) string { return ui.Pad(name, 12) + value }
@@ -302,6 +321,11 @@ hived config set <name> <value>  Change one
                                  as a separate user; hived macos setup first
   auto-update on or off          update to new releases when no job is running;
                                  off, hived status and a notification say so
+  data-dir   a path or default   where the Linux image and each job's disk are
+                                 kept; what is there is moved
+  cache-dir  a path or default   where the Actions cache is kept; moved too
+
+hived config get data-dir        Print where a directory setting points
 `
 
 func configure(args []string) error {
@@ -319,6 +343,20 @@ func configure(args []string) error {
 		}
 		fmt.Println(indent(screen.Dim("Change one with: hived config set max-vcpus 4")))
 		return nil
+	case len(args) == 2 && args[0] == "get" && (args[1] == "data-dir" || args[1] == "cache-dir"):
+		// What the installer asks, so an update puts the image where its
+		// owner keeps it.
+		home, err := chosenHome(current.DataDir, defaultDataHome)
+		if args[1] == "cache-dir" {
+			home, err = chosenHome(current.CacheDir, defaultCacheHome)
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Println(home)
+		return nil
+	case len(args) == 3 && args[0] == "set" && (args[1] == "data-dir" || args[1] == "cache-dir"):
+		return configurePlace(current, args[1], args[2])
 	case len(args) == 3 && args[0] == "set":
 		if err := current.Set(args[1], args[2]); err != nil {
 			return err
@@ -349,6 +387,47 @@ func configure(args []string) error {
 		return nil
 	}
 	return errors.New("usage: hived config set <name> <value>; see hived config help")
+}
+
+// configurePlace changes where the image or the cache is kept, and moves
+// what is there: at once when no daemon is running, and otherwise by the
+// daemon, when it next has no job.
+func configurePlace(current settings.Settings, key, value string) error {
+	next := current
+	if err := next.Set(key, value); err != nil {
+		return err
+	}
+	if err := relocate(key, current, next); err != nil {
+		return err
+	}
+	if err := settings.Save(next); err != nil {
+		return err
+	}
+	moved, err := settle(next)
+	for _, what := range moved {
+		fmt.Println(strings.ToUpper(what[:1]) + what[1:] + ".")
+	}
+	pending := loadMoves()
+	waiting := pending.Cache
+	if key == "data-dir" {
+		waiting = pending.Data
+	}
+	switch {
+	case waiting == nil && len(moved) == 0:
+		fmt.Println(key + " is unchanged.")
+	case waiting == nil:
+	case daemonRunning(next):
+		fmt.Println("The daemon is running, so it moves what is there to " + waiting.To + " itself, as soon as it has no job.")
+	default:
+		return fmt.Errorf("%s is set, but nothing was moved yet: %w", key, err)
+	}
+	return nil
+}
+
+// daemonRunning reports whether a hived holds this machine's work directory.
+func daemonRunning(current settings.Settings) bool {
+	dir, err := imageDir(current)
+	return err == nil && vm.WorkDirInUse(workDir(dir))
 }
 
 func pause(paused bool) error {

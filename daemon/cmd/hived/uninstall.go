@@ -10,7 +10,30 @@ import (
 
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/cache"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
 )
+
+// homes are the places outside the defaults that may hold something of
+// hived's: the one its owner chose, and both ends of a move not yet made.
+func homes(chosen string, pending *move) []string {
+	found := []string{}
+	add := func(home string) {
+		for _, have := range found {
+			if have == home {
+				return
+			}
+		}
+		if home != "" {
+			found = append(found, home)
+		}
+	}
+	add(chosen)
+	if pending != nil {
+		add(pending.From)
+		add(pending.To)
+	}
+	return found
+}
 
 // uninstall removes everything the installer and the daemon put on this
 // machine: the background service, the guest image, the Actions cache, the
@@ -29,6 +52,18 @@ func uninstall(args []string) error {
 	}
 	data := filepath.Dir(machineFile)
 	cacheDir, _ := cache.DefaultDir()
+	// What the owner keeps on another disk, and anything a move left on
+	// its way there.
+	var elsewhere []string
+	if current, err := settings.Load(); err == nil {
+		pending := loadMoves()
+		for _, home := range homes(current.DataDir, pending.Data) {
+			elsewhere = append(elsewhere, filepath.Join(home, imageName), workDir(filepath.Join(home, imageName)))
+		}
+		for _, home := range homes(current.CacheDir, pending.Cache) {
+			elsewhere = append(elsewhere, filepath.Join(home, cacheName))
+		}
+	}
 	agent, logs := servicePaths(home)
 	self, _ := os.Executable()
 
@@ -37,6 +72,11 @@ func uninstall(args []string) error {
 	fmt.Println("  " + data + " (the Linux image, your settings and " + thisMachine + "'s sign-in)")
 	if cacheDir != "" {
 		fmt.Println("  " + filepath.Dir(cacheDir) + " (the Actions cache)")
+	}
+	for _, path := range elsewhere {
+		if _, err := os.Stat(path); err == nil {
+			fmt.Println("  " + path)
+		}
 	}
 	if logs != "" {
 		fmt.Println("  " + logs)
@@ -70,6 +110,11 @@ func uninstall(args []string) error {
 	}
 	remove(agent)
 	forgetService()
+	for _, path := range elsewhere {
+		remove(path)
+		// The home itself only if hived was all that was in it.
+		_ = os.Remove(filepath.Dir(path))
+	}
 	remove(data)
 	if cacheDir != "" {
 		remove(filepath.Dir(cacheDir))

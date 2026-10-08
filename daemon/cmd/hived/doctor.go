@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
@@ -74,6 +75,20 @@ func doctor() error {
 		} else {
 			checks = append(checks, host.Check{Name: "lid", Found: "jobs stop when the lid closes", Fix: "hived config set lid on"})
 		}
+	}
+	// A disk the owner keeps the image or the cache on has to be attached.
+	if gone := absent(current); len(gone) > 0 {
+		checks = append(checks, host.Check{Name: "storage", Found: strings.Join(gone, " and ") + " is not there, so nothing kept in it can be used",
+			Fix: "attach its disk, or run hived config set data-dir default (cache-dir for the cache)"})
+	} else if current.DataDir != "" || current.CacheDir != "" {
+		kept := []string{}
+		if current.DataDir != "" {
+			kept = append(kept, "the image in "+current.DataDir)
+		}
+		if current.CacheDir != "" {
+			kept = append(kept, "the cache in "+current.CacheDir)
+		}
+		checks = append(checks, host.Check{Name: "storage", Found: strings.Join(kept, ", "), OK: true})
 	}
 	checks = append(checks, host.Unattended()...)
 

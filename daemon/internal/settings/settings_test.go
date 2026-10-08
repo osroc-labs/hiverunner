@@ -148,3 +148,16 @@ func TestLiveFollowsTheFileAndKeepsTheLastGoodOne(t *testing.T) {
 		t.Fatalf("a broken file should be reported and ignored: max %d, error %v", got, complaint)
 	}
 }
+
+func TestADirIsTakenAsTyped(t *testing.T) {
+	current := Default()
+	if err := current.Set("data-dir", "/Volumes/M482 2TB External/HiveWorker/"); err != nil || current.DataDir != "/Volumes/M482 2TB External/HiveWorker" {
+		t.Errorf("data-dir: %q %v", current.DataDir, err)
+	}
+	if err := current.Set("cache-dir", "relative/path"); err == nil {
+		t.Error("a relative cache-dir was accepted")
+	}
+	if err := current.Set("data-dir", "Default"); err != nil || current.DataDir != "" {
+		t.Errorf("default: %q %v", current.DataDir, err)
+	}
+}
