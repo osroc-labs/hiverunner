@@ -34,6 +34,46 @@ test("only free, online machines are offered jobs", () => {
   assert.equal(pickMachine([machine("a")], arm(2)).machineId, "a")
 })
 
+test("a hive's routing policy decides among the machines with room", () => {
+  const pool = [
+    machine("slow", { speedScore: 0.9, maxJobs: 2 }),
+    machine("fast", { speedScore: 2.1, maxJobs: 2 }),
+    machine("middling", { speedScore: 1.4, maxJobs: 2 }),
+  ]
+  const working = pool.map((candidate) =>
+    candidate.machineId === "fast"
+      ? { ...candidate, jobs: { x: { vcpus: 2 } } }
+      : candidate
+  )
+  const pick = (...rest) => pickMachine(...rest).machineId
+
+  // Fastest stacks a second job on the fast machine; spread goes elsewhere.
+  assert.equal(pick(working, arm(2)), "fast")
+  assert.equal(pick(working, arm(2), "fastest"), "fast")
+  assert.equal(pick(working, arm(2), "spread"), "middling")
+  assert.equal(pick(pool, arm(2), "spread"), "fast")
+
+  // In turn: never given a job first, then whoever has waited longest.
+  assert.equal(pick(pool, arm(2), "round-robin"), "fast")
+  assert.equal(pick(pool, arm(2), "round-robin", { fast: 1 }), "middling")
+  const turns = { fast: 1, middling: 2, slow: 3 }
+  assert.equal(pick(pool, arm(2), "round-robin", turns), "fast")
+  assert.equal(
+    pick(pool, arm(2), "round-robin", { ...turns, fast: 4 }),
+    "middling"
+  )
+  // No policy sends a job to a machine that cannot take it.
+  const paused = pool.map((candidate) =>
+    candidate.machineId === "middling"
+      ? { ...candidate, presence: "paused" }
+      : candidate
+  )
+  assert.equal(pick(paused, arm(2), "round-robin", { fast: 1 }), "slow")
+  assert.equal(pick(pool, arm(8), "round-robin", {}), "fast")
+  for (const policy of ["fastest", "spread", "round-robin"])
+    assert.equal(pickMachine(pool, arm(12), policy), null, policy)
+})
+
 test("the fastest machine that fits wins", () => {
   const pool = [
     machine("slow", { speedScore: 0.9 }),

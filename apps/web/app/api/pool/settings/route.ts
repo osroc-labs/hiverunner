@@ -1,5 +1,6 @@
 import { getMembership, roleAtLeast } from "@workspace/auth"
 import {
+  type RoutingPolicy,
   updatePoolSettings,
   validatePoolSettings,
 } from "@workspace/db/settings"
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
       !input.allowedTeams.every((team) => typeof team === "string") ||
       typeof input.earningsDestination !== "string" ||
       typeof input.macosJobs !== "boolean" ||
+      typeof input.routing !== "string" ||
       typeof input.version !== "number"
     )
       throw new AppError("INVALID_INPUT", "Invalid input")
@@ -39,6 +41,7 @@ export async function POST(request: Request) {
         | "organization"
         | "developer",
       macosJobs: input.macosJobs,
+      routing: input.routing as RoutingPolicy,
       version: input.version,
     }
     const fields = validatePoolSettings(settings)

@@ -290,6 +290,7 @@ const settings = (request, change = {}) =>
     allowedTeams: ["ci"],
     earningsDestination: "developer",
     macosJobs: false,
+    routing: "fastest",
     version: 1,
     ...change,
   })

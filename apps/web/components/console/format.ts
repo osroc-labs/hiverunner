@@ -74,3 +74,19 @@ export const formatUsd = (usd: number) =>
   })
 
 export const gib = (bytes: number) => `${Math.round(bytes / 2 ** 30)} GB`
+
+/** Whether `version` is a release older than `released`; false when unsure. */
+export function behind(version: string, released: string | null | undefined) {
+  if (!released) return false
+  const parse = (v: string) => {
+    const parts = v.trim().replace(/^v/, "").split(".")
+    if (parts.length !== 3 || parts.some((p) => !/^\d+$/.test(p))) return null
+    return parts.map(Number)
+  }
+  const have = parse(version),
+    want = parse(released)
+  if (!have || !want) return false
+  for (let i = 0; i < 3; i++)
+    if (have[i] !== want[i]) return have[i]! < want[i]!
+  return false
+}

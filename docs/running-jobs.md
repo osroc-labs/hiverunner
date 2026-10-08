@@ -121,6 +121,16 @@ label is created when the first x64 machine able to serve it comes online.
 Savings on the dashboard compare each job with GitHub's price for its own
 architecture.
 
+When several machines could take a job, the hive's routing setting
+(`pool_settings.routing`) picks one. `fastest`, the default, sends it to the
+machine with the highest speed score. `spread` sends it to the machine holding
+the fewest jobs, so an idle one is used before a working one gets a second.
+`round-robin` sends it to the machine that has waited longest since it was
+last given one, so every machine gets a share of the work and of what it
+earns. An owner of the hive chooses in its settings; `pickMachine` in the
+coordinator's schedule is where each is defined, and no policy offers a job
+to a machine that `room()` says cannot take it.
+
 The daemon for Linux is released for both architectures, and real jobs have
 run on each. The x64 labels are `X64_RUNNER_SIZES` in `@workspace/pricing`,
 listed apart from `RUNNER_SIZES` because the site's prices and examples are

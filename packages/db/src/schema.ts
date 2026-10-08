@@ -9,6 +9,10 @@ import {
 } from "drizzle-orm/sqlite-core"
 import { organization, user } from "@workspace/auth/schema"
 
+/** How a hive chooses among the machines that could take a job. */
+export const ROUTING_POLICIES = ["fastest", "spread", "round-robin"] as const
+export type RoutingPolicy = (typeof ROUTING_POLICIES)[number]
+
 /**
  * One row per GitHub App installation. The organization row is created from
  * it and never the other way round: a pool exists because the App was
@@ -72,6 +76,13 @@ export const poolSettings = sqliteTable("pool_settings", {
   macosJobs: integer("macos_jobs", { mode: "boolean" })
     .notNull()
     .default(false),
+  /**
+   * Which machine a job goes to when several could take it. Read by the
+   * hive's `Pool` at each offer; `pickMachine` says what each one means.
+   */
+  routing: text("routing", { enum: ROUTING_POLICIES })
+    .notNull()
+    .default("fastest"),
   version: integer("version").notNull().default(1),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 })

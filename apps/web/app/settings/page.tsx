@@ -22,7 +22,7 @@ export default async function SettingsPage() {
       </p>
       {settings && (
         <Panel
-          title="who can join, who gets paid, and what runs"
+          title="who can join, who gets paid, and what runs where"
           className="max-w-3xl"
         >
           <SettingsForm
@@ -31,6 +31,7 @@ export default async function SettingsPage() {
             allowedTeams={settings.allowedTeams}
             earningsDestination={settings.earningsDestination}
             macosJobs={settings.macosJobs}
+            routing={settings.routing}
             version={settings.version}
             editable={owner}
           />

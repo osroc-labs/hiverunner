@@ -14,6 +14,7 @@ import {
 } from "../packages/db/src/membership.ts"
 import {
   getPoolSettings,
+  routingPolicy,
   updatePoolSettings,
   validatePoolSettings,
 } from "../packages/db/src/settings.ts"
@@ -337,6 +338,7 @@ test("team restriction gates machines for members but not owners", async (t) => 
       allowedTeams: ["ci"],
       earningsDestination: "developer",
       macosJobs: false,
+      routing: "fastest",
       version: 1,
     }),
     true
@@ -368,12 +370,17 @@ test("pool settings refuse stale versions and bad slugs", async (t) => {
     allowedTeams: ["ci"],
     earningsDestination: "developer",
     macosJobs: true,
+    routing: "round-robin",
     version: 1,
   }
   assert.equal(await updatePoolSettings(db, orgId, change), true)
   assert.equal(await updatePoolSettings(db, orgId, change), false)
   assert.equal((await getPoolSettings(db, orgId)).version, 2)
   assert.equal((await getPoolSettings(db, orgId)).macosJobs, true)
+  assert.equal((await getPoolSettings(db, orgId)).routing, "round-robin")
+  assert.equal(await routingPolicy(db, orgId), "round-robin")
+  assert.equal(await routingPolicy(db, "no-such-hive"), "fastest")
+  assert.ok(validatePoolSettings({ ...change, routing: "random" }).routing)
   assert.equal(validatePoolSettings(change), null)
   assert.ok(validatePoolSettings({ ...change, macosJobs: "yes" }).macosJobs)
   assert.ok(

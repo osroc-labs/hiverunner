@@ -9,6 +9,8 @@ import {
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
 
+import type { RoutingPolicy } from "@workspace/db/schema"
+
 import { post } from "@/components/action-button"
 
 export function SettingsForm({
@@ -17,6 +19,7 @@ export function SettingsForm({
   allowedTeams,
   earningsDestination,
   macosJobs,
+  routing,
   version,
   editable,
 }: {
@@ -25,6 +28,7 @@ export function SettingsForm({
   allowedTeams: string[]
   earningsDestination: "organization" | "developer"
   macosJobs: boolean
+  routing: RoutingPolicy
   version: number
   editable: boolean
 }) {
@@ -41,6 +45,7 @@ export function SettingsForm({
         version,
         earningsDestination: data.get("earningsDestination"),
         macosJobs: data.get("macosJobs") === "on",
+        routing: data.get("routing"),
         allowedTeams: String(data.get("allowedTeams") ?? "")
           .split(/[\s,]+/)
           .filter(Boolean),
@@ -86,6 +91,28 @@ export function SettingsForm({
         <FieldDescription>
           Paying the organization returns most of each job&apos;s price to your
           own balance.
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="routing">
+          Which machine gets a job when several are free
+        </FieldLabel>
+        <select
+          id="routing"
+          name="routing"
+          className="h-10 rounded-md border bg-background px-3"
+          defaultValue={routing}
+          disabled={!editable || busy}
+        >
+          <option value="fastest">The fastest</option>
+          <option value="spread">The least busy</option>
+          <option value="round-robin">Each in turn</option>
+        </select>
+        <FieldDescription>
+          The fastest finishes jobs soonest. The least busy uses an idle machine
+          before giving a working one a second job. Each in turn gives every
+          machine a share of the work, and of what it earns, whatever its speed.
+          A faster machine costs more per minute and takes fewer of them.
         </FieldDescription>
       </Field>
       <Field>

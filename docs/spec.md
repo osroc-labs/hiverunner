@@ -328,7 +328,7 @@ Better Auth tables (`user`, `session`, `account`, `verification`,
 | Table                 | Key columns                                                                                                                                                           |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `github_installation` | installation ID, account ID + login, organization ID, status, permission set                                                                                          |
-| `pool_settings`       | organization ID, allowed team slugs, earnings destination (`org` or `developer`), public overflow                                                                     |
+| `pool_settings`       | organization ID, allowed team slugs, earnings destination (`org` or `developer`), routing, public overflow                                                            |
 | `scale_set`           | organization ID, name, vCPUs, GitHub scale set ID                                                                                                                     |
 | `machine`             | user ID, name, model, cores, memory, speed score, token hash, status, daemon version                                                                                  |
 | `machine_pool`        | machine ID, organization ID, status, presence, last seen                                                                                                              |
