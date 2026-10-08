@@ -54,7 +54,10 @@ approval rule if the project requires release approval.
 ## Release
 
 The Deploy workflow is manually dispatched from main and selects exactly one
-environment. It runs the isolated smoke tests first. You can run the same release
+environment. Like the checks, it runs on this organization's own hive when a
+machine is free and on GitHub's runner when none is; on the hive, the
+environment's Cloudflare token is in a VM on a member's machine for the length
+of the job. It runs the isolated smoke tests first. You can run the same release
 command locally from a clean, committed checkout:
 
 ```sh
