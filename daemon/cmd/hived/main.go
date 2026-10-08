@@ -334,7 +334,7 @@ func run(ctx context.Context) error {
 		// turns it off and on while running; HIVE_WARM=0 turns it off for
 		// good.
 		if os.Getenv("HIVE_WARM") != "0" {
-			vmRunner.WarmVCPUs = 2
+			vmRunner.WarmVCPUs = warmVCPUs
 			tended = make(chan struct{})
 			go func() {
 				defer close(tended)
