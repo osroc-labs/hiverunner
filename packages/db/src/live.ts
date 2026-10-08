@@ -61,6 +61,10 @@ export type LiveMachine = {
   cores: number
   memoryBytes: number
   speedScore: number
+  /** Whether it takes `hive-macos` jobs, run on the Mac itself. */
+  macos: boolean
+  /** What its daemon said it was running, at its last hello. */
+  daemonVersion: string
   presence: string
   lastSeenAt: number | null
   userId: string
@@ -267,6 +271,8 @@ export async function getLiveSnapshot(
       cores: row.cores,
       memoryBytes: row.memoryBytes,
       speedScore: row.speedScore,
+      macos: row.macos,
+      daemonVersion: row.daemonVersion,
       presence: row.presence,
       lastSeenAt: row.lastSeenAt?.getTime() ?? null,
       userId: row.userId,

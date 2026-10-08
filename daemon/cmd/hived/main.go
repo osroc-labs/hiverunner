@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,8 +24,10 @@ import (
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/native"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/pools"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/update"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
 )
 
@@ -40,6 +43,8 @@ const usage = `hived, the HiveWorker daemon
   hived status      Show what this machine lends, and whether it is lending
   hived config      Show or change this machine's settings
   hived cache       Show or empty this machine's Actions cache
+  hived macos       Set this Mac up for macOS jobs (Xcode, iOS builds)
+  hived update      Update to the current release, if this is not it
   hived pause       Stop taking jobs until you say otherwise
   hived resume      Take jobs again
   hived logout      Forget this machine's token
@@ -71,6 +76,14 @@ func main() {
 		err = configure(os.Args[2:])
 	case "cache":
 		err = cacheCommand(os.Args[2:])
+	case "macos":
+		err = macos(ctx, os.Args[2:])
+	case "update":
+		err = updateCommand(ctx)
+	case "macos-job":
+		// The child that runs one macOS job as the hiveworker user. Only
+		// ever started by hived itself, through sudo.
+		os.Exit(native.Serve(ctx, os.Stdin, os.Stdout))
 	case "pause":
 		err = pause(true)
 	case "resume":
@@ -257,6 +270,24 @@ func run(ctx context.Context) error {
 		unlock()
 	}()
 
+	// macOS jobs, if the owner has set this Mac up for them. Built now,
+	// asked later: whether it is ready is checked when the setting is on.
+	var nativeRunner *native.Runner
+	if runtime.GOOS == "darwin" {
+		if built, err := native.New(log); err != nil {
+			log.Warn("macOS jobs are not available", "error", err)
+		} else {
+			nativeRunner = built
+		}
+	}
+	macOS := func() bool {
+		return nativeRunner != nil && live.Get().MacOSJobs && nativeRunner.Ready()
+	}
+	var native jobs.Runner
+	if nativeRunner != nil {
+		native = nativeRunner
+	}
+
 	// Without a guest image the machine still connects and reports presence;
 	// it declines jobs and says why.
 	var runner jobs.Runner
@@ -298,31 +329,74 @@ func run(ctx context.Context) error {
 		}
 		log.Info("ready to run jobs", "runner", vmRunner.Image.RunnerVersion, "image", vmRunner.Image.ImageVersion, "warm", vmRunner.WarmVCPUs)
 	}
+	limits := func() jobs.Limits {
+		current := live.Get()
+		return jobs.Limits{MaxJobs: current.MaxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS()}
+	}
+	slot := jobs.New(runner, log)
+	slot.Native(native)
+	slot.Limit(limits)
+
+	// Once a day, whether a release is out. If the owner allows it, the
+	// daemon updates itself when it has no job, which ends this process.
+	var updating atomic.Bool
+	go update.Watch(ctx, update.Options{
+		Version:    version,
+		Log:        log,
+		AutoUpdate: func() bool { return live.Get().AutoUpdate },
+		Busy:       slot.Busy,
+		Updating:   &updating,
+	})
+
 	return pools.Run(ctx, pools.Options{
 		Client:        api.New(machine.Server),
 		Token:         machine.Token,
 		DaemonVersion: version,
 		RefreshEvery:  refresh,
-		Runner:        runner,
+		Jobs:          slot,
 		Log:           log,
 		// Paused, not online, when the machine cannot take a job: the pool
 		// then stops offering it any, instead of being declined each time.
 		Available: func() bool {
 			// A machine that cannot run a job at all, for want of an image
-			// or a hypervisor, is not waiting for one.
-			if runner == nil {
+			// or a hypervisor, is not waiting for one. Unless it takes
+			// macOS jobs, which need neither.
+			vm := runner != nil
+			if unusable, ok := runner.(jobs.Unusable); ok && unusable.Unusable() != "" {
+				vm = false
+			}
+			if !vm && !macOS() {
 				return false
 			}
-			if unusable, ok := runner.(jobs.Unusable); ok && unusable.Unusable() != "" {
+			// An update is waiting for the jobs in hand to finish.
+			if updating.Load() {
 				return false
 			}
 			return holding() == ""
 		},
-		Limits: func() jobs.Limits {
-			current := live.Get()
-			return jobs.Limits{MaxJobs: current.MaxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU()}
-		},
+		Limits: limits,
 	})
+}
+
+// updateCommand is `hived update`: the installer, run again, if there is a
+// newer release than this one. The daemon's own service is restarted by it.
+func updateCommand(ctx context.Context) error {
+	state, _ := update.LoadState()
+	latest, _, err := update.Check(ctx, &state)
+	_ = update.SaveState(state)
+	if err != nil {
+		return fmt.Errorf("could not check for a release: %w", err)
+	}
+	if !update.Newer(version, latest.Version) {
+		fmt.Printf("hived %s is the current release.\n", version)
+		if latest.Version != version {
+			fmt.Printf("(The published release is %s; this build is not from it.)\n", latest.Version)
+		}
+		return nil
+	}
+	fmt.Printf("Updating hived %s to %s. A job running on this machine would be cancelled;\nthe daemon is restarted at the end.\n\n", version, latest.Version)
+	_, err = update.Apply(ctx, false)
+	return err
 }
 
 func newRunner(log *slog.Logger) (*vm.Runner, error) {
