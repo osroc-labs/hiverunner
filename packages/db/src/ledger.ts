@@ -71,6 +71,24 @@ export async function recordPurchase(
   return written.length > 0
 }
 
+/** Whether a card payment has reached this organization's balance yet. */
+export async function purchaseCredited(
+  db: AuthDb,
+  input: { organizationId: string; paymentId: string }
+) {
+  const [row] = await db
+    .select({ id: ledgerEntry.id })
+    .from(ledgerEntry)
+    .where(
+      and(
+        owned({ accountType: "organization", accountId: input.organizationId }),
+        eq(ledgerEntry.id, `purchase:${input.paymentId}`)
+      )
+    )
+    .limit(1)
+  return Boolean(row)
+}
+
 /** The parts of a completed Stripe Checkout that decide a top-up. */
 export type PaidCheckout = {
   id: string

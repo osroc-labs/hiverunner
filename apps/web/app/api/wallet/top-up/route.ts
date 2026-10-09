@@ -111,7 +111,9 @@ export async function POST(request: Request) {
           },
         },
       ],
-      successUrl: `${origin}/wallet?funded=${dollars}`,
+      // Stripe fills in the session, so the wallet can say when this one
+      // payment has landed rather than guess.
+      successUrl: `${origin}/wallet?funded=${dollars}&checkout={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${origin}/wallet`,
       clientReferenceId: organizationId,
       metadata: {

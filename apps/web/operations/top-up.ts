@@ -71,6 +71,26 @@ export async function handlePaidCheckout(
 }
 
 /**
+ * Asks Stripe about a Checkout the browser came back from, and credits it if
+ * it was paid. This is for when Stripe's own event is late or lost: the
+ * answer still comes from Stripe, never from the browser, and the credit is
+ * the same one the event would have made, so both arriving is one credit.
+ *
+ * Returns null for a Checkout that is not this organization's.
+ */
+export async function confirmCheckout(
+  db: AuthDb,
+  stripe: Stripe,
+  input: { organizationId: string; checkoutId: string }
+) {
+  const checkout = await stripe.get<
+    PaidCheckout & { payment_intent?: string | null }
+  >(`checkout/sessions/${encodeURIComponent(input.checkoutId)}`)
+  if (checkout.metadata?.organization_id !== input.organizationId) return null
+  return handlePaidCheckout(db, stripe, checkout)
+}
+
+/**
  * Charges the saved card of every organization whose balance has fallen
  * under the line. Run on a timer.
  *

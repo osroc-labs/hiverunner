@@ -13,6 +13,7 @@ import { upsertCustomer } from "../packages/stripe/src/store.ts"
 import { StripeError } from "../packages/stripe/src/client.ts"
 import {
   chargeDueTopUps,
+  confirmCheckout,
   handleIntentFailed,
   handleIntentSucceeded,
   handlePaidCheckout,
@@ -303,6 +304,47 @@ test("paying by hand saves the card only when asked, and never switches it off",
   saved = await getAutoTopUp(db, "org_1")
   assert.equal(saved.enabled, true)
   assert.equal(saved.paymentMethodId, "pm_new")
+})
+
+test("a payment whose event never came is credited by asking Stripe, once, and only to its own hive", async (t) => {
+  const db = await organization(t, { dollars: 0, saved: false })
+  /** Stripe's own record of the Checkout, whatever the browser claims. */
+  const asking = (session) => ({
+    ...stripe(),
+    get: async (path) => {
+      assert.equal(path, "checkout/sessions/cs_late")
+      return session
+    },
+  })
+  const session = {
+    id: "cs_late",
+    mode: "payment",
+    payment_status: "paid",
+    currency: "usd",
+    amount_total: 100,
+    payment_intent: "pi_late",
+    metadata: { kind: "top-up", organization_id: "org_1" },
+  }
+  const ask = (fake, organizationId = "org_1") =>
+    confirmCheckout(db, fake, { organizationId, checkoutId: "cs_late" })
+
+  // Someone else's Checkout is not credited, to them or to its owner.
+  assert.equal(await ask(asking(session), "org_2"), null)
+  // Neither is one Stripe says is not paid yet.
+  assert.equal(
+    await ask(asking({ ...session, payment_status: "unpaid" })),
+    "ignored"
+  )
+  assert.equal(await getBalance(db, account), 0)
+
+  assert.equal(await ask(asking(session)), "credited")
+  // The event turning up afterwards, or the page asking twice, adds nothing.
+  assert.equal(await ask(asking(session)), "already-credited")
+  assert.equal(
+    await handlePaidCheckout(db, stripe(), session),
+    "already-credited"
+  )
+  assert.equal(await getBalance(db, account), 1_000_000)
 })
 
 test("automatic top-up cannot be turned on without a card, or for an amount not offered", async (t) => {
