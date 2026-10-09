@@ -20,6 +20,7 @@ import (
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/bench"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/native"
@@ -41,7 +42,9 @@ const usage = `hived, the HiveWorker daemon
   hived unlink      Stop serving one hive, and keep serving the others
   hived hives       List the hives this machine serves
   hived run         Connect to your hive and wait for jobs
-  hived status      Show what this machine lends, and whether it is lending
+  hived start       Start the daemon the installer set up; stop, restart too
+  hived status      Show what this machine lends, and whether it is lending;
+                    --json for a script
   hived config      Show or change this machine's settings
   hived doctor      Check this machine keeps taking jobs with nobody at it
   hived cache       Show or empty this machine's Actions cache
@@ -78,8 +81,16 @@ func main() {
 		err = hives(ctx)
 	case "run":
 		err = run(ctx)
+	case "start":
+		err = start()
+	case "stop":
+		err = halt()
+	case "restart":
+		if err = halt(); err == nil {
+			err = start()
+		}
 	case "status":
-		err = status()
+		err = status(os.Args[2:])
 	case "config":
 		err = configure(os.Args[2:])
 	case "doctor":
@@ -385,6 +396,7 @@ func run(ctx context.Context) error {
 	}()
 
 	err = pools.Run(ctx, pools.Options{
+		Connections:   connection.NewRecorder(),
 		Client:        api.New(machine.Server),
 		Token:         machine.Token,
 		DaemonVersion: version,
@@ -510,6 +522,11 @@ func selftest(ctx context.Context) error {
 	// Held while the VM exists, so a daemon starting meanwhile cannot sweep
 	// it away as a leftover.
 	release, err := vm.LockWorkDir(runner.WorkDir)
+	if errors.Is(err, vm.ErrWorkDirInUse) {
+		// Almost always the daemon. The test boots a VM in the directory
+		// the daemon keeps its own in, so they cannot share it.
+		return fmt.Errorf("%w\nThe daemon is running, and a self-test needs it stopped. A job it is running stops with it.\n\n  hived stop && hived selftest; hived start", err)
+	}
 	if err != nil {
 		return err
 	}
@@ -519,6 +536,7 @@ func selftest(ctx context.Context) error {
 	offerCache(runner, log, func() settings.Settings { return current })
 	started := time.Now()
 	report, err := runner.SelfTest(ctx, 2)
+	report = tidyReport(report, runner.Image)
 	fmt.Print(report)
 	if err != nil {
 		return err
@@ -531,6 +549,26 @@ func selftest(ctx context.Context) error {
 	}
 	fmt.Printf("A VM booted, ran and was destroyed in %.1fs.\n", time.Since(started).Seconds())
 	return nil
+}
+
+// tidyReport is the guest's report as its owner should read it: each line
+// once, and what the VM is as well as what it found. An image built before
+// the guest said its own architecture is described from its manifest.
+func tidyReport(report string, image vm.Image) string {
+	seen := map[string]bool{}
+	var lines []string
+	for _, line := range strings.Split(strings.TrimRight(report, "\n"), "\n") {
+		if line != "" && seen[line] {
+			continue
+		}
+		seen[line] = true
+		lines = append(lines, line)
+	}
+	if !strings.Contains(report, "ARCH=") {
+		lines = append(lines, "ARCH="+image.Arch())
+	}
+	lines = append(lines, "IMAGE="+strconv.Itoa(image.ImageVersion))
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // devJob runs one job from a JIT config in a file, with no coordinator

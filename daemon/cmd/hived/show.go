@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/native"
@@ -41,58 +44,187 @@ func refusal(vcpus int, facts host.Facts, current settings.Settings) string {
 	return ""
 }
 
-func status() error {
+// snapshot is everything hived status says, gathered once and then either
+// drawn for a person or printed as JSON for a script.
+type snapshot struct {
+	Version string `json:"version"`
+	Server  string `json:"server"`
+	Machine struct {
+		Name     string `json:"name"`
+		Model    string `json:"model"`
+		Cores    int    `json:"cores"`
+		MemoryGB int64  `json:"memoryGB"`
+		OS       string `json:"os"`
+		Arch     string `json:"arch"`
+	} `json:"machine"`
+	// Hives is null when the server could not be asked.
+	Hives      []string `json:"hives"`
+	HivesError string   `json:"hivesError,omitempty"`
+	Daemon     struct {
+		Running bool   `json:"running"`
+		Detail  string `json:"detail"`
+	} `json:"daemon"`
+	// Connection is each hive's tunnel as the running daemon last knew it;
+	// empty when no daemon is running.
+	Connection []tunnelState `json:"connection"`
+	Jobs       struct {
+		Taking bool   `json:"taking"`
+		Reason string `json:"reason,omitempty"`
+		Fix    string `json:"fix,omitempty"`
+	} `json:"jobs"`
+	Paused bool `json:"paused"`
+	// Labels is every runs-on label, and whether this machine takes it.
+	Labels []labelState `json:"labels"`
+	Image  *struct {
+		Version       int    `json:"version"`
+		Arch          string `json:"arch"`
+		RunnerVersion string `json:"runnerVersion"`
+	} `json:"image"`
+	Update struct {
+		Latest    string `json:"latest,omitempty"`
+		Available bool   `json:"available"`
+		Automatic bool   `json:"automatic"`
+	} `json:"update"`
+	Settings settings.Settings `json:"settings"`
+}
+
+type tunnelState struct {
+	Hive      string    `json:"hive"`
+	Connected bool      `json:"connected"`
+	Since     time.Time `json:"since"`
+	Reason    string    `json:"reason,omitempty"`
+	Error     string    `json:"error,omitempty"`
+}
+
+type labelState struct {
+	Label string `json:"label"`
+	// Kind is linux for a job run in a VM, macos for one run on the Mac.
+	Kind     string `json:"kind"`
+	VCPUs    int    `json:"vcpus,omitempty"`
+	MemoryGB int    `json:"memoryGB,omitempty"`
+	Takes    bool   `json:"takes"`
+	// Reason is why not, in a few words; Detail says how to change that.
+	Reason string `json:"reason,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// macosLabel is what hive-macos jobs are sent with.
+const macosLabel = "hive-macos"
+
+// macosState is whether this machine takes macOS jobs, and if not, the
+// first thing in the way: what is missing comes before the setting, since
+// turning the setting on is refused until nothing is.
+func macosState(current settings.Settings) labelState {
+	state := labelState{Label: macosLabel, Kind: "macos"}
+	runner, err := native.New(nil)
+	if err != nil {
+		state.Reason, state.Detail = "not available", err.Error()
+		return state
+	}
+	report := runner.Status()
+	switch {
+	case report.Problem != "" && runtime.GOOS != "darwin":
+		state.Reason = "needs a Mac"
+	case report.Problem != "" && runtime.GOARCH != "arm64":
+		state.Reason = "needs Apple Silicon"
+	case report.Problem != "" && report.Xcode == "":
+		state.Reason = "needs Xcode"
+	case report.Problem != "":
+		state.Reason = "needs setup: hived macos setup"
+	case !current.MacOSJobs:
+		state.Reason, state.Detail = "macos-jobs is off", "turn it on with: hived config set macos-jobs on"
+	default:
+		state.Takes = true
+	}
+	if report.Problem != "" {
+		state.Detail = report.Problem
+	}
+	return state
+}
+
+func gather() (snapshot, host.Facts, settings.Settings, host.Power, error) {
+	var s snapshot
 	machine, err := config.Load()
 	if err != nil {
-		return err
+		return s, host.Facts{}, settings.Settings{}, host.Power{}, err
 	}
 	current, err := settings.Load()
 	if err != nil {
-		return err
+		return s, host.Facts{}, settings.Settings{}, host.Power{}, err
 	}
 	facts, err := host.ReadFacts()
 	if err != nil {
-		return err
+		return s, host.Facts{}, settings.Settings{}, host.Power{}, err
 	}
-	screen := ui.For(os.Stdout)
 	power := host.ReadPower()
+	s.Version, s.Server, s.Settings, s.Paused = version, machine.Server, current, current.Paused
+	s.Machine.Name, s.Machine.Model, s.Machine.Cores = facts.Name, facts.Model, facts.Cores
+	s.Machine.MemoryGB, s.Machine.OS, s.Machine.Arch = facts.MemoryBytes/gib, facts.OS, facts.Arch
 
-	pools := "unknown"
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if assignment, err := api.New(machine.Server).Me(ctx, machine.Token); err != nil {
-		pools = screen.Dim("could not ask the server")
-	} else if len(assignment.Pools) == 0 {
-		pools = screen.Dim("none; add this machine to one from the dashboard")
+		s.HivesError = connection.Reason(err.Error())
 	} else {
-		names := make([]string, len(assignment.Pools))
-		for i, pool := range assignment.Pools {
-			names[i] = pool.Name
+		s.Hives = []string{}
+		for _, pool := range assignment.Pools {
+			s.Hives = append(s.Hives, pool.Name)
 		}
-		pools = strings.Join(names, ", ")
 	}
 
-	daemon, daemonUp := "not running; start it with: hived run", false
+	s.Daemon.Detail = "not running; start it with: hived start"
+	if _, err := installedService(); err != nil {
+		s.Daemon.Detail = "not running; start it with: hived run"
+	}
 	var missing errAway
 	if dir, err := imageDir(current); errors.As(err, &missing) {
-		daemon = "its image is in " + missing.home + ", which is not there"
+		s.Daemon.Detail = "its image is in " + missing.home + ", which is not there"
 	} else if err != nil {
-		daemon = "unknown"
-	} else if _, err := vm.LoadImage(dir); err != nil {
-		daemon = "no runner image installed, so it cannot run jobs"
-	} else if vm.WorkDirInUse(workDir(dir)) {
-		daemon, daemonUp = "running", true
+		s.Daemon.Detail = "unknown"
+	} else if image, err := vm.LoadImage(dir); err != nil {
+		s.Daemon.Detail = "no runner image installed, so it cannot run jobs"
+	} else {
+		s.Image = &struct {
+			Version       int    `json:"version"`
+			Arch          string `json:"arch"`
+			RunnerVersion string `json:"runnerVersion"`
+		}{image.ImageVersion, image.Arch(), image.RunnerVersion}
+		if vm.WorkDirInUse(workDir(dir)) {
+			s.Daemon.Running, s.Daemon.Detail = true, "running"
+		}
+	}
+	s.Connection = []tunnelState{}
+	{
+		// Only a running daemon's word counts.
+		if remembered, err := connection.Load(); err == nil && remembered.Live() {
+			for _, hive := range remembered.Hives {
+				s.Connection = append(s.Connection, tunnelState{
+					Hive: hive.Name, Connected: hive.Connected, Since: hive.Since,
+					Reason: connection.Reason(hive.Error), Error: hive.Error,
+				})
+			}
+		}
 	}
 
-	holding := current.Holding(power, time.Now())
-	state := screen.Dot(holding == "") + " taking jobs"
-	if holding != "" {
-		state = screen.Dot(false) + " not taking jobs: " + holding
+	s.Jobs.Reason = current.Holding(power, time.Now())
+	s.Jobs.Taking = s.Jobs.Reason == ""
+	s.Jobs.Fix = current.Fix(power, time.Now())
+
+	for _, vcpus := range settings.Sizes {
+		reason := refusal(vcpus, facts, current)
+		s.Labels = append(s.Labels, labelState{
+			Label: labelFor(vcpus), Kind: "linux", VCPUs: vcpus,
+			MemoryGB: int(vm.GuestMemoryBytes(vcpus, uint64(facts.MemoryBytes)) / gib),
+			Takes:    reason == "", Reason: reason,
+		})
+	}
+	if runtime.GOOS == "darwin" {
+		s.Labels = append(s.Labels, macosState(current))
 	}
 
 	// What the daemon last learned, and a fresh look if that was a while
 	// ago; never long enough to hold the rest of the page up.
-	release := ""
+	s.Update.Automatic = current.AutoUpdate
 	if remembered, err := update.LoadState(); err == nil {
 		if time.Since(remembered.CheckedAt) > update.Every {
 			quick, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -100,12 +232,84 @@ func status() error {
 			cancel()
 			_ = update.SaveState(remembered)
 		}
-		if update.Newer(version, remembered.Latest) {
-			release = screen.Honey(remembered.Latest+" is available") + screen.Dim("  update with: hived update")
-			if current.AutoUpdate {
-				release = screen.Honey(remembered.Latest+" is available") + screen.Dim("  installs itself when idle, or now with: hived update")
+		s.Update.Latest = remembered.Latest
+		s.Update.Available = update.Newer(version, remembered.Latest)
+	}
+	return s, facts, current, power, nil
+}
+
+// when is a time as someone reading status wants it: the clock today, and
+// the day too for anything older.
+func when(at, now time.Time) string {
+	at = at.In(now.Location())
+	if at.Year() == now.Year() && at.YearDay() == now.YearDay() {
+		return at.Format("15:04")
+	}
+	return at.Format("Jan 2 15:04")
+}
+
+// tunnelRows are the lines saying whether the daemon is connected to each
+// hive. One hive is one line; a hive it cannot reach says since when and why.
+func tunnelRows(screen ui.Screen, tunnels []tunnelState, now time.Time) []string {
+	var rows []string
+	for i, tunnel := range tunnels {
+		name := ""
+		if i == 0 {
+			name = "Tunnel"
+		}
+		said, colour := "connecting", screen.Dim
+		switch {
+		case tunnel.Connected:
+			said = "connected since " + when(tunnel.Since, now)
+		case tunnel.Reason != "":
+			said, colour = "disconnected since "+when(tunnel.Since, now), screen.Honey
+		}
+		// An organization's name can be long; the state is what must fit.
+		hive := tunnel.Hive
+		if room := ui.Inner - 12 - 2 - 2 - ui.Width(said); ui.Width(hive) > room {
+			hive = string([]rune(hive)[:room-1]) + "…"
+		}
+		rows = append(rows, field(name, screen.Dot(tunnel.Connected)+" "+hive+"  "+colour(said)))
+		if !tunnel.Connected && tunnel.Reason != "" {
+			for _, text := range wrap(tunnel.Reason+"; it keeps trying, and takes no jobs from this hive until then. See: hived doctor", ui.Inner-12) {
+				rows = append(rows, field("", screen.Dim(text)))
 			}
 		}
+	}
+	return rows
+}
+
+func status(args []string) error {
+	asJSON := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			asJSON = true
+		default:
+			return errors.New("usage: hived status [--json]")
+		}
+	}
+	s, facts, current, power, err := gather()
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		out := json.NewEncoder(os.Stdout)
+		out.SetIndent("", "  ")
+		return out.Encode(s)
+	}
+	screen := ui.For(os.Stdout)
+
+	pools := strings.Join(s.Hives, ", ")
+	switch {
+	case s.Hives == nil:
+		pools = screen.Honey("could not ask the server") + screen.Dim(": "+s.HivesError)
+	case len(s.Hives) == 0:
+		pools = screen.Dim("none; add this machine to one with: hived link")
+	}
+	state := screen.Dot(true) + " taking jobs"
+	if !s.Jobs.Taking {
+		state = screen.Dot(false) + " not taking jobs: " + s.Jobs.Reason
 	}
 
 	fmt.Println()
@@ -113,18 +317,19 @@ func status() error {
 		"",
 		screen.Bold("HiveWorker"),
 		"hived "+version,
-		screen.Dim(machine.Server),
+		screen.Dim(s.Server),
 	)))
 	fmt.Println()
 	rows := []string{
 		field("Name", facts.Name+screen.Dim("  "+facts.Model)),
 		field("Hardware", fmt.Sprintf("%d cores, %d GB", facts.Cores, facts.MemoryBytes/gib)),
 		field("Hives", pools),
-		field("Daemon", screen.Dot(daemonUp)+" "+daemon),
-		field("Jobs", state),
+		field("Daemon", screen.Dot(s.Daemon.Running)+" "+s.Daemon.Detail),
 	}
-	if fix := current.Fix(power, time.Now()); fix != "" {
-		rows = append(rows, field("", screen.Dim(fix)))
+	rows = append(rows, tunnelRows(screen, s.Connection, time.Now())...)
+	rows = append(rows, field("Jobs", state))
+	if s.Jobs.Fix != "" {
+		rows = append(rows, field("", screen.Dim(s.Jobs.Fix)))
 	}
 	if problem, fix := asleep(current, power); problem != "" {
 		for _, line := range wrap(problem, ui.Inner-12) {
@@ -134,12 +339,19 @@ func status() error {
 			rows = append(rows, field("", screen.Dim(line)))
 		}
 	}
-	if release != "" {
-		rows = append(rows, field("Update", release))
+	if s.Update.Available {
+		// On two lines: together they are wider than the box.
+		how := "update with: hived update"
+		if s.Update.Automatic {
+			how = "installs itself when idle, or now with: hived update"
+		}
+		rows = append(rows,
+			field("Update", screen.Honey(s.Update.Latest+" is available")),
+			field("", screen.Dim(how)))
 	}
 	fmt.Print(indent(screen.Box(strings.ToUpper(thisMachine[:1])+thisMachine[1:], rows...)))
 	fmt.Println()
-	fmt.Print(indent(screen.Box("What you lend", lending(screen, facts, current, holding == "")...)))
+	fmt.Print(indent(screen.Box("What you lend", lending(screen, facts, current, s.Jobs.Taking, s.Labels)...)))
 	fmt.Println()
 	fmt.Print(indent(screen.Box("Actions cache", cacheRows(screen, current, false)...)))
 	fmt.Println()
@@ -177,7 +389,7 @@ const warmVCPUs = 2
 // its owner allows, how much of that is in use before any job arrives, and
 // which job sizes it takes at all. The warm VM is given to the first job
 // that fits it, so what it holds is part of the fullest and not on top.
-func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taking bool) []string {
+func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taking bool, labels []labelState) []string {
 	cores, memory := 0, 0
 	fullest := most(facts, current)
 	for _, vcpus := range fullest {
@@ -205,13 +417,16 @@ func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taki
 		field("", idle),
 		"",
 	}
-	for _, vcpus := range settings.Sizes {
-		size := fmt.Sprintf("%d vCPU  %2d GB", vcpus, vm.GuestMemoryBytes(vcpus, uint64(facts.MemoryBytes))/gib)
-		verdict := screen.Dot(true) + " takes these"
-		if reason := refusal(vcpus, facts, current); reason != "" {
-			verdict = screen.Dot(false) + " " + screen.Dim(reason)
+	for _, label := range labels {
+		size := "on this Mac itself"
+		if label.Kind == "linux" {
+			size = fmt.Sprintf("%d vCPU  %2d GB", label.VCPUs, label.MemoryGB)
 		}
-		rows = append(rows, ui.Pad(screen.Honey(labelFor(vcpus)), 12)+ui.Pad(size, 18)+verdict)
+		verdict := screen.Dot(true) + " takes these"
+		if !label.Takes {
+			verdict = screen.Dot(false) + " " + screen.Dim(label.Reason)
+		}
+		rows = append(rows, ui.Pad(screen.Honey(label.Label), 12)+ui.Pad(size, 20)+verdict)
 	}
 	return rows
 }

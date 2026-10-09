@@ -26,6 +26,22 @@ func stopService() {
 	_ = exec.Command("/bin/launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+serviceLabel).Run()
 }
 
+// haltService stops the daemon until it is started again or its owner next
+// logs in. launchd would restart a process that was only killed.
+func haltService() error {
+	return exec.Command("/bin/launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+serviceLabel).Run()
+}
+
+func startService(definition string) error {
+	domain := "gui/" + strconv.Itoa(os.Getuid())
+	if err := exec.Command("/bin/launchctl", "bootstrap", domain, definition).Run(); err != nil {
+		// Loaded already, with its process gone: launchd refuses to load it
+		// twice and is asked to run it instead.
+		return exec.Command("/bin/launchctl", "kickstart", domain+"/"+serviceLabel).Run()
+	}
+	return nil
+}
+
 // launchd forgets a service whose file is gone.
 func forgetService() {}
 

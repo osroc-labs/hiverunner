@@ -11,7 +11,10 @@ It runs on Apple Silicon Macs and on Linux with KVM, arm64 or x86-64.
 ./hived login       # sign in with GitHub in the browser, enroll this machine
 ./hived link        # add this machine to another of your hives
 ./hived run         # connect to every hive it serves and wait for jobs
-./hived status      # what this machine lends, and whether it is lending
+./hived status      # what this machine lends, whether it is lending, and
+                    # whether it is connected; --json for a script
+./hived doctor      # whether it keeps taking jobs unattended, and reaches the server
+./hived stop        # stop the installed service; start and restart too
 ./hived config      # the owner's settings, below
 ./hived pause       # stop taking jobs; ./hived resume to undo
 ./hived update      # move to the current release; the daemon does this itself when idle

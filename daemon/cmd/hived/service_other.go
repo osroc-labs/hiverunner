@@ -24,6 +24,16 @@ func stopService() {
 	_ = exec.Command("systemctl", "--user", "disable", "--now", serviceUnit).Run()
 }
 
+// haltService stops the daemon and leaves it enabled, so it is back at the
+// next login as it would be on a Mac.
+func haltService() error {
+	return exec.Command("systemctl", "--user", "stop", serviceUnit).Run()
+}
+
+func startService(string) error {
+	return exec.Command("systemctl", "--user", "start", serviceUnit).Run()
+}
+
 // systemd keeps a unit loaded until it is told the file has gone.
 func forgetService() {
 	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()

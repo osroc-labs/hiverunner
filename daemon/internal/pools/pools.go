@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/tunnel"
@@ -36,7 +37,10 @@ type Options struct {
 	// RefreshEvery is how often the server is asked which pools to serve.
 	// Defaults to a minute.
 	RefreshEvery time.Duration
-	Log          *slog.Logger
+	// Connections, if set, is told as each hive's tunnel connects and
+	// drops, for hived status to show.
+	Connections *connection.Recorder
+	Log         *slog.Logger
 	// Tunnel overrides are for tests.
 	PresenceEvery time.Duration
 	PingEvery     time.Duration
@@ -76,7 +80,15 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
+	if options.Connections == nil {
+		// Recorded nowhere, for a caller with nobody to show it to.
+		options.Connections = connection.NewRecorder()
+		options.Connections.Save = func(connection.State) error { return nil }
+	}
 	running := map[string]context.CancelFunc{}
+	names := map[string]string{}
+	// The server being unreachable is said once and then every ten minutes.
+	unreachable := connection.Quiet{Every: 10 * time.Minute}
 	finished := make(chan ended)
 	defer func() {
 		// Let each tunnel say goodbye before the process exits.
@@ -98,6 +110,8 @@ func Run(ctx context.Context, options Options) error {
 
 		case done := <-finished:
 			delete(running, done.pool)
+			options.Connections.Forget(names[done.pool])
+			delete(names, done.pool)
 			switch {
 			case errors.Is(done.err, tunnel.ErrRevoked):
 				// Dropped from one pool. Ask the server what is left.
@@ -116,9 +130,12 @@ func Run(ctx context.Context, options Options) error {
 			if err != nil {
 				// The server being unreachable changes nothing: tunnels
 				// already open stay open.
-				options.Log.Warn("could not refresh the hive list", "error", err)
+				if say, unsaid := unreachable.Say(time.Now()); say {
+					options.Log.Warn("could not refresh the hive list", "error", err, "attempts", unsaid+1)
+				}
 				continue
 			}
+			unreachable.Reset()
 			wanted := map[string]api.Pool{}
 			for _, pool := range assignment.Pools {
 				wanted[pool.ID] = pool
@@ -145,6 +162,9 @@ func Run(ctx context.Context, options Options) error {
 				}
 				poolCtx, stop := context.WithCancel(ctx)
 				running[id] = stop
+				names[id] = pool.Name
+				// Not connected until the coordinator says so.
+				options.Connections.Set(pool.Name, false, nil)
 				options.Log.Info("serving a hive", "pool", pool.Name)
 				// A Mac set up for macOS jobs gets none from a hive whose
 				// owner has not allowed them; say so where the owner looks.
@@ -164,7 +184,10 @@ func Run(ctx context.Context, options Options) error {
 						PingEvery:     options.PingEvery,
 						Jobs:          slot,
 						JobContext:    ctx,
-						Log:           options.Log,
+						Changed: func(connected bool, cause error) {
+							options.Connections.Set(pool.Name, connected, cause)
+						},
+						Log: options.Log,
 					})
 					stop()
 					finished <- ended{pool: id, err: err}
