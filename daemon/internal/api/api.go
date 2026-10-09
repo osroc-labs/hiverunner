@@ -47,6 +47,9 @@ type Pool struct {
 	// MacOSJobs is whether this hive allows hive-macos jobs, which its
 	// owner turns on in its settings. Nil from a server that does not say.
 	MacOSJobs *bool `json:"macosJobs,omitempty"`
+	// Linked is whether this machine serves it already. Only said when the
+	// server offers a choice of hives to link.
+	Linked bool `json:"linked,omitempty"`
 }
 
 // ChoosePoolError means the person is in several pools and must say which of
@@ -100,6 +103,14 @@ type Enrollment struct {
 	Token     string    `json:"token"`
 	Pools     []Pool    `json:"pools"`
 	Refused   []Refused `json:"refused"`
+}
+
+// Linked is the server's answer to Link: what the machine serves now, which
+// of those are new, and which it asked for and may not serve.
+type Linked struct {
+	Pools   []Pool    `json:"pools"`
+	Added   []Pool    `json:"added"`
+	Refused []Refused `json:"refused"`
 }
 
 // Assignment is what a running daemon should be connected to right now.
@@ -258,6 +269,54 @@ func (c *Client) Enroll(ctx context.Context, token string, machine Machine) (Enr
 		return Enrollment{}, errors.New("server did not return a machine token")
 	}
 	return enrollment, nil
+}
+
+// Link adds a machine already enrolled to more of its owner's hives, named or
+// by id. With none it links the only one left, or returns a ChoosePoolError
+// listing them. The token is a fresh sign-in, not the machine's own: the
+// server ends that session as it answers, as it does for Enroll.
+func (c *Client) Link(ctx context.Context, token, machineID string, hives []string) (Linked, error) {
+	body := map[string]any{"machineId": machineID}
+	if len(hives) > 0 {
+		body["hives"] = hives
+	}
+	var linked Linked
+	status, raw, err := c.post(ctx, "/api/machines/link", token, body, &linked)
+	if err != nil {
+		return Linked{}, err
+	}
+	if status == http.StatusConflict {
+		var choice struct {
+			Code  string `json:"code"`
+			Pools []Pool `json:"pools"`
+		}
+		if json.Unmarshal(raw, &choice) == nil && choice.Code == "CHOOSE_POOL" {
+			return Linked{}, &ChoosePoolError{Pools: choice.Pools}
+		}
+	}
+	if status >= 300 {
+		return Linked{}, serverError(status, raw)
+	}
+	return linked, nil
+}
+
+// Unlink stops this machine serving one hive, and returns the ones it still
+// serves. The machine token is enough: a machine may always leave.
+func (c *Client) Unlink(ctx context.Context, machineToken, organizationID string) ([]Pool, error) {
+	var left struct {
+		Pools []Pool `json:"pools"`
+	}
+	status, raw, err := c.post(ctx, "/api/machines/unlink", machineToken, map[string]string{"organizationId": organizationID}, &left)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusUnauthorized {
+		return nil, ErrUnknownMachine
+	}
+	if status >= 300 {
+		return nil, serverError(status, raw)
+	}
+	return left.Pools, nil
 }
 
 func serverError(status int, raw []byte) error {

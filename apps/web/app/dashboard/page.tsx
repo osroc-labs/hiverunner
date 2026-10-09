@@ -3,10 +3,12 @@ import Link from "next/link"
 import { RUNNER_SIZES, TRIAL_GRANT_USD } from "@workspace/pricing"
 import { budgetHolds } from "@workspace/db/budget"
 import { getLiveSnapshot } from "@workspace/db/live"
+import { listUserMachines } from "@workspace/db/machines"
 import { getPoolSettings } from "@workspace/db/settings"
 import { roleAtLeast } from "@workspace/auth"
 
 import { AccountPage } from "@/components/account-page"
+import { ActionButton } from "@/components/action-button"
 import { Notice, Panel, Snippet } from "@/components/console/panel"
 import { getDb } from "@/db"
 import { NoHiveSteps } from "@/components/no-hive-steps"
@@ -25,7 +27,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ installed?: string }>
 }) {
-  const { pool } = await getPool()
+  const { pool, session } = await getPool()
   if (!pool) return <NoPool />
 
   const { installed } = await searchParams
@@ -42,6 +44,12 @@ export default async function DashboardPage({
   ).length
   // Set up means a job has run here. Until then the page leads with a checklist.
   const ready = live.recent.length > 0
+  // The caller's machines that serve other hives. Only asked for while this
+  // hive has none: they are the quickest way to give it one.
+  const elsewhere =
+    ready || live.machines.length > 0
+      ? []
+      : await listUserMachines(db, session.user.id)
   const owner = roleAtLeast(membership.role, "owner")
 
   return (
@@ -87,6 +95,8 @@ export default async function DashboardPage({
           online={online}
           jobs={live.recent.length}
           organization={installation.accountLogin}
+          organizationId={organizationId}
+          elsewhere={elsewhere}
         />
       )}
 
@@ -130,11 +140,16 @@ function FirstJob({
   online,
   jobs,
   organization,
+  organizationId,
+  elsewhere,
 }: {
   machines: number
   online: number
   jobs: number
   organization: string
+  organizationId: string
+  /** The caller's own machines, serving other hives and not this one. */
+  elsewhere: Array<{ id: string; name: string; model: string }>
 }) {
   const steps = [
     {
@@ -160,6 +175,29 @@ function FirstJob({
           )
         ) : (
           <>
+            {elsewhere.length > 0 && (
+              <>
+                <p>
+                  {elsewhere.length === 1
+                    ? "A machine of yours already runs HiveWorker for another hive."
+                    : "Machines of yours already run HiveWorker for another hive."}{" "}
+                  Add one here with a click, or from its terminal with{" "}
+                  <code>hived link {organization}</code>. Nothing to install; it
+                  picks this hive up within a minute.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {elsewhere.map((machine) => (
+                    <ActionButton
+                      key={machine.id}
+                      label={`Add ${machine.name} to ${organization}`}
+                      path="/api/machines/pools"
+                      body={{ machineId: machine.id, organizationId }}
+                    />
+                  ))}
+                </div>
+                <p>Or add a different machine:</p>
+              </>
+            )}
             {DAEMON_RELEASED ? (
               <p>
                 On any Apple Silicon Mac or Linux machine with KVM, paste this

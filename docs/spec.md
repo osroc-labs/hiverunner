@@ -151,8 +151,15 @@ membership. They expire after eight hours and we do not refresh them.
 pool is authorized separately (`machine_pool`): GitHub membership and that
 pool's team limit are checked when it is added, and there is a cap per person
 per pool. A machine already running can be added to another of its owner's
-pools from the dashboard; the daemon asks `GET /api/machines/me` on a timer
-and opens or closes tunnels to match, so nothing is reinstalled. Leaving an
+pools from the dashboard, or with `hived link` on the machine: a second
+device sign-in, then `POST /api/machines/link` with that session as the bearer
+token, which the server ends as it answers. The machine token is deliberately
+not enough to link, since it would let whoever holds it bring another
+organization's jobs to the machine; it is enough to leave one
+(`hived unlink`, `POST /api/machines/unlink`). The daemon asks
+`GET /api/machines/me` on a timer and opens or closes tunnels to match, so
+nothing is reinstalled. `hived login` on a machine already enrolled enrolls
+nothing and points at `hived link`. Leaving an
 organization on GitHub removes that person's machines from that pool only.
 The machine's owner can retire it everywhere; an organization owner can
 remove it from their own pool.

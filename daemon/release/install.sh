@@ -26,6 +26,13 @@ fail() {
   printf '\nhiveworker: %s\n' "$*" >&2
   exit 1
 }
+# Said in place of signing in, to a machine that already is. Someone running
+# this again for a second hive is told it did not add one, and what does.
+signed_in() {
+  hives=$("$BIN_DIR/hived" hives 2>/dev/null | paste -sd, - | sed 's/,/, /g') || hives=""
+  say "This $1 is already signed in${hives:+, and serves: $hives}."
+  say "To add it to another hive, run: hived link"
+}
 
 # Where the image goes: beside the settings, unless its owner keeps it on
 # another disk (hived config set data-dir). The daemon just installed is
@@ -148,7 +155,7 @@ fi
 
 step "Adding this Mac to your hive"
 if "$BIN_DIR/hived" status >/dev/null 2>&1; then
-  say "This Mac is already signed in."
+  signed_in Mac
 else
   # Read from the terminal: when this script is piped from curl, its own
   # input is the script.
@@ -362,7 +369,7 @@ fi
 
 step "Adding this machine to your hive"
 if "$BIN_DIR/hived" status >/dev/null 2>&1; then
-  say "This machine is already signed in."
+  signed_in machine
 else
   "$BIN_DIR/hived" login </dev/tty || fail "this machine was not added to a hive. See what hived said above; once that is sorted, run this again."
 fi
