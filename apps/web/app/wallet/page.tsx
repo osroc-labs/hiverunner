@@ -1,7 +1,7 @@
 import { roleAtLeast } from "@workspace/auth"
 import { getBudget, spentThisMonth } from "@workspace/db/budget"
 import { countGifts } from "@workspace/db/gift"
-import { getBalance, listEntries } from "@workspace/db/ledger"
+import { getBalance, listEntries, purchaseCredited } from "@workspace/db/ledger"
 import { getBalanceHistory, getLiveSnapshot } from "@workspace/db/live"
 import { autoChargedThisMonth, getAutoTopUp } from "@workspace/db/top-up"
 import {
@@ -32,6 +32,7 @@ import { canTakeCards } from "@/lib/stripe"
 import { AddFunds } from "./add-funds"
 import { AutoTopUp } from "./auto-top-up"
 import { Budget } from "./budget"
+import { Funded } from "./funded"
 import { Gift } from "./gift"
 
 export const metadata = { title: "Billing" }
@@ -49,7 +50,7 @@ const kinds: Record<string, string> = {
 export default async function WalletPage({
   searchParams,
 }: {
-  searchParams: Promise<{ funded?: string }>
+  searchParams: Promise<{ funded?: string; checkout?: string }>
 }) {
   const { organizationId, installation, membership } = await requirePool()
   const account = {
@@ -57,17 +58,25 @@ export default async function WalletPage({
     accountId: organizationId,
   }
   const db = getDb()
-  const [balance, entries, saved, { funded }, live, history, budget, spent] =
-    await Promise.all([
-      getBalance(db, account),
-      listEntries(db, account),
-      getAutoTopUp(db, organizationId),
-      searchParams,
-      getLiveSnapshot(db, organizationId),
-      getBalanceHistory(db, organizationId),
-      getBudget(db, organizationId),
-      spentThisMonth(db, organizationId),
-    ])
+  const [
+    balance,
+    entries,
+    saved,
+    { funded, checkout },
+    live,
+    history,
+    budget,
+    spent,
+  ] = await Promise.all([
+    getBalance(db, account),
+    listEntries(db, account),
+    getAutoTopUp(db, organizationId),
+    searchParams,
+    getLiveSnapshot(db, organizationId),
+    getBalanceHistory(db, organizationId),
+    getBudget(db, organizationId),
+    spentThisMonth(db, organizationId),
+  ])
   const budgetMicro = budget ? (budget.monthlyCents * MICRO) / 100 : null
   const budgetHeld =
     budget?.atLimit === "pause" && budgetMicro !== null && spent >= budgetMicro
@@ -94,13 +103,18 @@ export default async function WalletPage({
       ? Number(funded)
       : null
 
+  // Known only when Stripe named the payment on the way back. A link without
+  // one is thanked and nothing more.
+  const paidCheckout =
+    paid && checkout && /^cs_\w+$/.test(checkout) ? checkout : null
+  const credited = paidCheckout
+    ? await purchaseCredited(db, { organizationId, paymentId: paidCheckout })
+    : null
+
   return (
     <AccountPage title="billing" live={live}>
       {paid && (
-        <Notice>
-          Thanks. Your ${paid} payment was received and is added to the balance
-          as soon as the card network confirms it, usually within a few seconds.
-        </Notice>
+        <Funded amount={paid} checkout={paidCheckout} credited={credited} />
       )}
       {mayOpenGifts && (
         <Gift
