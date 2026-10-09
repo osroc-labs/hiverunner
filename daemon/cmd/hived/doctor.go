@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/ui"
@@ -43,10 +49,10 @@ func doctor() error {
 	power := host.ReadPower()
 	var checks []host.Check
 
-	if _, err := config.Load(); err != nil {
+	if machine, err := config.Load(); err != nil {
 		checks = append(checks, host.Check{Name: "sign-in", Found: "this machine is not in a hive", Fix: "hived login"})
 	} else {
-		checks = append(checks, host.Check{Name: "sign-in", Found: "in a hive", OK: true})
+		checks = append(checks, reach(machine)...)
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		definition, _ := servicePaths(home)
@@ -123,4 +129,61 @@ func doctor() error {
 		return fmt.Errorf("one thing would stop %s taking jobs with nobody at it", thisMachine)
 	}
 	return fmt.Errorf("%d things would stop %s taking jobs with nobody at it", problems, thisMachine)
+}
+
+// reach is whether this machine can find and talk to the server and the
+// coordinator its jobs arrive through. A machine that cannot takes no jobs
+// and, but for this, says so only in its log.
+func reach(machine config.Machine) []host.Check {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	const network = "check this machine's network and its DNS; nothing needs restarting, the daemon keeps trying"
+	name := func(address string) string {
+		if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" {
+			return parsed.Hostname()
+		}
+		return address
+	}
+	// Looked up first and by itself, so a name that does not resolve is
+	// said to be that and not a server that is down.
+	resolves := func(hostname string) bool {
+		if net.ParseIP(hostname) != nil || hostname == "localhost" {
+			return true
+		}
+		_, err := net.DefaultResolver.LookupHost(ctx, hostname)
+		return err == nil
+	}
+	server := name(machine.Server)
+	if !resolves(server) {
+		return []host.Check{{Name: "server", Found: "cannot look up " + server + ": DNS has no answer for it here", Fix: network}}
+	}
+	assignment, err := api.New(machine.Server).Me(ctx, machine.Token)
+	switch {
+	case errors.Is(err, api.ErrUnknownMachine):
+		return []host.Check{{Name: "sign-in", Found: "the server no longer knows this machine", Fix: "hived logout, then hived login"}}
+	case err != nil:
+		return []host.Check{{Name: "server", Found: "cannot reach " + server + ": " + connection.Reason(err.Error()), Fix: network}}
+	}
+	checks := []host.Check{{Name: "server", Found: "reaches " + server, OK: true}}
+	if len(assignment.Pools) == 0 {
+		checks = append(checks, host.Check{Name: "sign-in", Found: "signed in, but in no hive", Fix: "hived link"})
+	} else {
+		checks = append(checks, host.Check{Name: "sign-in", Found: "in a hive", OK: true})
+	}
+	if tunnel := name(assignment.TunnelURL); tunnel != server && !resolves(tunnel) {
+		checks = append(checks, host.Check{Name: "tunnel", Found: "cannot look up " + tunnel + ", which jobs arrive through: DNS has no answer for it here", Fix: network})
+		return checks
+	}
+	// What the running daemon says of each hive's tunnel.
+	if remembered, err := connection.Load(); err == nil && remembered.Live() {
+		for _, hive := range remembered.Hives {
+			switch {
+			case hive.Connected:
+				checks = append(checks, host.Check{Name: "tunnel", Found: "connected to " + hive.Name + " since " + when(hive.Since, time.Now()), OK: true})
+			case hive.Error != "":
+				checks = append(checks, host.Check{Name: "tunnel", Found: "not connected to " + hive.Name + " since " + when(hive.Since, time.Now()) + ": " + connection.Reason(hive.Error), Fix: network})
+			}
+		}
+	}
+	return checks
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
 )
@@ -57,7 +58,10 @@ type Options struct {
 	// JobContext bounds a job's life. It must outlive the tunnel: a dropped
 	// connection does not stop a running job. Defaults to Run's context.
 	JobContext context.Context
-	Log        *slog.Logger
+	// Changed, if set, is told when the coordinator welcomes this tunnel and
+	// when a connection ends or cannot be made, with why.
+	Changed func(connected bool, cause error)
+	Log     *slog.Logger
 }
 
 // Run holds the tunnel open until ctx is cancelled or the coordinator says
@@ -80,7 +84,13 @@ func Run(ctx context.Context, options Options) error {
 		options.JobContext = ctx
 	}
 	options.Log = options.Log.With("pool", options.Pool)
+	if options.Changed == nil {
+		options.Changed = func(bool, error) {}
+	}
 	backoff := time.Second
+	// A machine that cannot connect retries for as long as it takes, and
+	// says so once and then every ten minutes, not every attempt.
+	quiet := connection.Quiet{Every: 10 * time.Minute}
 	for {
 		connected, err := session(ctx, options)
 		if ctx.Err() != nil {
@@ -89,13 +99,19 @@ func Run(ctx context.Context, options Options) error {
 		if errors.Is(err, ErrRevoked) || errors.Is(err, ErrReplaced) || errors.Is(err, ErrUnsupported) {
 			return err
 		}
+		options.Changed(false, err)
 		if connected {
 			backoff = time.Second
+			quiet.Reset()
 		}
 		// Jitter, so a coordinator deploy does not bring every daemon back in
 		// the same instant.
 		wait := backoff/2 + rand.N(backoff/2+1)
-		options.Log.Warn("tunnel closed; reconnecting", "error", err, "in", wait.Round(time.Millisecond))
+		if say, unsaid := quiet.Say(time.Now()); say && unsaid > 0 {
+			options.Log.Warn("still not connected; still trying", "error", err, "attempts", unsaid+1, "because", connection.Reason(err.Error()))
+		} else if say {
+			options.Log.Warn("tunnel closed; reconnecting", "error", err, "in", wait.Round(time.Millisecond))
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -217,6 +233,7 @@ func session(ctx context.Context, options Options) (bool, error) {
 				welcomed = true
 				exits = pending
 				options.Log.Info("connected", "machine", message.MachineID, "presence", presence)
+				options.Changed(true, nil)
 			case *protocol.JobAssign:
 				var answer any = protocol.NewJobAccepted(message.AssignmentID)
 				if reason := options.Jobs.Offer(options.PoolID, message); reason != "" {

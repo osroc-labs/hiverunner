@@ -283,6 +283,28 @@ try {
   assert.ok(["online", "paused"].includes(state), state)
   console.log(`hived run connected to acme (${state}).`)
 
+  // hived status --json says what a script would otherwise scrape from the
+  // boxes: which labels the machine takes, and whether it is connected.
+  const report = async () => {
+    const asked = hived(["status", "--json"])
+    const [code] = await once(asked, "exit")
+    assert.equal(code, 0, asked.output)
+    return JSON.parse(asked.output)
+  }
+  let told
+  await eventually(
+    async () => (told = await report()).connection[0]?.connected === true,
+    () => `status never said the tunnel was up\n${JSON.stringify(told)}`
+  )
+  assert.deepEqual(told.hives, ["acme"])
+  assert.equal(told.connection[0].hive, "acme")
+  assert.ok(Date.parse(told.connection[0].since) <= Date.now())
+  assert.deepEqual(
+    told.labels.filter((label) => label.kind === "linux").map((l) => l.label),
+    ["hive", "hive-4cpu", "hive-8cpu"]
+  )
+  console.log("hived status --json reported the tunnel and the labels.")
+
   // Added to a second organization from the dashboard: the running daemon
   // picks it up by itself and serves both.
   assert.equal(await presence("gh-502"), undefined)
@@ -416,6 +438,11 @@ try {
   await eventually(
     async () => (await presence()) === "offline",
     "stopping the daemon did not mark it offline"
+  )
+  assert.deepEqual(
+    (await report()).connection,
+    [],
+    "a daemon that is gone is not said to be connected"
   )
   console.log("hived went offline cleanly.")
 
