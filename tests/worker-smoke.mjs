@@ -465,9 +465,62 @@ assert.ok((await page(owner, "/machines")).includes("Mac15,9"))
   assert.match(body.error, /\/install/)
 }
 
+// hived unlink and hived link: a machine leaves a hive on its own token, and
+// is added to one only by a person, signed in again at a browser.
+{
+  const link = (daemon, token, body) =>
+    daemon("/api/machines/link", body, token)
+  const unlink = (token, organizationId) =>
+    ownerDaemon.daemon("/api/machines/unlink", { organizationId }, token)
+  const acme = { id: organizationId, name: "acme" }
+  const { daemon, granted } = await daemonSignIn(owner)
+  const token = (await json(granted)).access_token
+  const mine = { machineId: enrolled.machineId }
+  // The machine token says which machine, not that its owner agreed.
+  assert.equal((await link(daemon, enrolled.token, mine)).status, 401)
+  assert.equal((await link(daemon, token, {})).status, 400)
+  assert.equal((await link(daemon, token, { ...mine, hives: [] })).status, 400)
+
+  assert.equal((await unlink("hwm_nope", organizationId)).status, 401)
+  assert.equal((await unlink(enrolled.token, "gh-nowhere")).status, 404)
+  assert.deepEqual(await json(await unlink(enrolled.token, organizationId)), {
+    pools: [],
+  })
+  assert.equal((await unlink(enrolled.token, organizationId)).status, 404)
+  assert.deepEqual((await json(await me(enrolled.token))).pools, [])
+  // Out of the hive, and offered back to its owner as one click.
+  assert.ok((await page(owner, "/machines")).includes("Add to acme"))
+
+  // Named as GitHub names it, in any case; a hive she is not in is refused
+  // by name without that stopping the one she is in.
+  const linked = await json(
+    await link(daemon, token, { ...mine, hives: ["ACME", "globex"] })
+  )
+  assert.deepEqual(linked.added, [acme])
+  assert.deepEqual(linked.pools, [acme])
+  assert.deepEqual(
+    linked.refused.map((refusal) => refusal.name),
+    ["globex"]
+  )
+  assert.ok(!(await page(owner, "/machines")).includes("Add to acme"))
+  // That sign-in did its one job too.
+  assert.equal((await link(daemon, token, mine)).status, 401)
+}
+
 // A member who is not on an allowed team cannot add a machine; one who is, can.
 let memberDaemon = await daemonSignIn(member)
 let memberToken = (await json(memberDaemon.granted)).access_token
+// Nor can a member link a machine that is someone else's.
+assert.equal(
+  (
+    await memberDaemon.daemon(
+      "/api/machines/link",
+      { machineId: enrolled.machineId },
+      memberToken
+    )
+  ).status,
+  404
+)
 assert.equal(
   (await memberDaemon.daemon("/api/machines", mac, memberToken)).status,
   403

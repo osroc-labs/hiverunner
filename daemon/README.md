@@ -9,6 +9,7 @@ It runs on Apple Silicon Macs and on Linux with KVM, arm64 or x86-64.
 ./build.sh          # builds ./hived, signed so macOS lets it create VMs
 ./hived selftest    # boots a throwaway VM and reports what it finds
 ./hived login       # sign in with GitHub in the browser, enroll this machine
+./hived link        # add this machine to another of your hives
 ./hived run         # connect to every hive it serves and wait for jobs
 ./hived status      # what this machine lends, and whether it is lending
 ./hived config      # the owner's settings, below
@@ -26,11 +27,16 @@ development) and `HIVE_CONFIG` at another machine file.
 
 ## One machine, several organizations
 
-A machine belongs to its owner, not to a pool. At `hived login` someone in
-several organizations chooses which of them the machine serves, and can add or
-remove hives later from the dashboard without touching the machine: the
-running daemon asks the server every minute and opens or closes a tunnel per
-hive to match. Its job slots, one unless its owner allows more, are one
+A machine belongs to its owner, not to a pool. `hived login` says who that
+is and enrolls the machine, once; someone in several organizations chooses
+there which of them it serves. After that `hived link` adds it to another
+hive and `hived unlink` takes it out of one, as the dashboard also can,
+without touching the machine otherwise: the running daemon asks the server
+every minute and opens or closes a tunnel per hive to match. Linking is
+approved in a browser like the first sign-in, because the machine token
+alone must not be able to bring another organization's jobs to the machine.
+Running `hived login` on a machine that is signed in changes nothing and
+says to use `hived link`. Its job slots, one unless its owner allows more, are one
 budget across all of them.
 
 ## Installing and removing

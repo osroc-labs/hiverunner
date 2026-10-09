@@ -314,6 +314,64 @@ try {
   assert.equal(run.exitCode, null, "the daemon keeps serving acme")
   console.log("The same machine served a second organization, then left it.")
 
+  // hived link: the same, asked for from the machine. Its owner approves in
+  // a browser again, and the daemon already running picks the hive up.
+  const approve = async (child) => {
+    await eventually(
+      () => /user_code=/.test(child.output),
+      () => `no code was shown\n${child.output}`
+    )
+    const code = child.output.match(/user_code=([A-Z0-9-]+)/i)[1]
+    const opened = await fetch(`${origin}/device?user_code=${code}`, {
+      headers: { Cookie: cookies.join("; ") },
+    })
+    assert.ok((await opened.text()).includes(code))
+    await browser("/api/auth/device/approve", { userCode: code })
+    return (await once(child, "exit"))[0]
+  }
+  const relogin = hived(["login", "--no-browser"])
+  assert.equal((await once(relogin, "exit"))[0], 0, relogin.output)
+  assert.match(relogin.output, /already signed in\. It serves: acme/)
+  assert.match(relogin.output, /hived link/)
+  assert.equal(
+    JSON.parse(readFileSync(env.HIVE_CONFIG, "utf8")).machineId,
+    machine.id,
+    "signing in twice enrolled nothing"
+  )
+  // One hive is left to add, so there is nothing to choose.
+  const link = hived(["link", "--no-browser"])
+  assert.equal(await approve(link), 0, link.output)
+  assert.match(link.output, /Added to: globex/)
+  assert.match(link.output, /It serves: acme, globex|It serves: globex, acme/)
+  await eventually(
+    async () => (await presence("gh-502")) === state,
+    () => `globex never saw the linked machine\n${run.output}`
+  )
+  const listed = hived(["hives"])
+  assert.equal((await once(listed, "exit"))[0], 0, listed.output)
+  assert.deepEqual(listed.output.trim().split("\n").sort(), ["acme", "globex"])
+  const nothing = hived(["link", "--no-browser", "Globex"])
+  assert.equal(await approve(nothing), 0, nothing.output)
+  assert.match(nothing.output, /serves those already/)
+  // hived unlink needs nobody at a browser.
+  const unlink = hived(["unlink", "globex"])
+  assert.equal((await once(unlink, "exit"))[0], 0, unlink.output)
+  assert.match(unlink.output, /No longer serving globex\.\nIt serves: acme/)
+  await eventually(
+    async () => (await presence("gh-502")) === undefined,
+    () => `globex still lists the machine\n${run.output}`
+  )
+  // A hive with no machines offers its owner the one they have elsewhere,
+  // where they are looking: on the checklist, not only the Machines page.
+  assert.match(await page("/dashboard"), /Add [^<]+ to globex/)
+  assert.match(await page("/dashboard"), /hived link/)
+  assert.equal(await presence(), state)
+  assert.equal(run.exitCode, null, "the daemon keeps serving acme")
+  const stranger = hived(["unlink", "initech"])
+  assert.equal((await once(stranger, "exit"))[0], 1, stranger.output)
+  assert.match(stranger.output, /does not serve a hive called "initech"/)
+  console.log("hived link added a hive and hived unlink left it.")
+
   // With a guest image installed the daemon keeps a VM warm. Stopping it
   // must take that VM, and its files, with it before the process exits.
   const jobs = process.env.HIVE_IMAGE ? `${process.env.HIVE_IMAGE}-jobs` : null

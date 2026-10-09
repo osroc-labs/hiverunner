@@ -159,3 +159,71 @@ func TestADroppedConnectionWhileWaitingIsRetried(t *testing.T) {
 		t.Fatalf("AwaitToken() = %q, %v", token, err)
 	}
 }
+
+func TestLinkOffersAChoiceThenSaysWhatWasAdded(t *testing.T) {
+	var sent []map[string]any
+	record := func(next func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer session-token" {
+				t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+			}
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			sent = append(sent, body)
+			next(w, r)
+		}
+	}
+	c := server(t, map[string][]func(http.ResponseWriter, *http.Request){
+		"/api/machines/link": {
+			record(reply(409, map[string]any{"code": "CHOOSE_POOL", "pools": []Pool{{ID: "gh-1", Name: "acme", Linked: true}, {ID: "gh-2", Name: "globex"}, {ID: "gh-3", Name: "initech"}}})),
+			record(reply(200, Linked{
+				Pools:   []Pool{{ID: "gh-1", Name: "acme"}, {ID: "gh-2", Name: "globex"}},
+				Added:   []Pool{{ID: "gh-2", Name: "globex"}},
+				Refused: []Refused{{ID: "gh-3", Name: "initech", Message: "limited to certain teams"}},
+			})),
+			record(reply(404, map[string]any{"code": "NOT_FOUND", "error": "No such machine"})),
+		},
+	})
+	ctx := context.Background()
+
+	var choose *ChoosePoolError
+	if _, err := c.Link(ctx, "session-token", "m", nil); !errors.As(err, &choose) || len(choose.Pools) != 3 || !choose.Pools[0].Linked || choose.Pools[1].Linked {
+		t.Fatalf("want a choice that says what is linked, got %v", err)
+	}
+	if _, asked := sent[0]["hives"]; asked {
+		t.Errorf("naming no hives must send none, sent %v", sent[0])
+	}
+	linked, err := c.Link(ctx, "session-token", "m", []string{"gh-2", "gh-3"})
+	if err != nil || len(linked.Added) != 1 || len(linked.Refused) != 1 || len(linked.Pools) != 2 {
+		t.Fatalf("Link() = %+v, %v", linked, err)
+	}
+	if sent[1]["machineId"] != "m" || len(sent[1]["hives"].([]any)) != 2 {
+		t.Errorf("sent %v", sent[1])
+	}
+	var refusal *Error
+	if _, err := c.Link(ctx, "session-token", "m", nil); !errors.As(err, &refusal) || refusal.Status != 404 {
+		t.Fatalf("want a 404, got %v", err)
+	}
+}
+
+func TestUnlinkReturnsWhatIsLeftAndRecognisesARetiredMachine(t *testing.T) {
+	c := server(t, map[string][]func(http.ResponseWriter, *http.Request){
+		"/api/machines/unlink": {
+			func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer hwm_x" {
+					t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+				}
+				reply(200, map[string]any{"pools": []Pool{{ID: "gh-1", Name: "acme"}}})(w, r)
+			},
+			reply(401, map[string]string{"error": "Unknown machine"}),
+		},
+	})
+	ctx := context.Background()
+	left, err := c.Unlink(ctx, "hwm_x", "gh-2")
+	if err != nil || len(left) != 1 || left[0].Name != "acme" {
+		t.Fatalf("Unlink() = %+v, %v", left, err)
+	}
+	if _, err := c.Unlink(ctx, "hwm_x", "gh-2"); !errors.Is(err, ErrUnknownMachine) {
+		t.Fatalf("want ErrUnknownMachine, got %v", err)
+	}
+}

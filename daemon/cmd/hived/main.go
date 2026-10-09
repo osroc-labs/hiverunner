@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -37,7 +36,10 @@ const defaultServer = "https://hiveworkr.thecomputerplumbers.com"
 
 const usage = `hived, the HiveWorker daemon
 
-  hived login       Sign in with GitHub and add this machine to your pool
+  hived login       Sign in with GitHub and enroll this machine
+  hived link        Add this machine to another of your hives
+  hived unlink      Stop serving one hive, and keep serving the others
+  hived hives       List the hives this machine serves
   hived run         Connect to your hive and wait for jobs
   hived status      Show what this machine lends, and whether it is lending
   hived config      Show or change this machine's settings
@@ -68,6 +70,12 @@ func main() {
 	switch os.Args[1] {
 	case "login":
 		err = login(ctx, os.Args[2:])
+	case "link":
+		err = link(ctx, os.Args[2:])
+	case "unlink":
+		err = unlink(ctx, os.Args[2:])
+	case "hives":
+		err = hives(ctx)
 	case "run":
 		err = run(ctx)
 	case "status":
@@ -146,6 +154,20 @@ func login(ctx context.Context, args []string) error {
 	noBrowser := flags.Bool("no-browser", false, "print the sign-in link instead of opening it")
 	_ = flags.Parse(args)
 
+	// Signing in again would enroll this computer a second time, as a new
+	// machine with a new token. Someone here for another hive wants link.
+	if enrolled, err := config.Load(); err == nil && enrolled.Server == api.New(server()).Server {
+		switch serving, err := served(ctx, enrolled); {
+		case err == nil:
+			fmt.Printf("This machine is already signed in. %s\n", serving)
+			fmt.Println("To add it to another hive: hived link")
+			fmt.Println("To sign in as someone else: hived logout, then hived login")
+			return nil
+		case !errors.Is(err, api.ErrUnknownMachine):
+			return fmt.Errorf("this machine is already signed in, but the server could not be asked about it: %w", err)
+		}
+	}
+
 	facts, err := host.ReadFacts()
 	if err != nil {
 		return err
@@ -154,16 +176,7 @@ func login(ctx context.Context, args []string) error {
 	score := bench.Score(bench.Run(3 * time.Second))
 
 	client := api.New(server())
-	code, err := client.StartDevice(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("\nTo add this machine, approve this code in your browser:\n\n    %s\n\n%s\n\n", code.UserCode, code.VerificationURIComplete)
-	if !*noBrowser {
-		openBrowser(code.VerificationURIComplete)
-	}
-	fmt.Println("Waiting for approval...")
-	token, err := client.AwaitToken(ctx, code)
+	token, err := signIn(ctx, client, *noBrowser)
 	if err != nil {
 		return err
 	}
@@ -184,10 +197,11 @@ func login(ctx context.Context, args []string) error {
 	enrollment, err := client.Enroll(ctx, token, machine)
 	var choose *api.ChoosePoolError
 	if errors.As(err, &choose) {
-		machine.OrganizationIDs, err = askPools(choose.Pools)
+		chosen, err := askPools("You belong to more than one hive. Which should this machine serve?", choose.Pools)
 		if err != nil {
 			return err
 		}
+		machine.OrganizationIDs = ids(chosen)
 		enrollment, err = client.Enroll(ctx, token, machine)
 	}
 	var refusal *api.Error
@@ -222,36 +236,6 @@ func login(ctx context.Context, args []string) error {
 	}
 	fmt.Println("Start it with: hived run")
 	return nil
-}
-
-// askPools lets someone in several organizations choose which of them this
-// machine should serve. It can serve all of them at once.
-func askPools(pools []api.Pool) ([]string, error) {
-	fmt.Println("\nYou belong to more than one hive. Which should this machine serve?")
-	for i, pool := range pools {
-		fmt.Printf("  %d. %s\n", i+1, pool.Name)
-	}
-	fmt.Print("Numbers separated by commas, or \"all\": ")
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return nil, errors.New("no hive chosen; run again with --hive")
-	}
-	answer := strings.TrimSpace(line)
-	var chosen []string
-	if strings.EqualFold(answer, "all") {
-		for _, pool := range pools {
-			chosen = append(chosen, pool.ID)
-		}
-		return chosen, nil
-	}
-	for _, part := range strings.Split(answer, ",") {
-		choice, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || choice < 1 || choice > len(pools) {
-			return nil, errors.New("that is not one of the hives listed")
-		}
-		chosen = append(chosen, pools[choice-1].ID)
-	}
-	return chosen, nil
 }
 
 func run(ctx context.Context) error {
