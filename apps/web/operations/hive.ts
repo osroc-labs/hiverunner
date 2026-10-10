@@ -630,7 +630,7 @@ export async function getWorkflow(
         : size.arch === "x64"
           ? `${label} is x64 and runs only on Linux x64 machines in the hive.`
           : `${label} runs on an Apple Silicon Mac itself, not in a VM, and only while the hive's macosJobs setting is on. Fall back to a macOS runner such as macos-latest.`,
-      "`container:` and `services:` are not supported yet. Jobs that use them should stay on their current runner.",
+      "Docker is in the VM, with buildx and compose, for `docker` in a step, `services:` and `container:`. A `container:` image must be Debian, Ubuntu or Alpine based, or otherwise have Perl. No image is on the disk beforehand; each job pulls what it uses.",
       "The steps shown are an example. Keep the workflow's own steps and change only where it runs.",
     ],
   }

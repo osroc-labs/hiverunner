@@ -553,6 +553,15 @@ func selftest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := reportFailure(report); err != nil {
+		return err
+	}
+	fmt.Printf("A VM booted, ran and was destroyed in %.1fs.\n", time.Since(started).Seconds())
+	return nil
+}
+
+// reportFailure is what a guest's report says is wrong with it, or nil.
+func reportFailure(report string) error {
 	// The network first: a VM that cannot reach GitHub runs no job, whatever
 	// else it could not reach.
 	if !strings.Contains(report, "NETWORK=ok") {
@@ -561,7 +570,11 @@ func selftest(ctx context.Context) error {
 	if strings.Contains(report, "CACHE=failed") {
 		return errors.New("the VM booted but could not reach this machine's Actions cache")
 	}
-	fmt.Printf("A VM booted, ran and was destroyed in %.1fs.\n", time.Since(started).Seconds())
+	// Only a guest that tried and failed. An image built before Docker was
+	// in it says nothing of Docker, and still runs the jobs it always ran.
+	if strings.Contains(report, "DOCKER=failed") {
+		return errors.New("the VM booted but Docker could not run a container in it")
+	}
 	return nil
 }
 

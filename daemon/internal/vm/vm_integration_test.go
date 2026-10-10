@@ -88,7 +88,7 @@ func TestAVMBootsReportsAndLeavesNothingBehind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-test: %v\n%s", err, report)
 	}
-	for _, want := range []string{"CPUS=2", "USER=runner", "NETWORK=ok", "RUNNER=" + r.Image.RunnerVersion} {
+	for _, want := range []string{"CPUS=2", "USER=runner", "NETWORK=ok", "DOCKER=ok", "RUNNER=" + r.Image.RunnerVersion} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}

@@ -300,10 +300,10 @@ export default function HomePage() {
                 Linux x64 jobs have labels of their own and run on x64 Linux
                 machines in your hive. For Xcode, <Code>hive-macos</Code> runs a
                 job on a member's Mac itself, as a separate user, once the Mac's
-                owner and your hive have both opted in. Actions and container
-                images a job uses need an arm64 build. Not yet:{" "}
-                <Code>container:</Code> and <Code>services:</Code>, Windows and
-                GPU jobs.
+                owner and your hive have both opted in. Docker is in every Linux
+                VM, for <Code>docker build</Code>, <Code>services:</Code> and{" "}
+                <Code>container:</Code>. Actions and container images a job uses
+                need an arm64 build. Not yet: Windows and GPU jobs.
               </Fact>
               <Fact title="Who can add a machine?">
                 Anyone who belongs to your GitHub organization, by installing

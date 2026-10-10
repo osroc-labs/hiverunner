@@ -38,6 +38,41 @@ RUN useradd --create-home --uid 1001 --shell /bin/bash runner \
  && rm -rf /var/lib/apt/lists/* \
  && chown -R runner:runner /opt/runner
 
+# Docker, for jobs that build images or use `container:` and `services:`: the
+# engine, its command, and the buildx and compose plugins. From Docker's own
+# repository, which is where GitHub's runners get theirs, so a job that moves
+# here finds the Docker it had. Ubuntu packages all four as well, some
+# releases behind and compose a whole major version behind.
+#
+# Nothing starts at boot. The socket is there for the runner's user, and the
+# engine starts when something first speaks to it, so a job that never uses
+# Docker does not wait for it or give it memory. busybox is the self-test's
+# container: one static file, so the test pulls nothing.
+#
+# linux-image-virtual leaves out linux-modules-extra, and what Docker needs
+# of the kernel is all in the modules it does bring: overlayfs, bridges and
+# veth pairs, and the netfilter pieces iptables-nft drives. The build fails
+# if a kernel ever moves one of them out, rather than produce an image whose
+# containers have no network.
+RUN install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL -o /etc/apt/keyrings/docker.asc https://download.docker.com/linux/ubuntu/gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      > /etc/apt/sources.list.d/docker.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+      busybox-static \
+ && rm -rf /var/lib/apt/lists/* \
+ && usermod -aG docker runner \
+ && systemctl disable docker.service containerd.service \
+ && systemctl enable docker.socket \
+ && docker --version && docker buildx version && docker compose version \
+ && kernel=$(ls /lib/modules | sort -V | tail -1) \
+ && for module in overlay bridge veth br_netfilter nf_tables nft_compat nft_chain_nat \
+      nf_nat nf_conntrack xt_MASQUERADE xt_addrtype xt_conntrack; do \
+      modinfo -k "$kernel" "$module" >/dev/null || { echo "the kernel has no $module" >&2; exit 1; }; \
+    done
+
 # The runner starts every JavaScript action with one of its own copies of
 # Node. Each is put behind hive-node, which points the action at the host's
 # cache when there is one and otherwise changes nothing. The build fails if
