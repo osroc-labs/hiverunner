@@ -1,10 +1,17 @@
 import Link from "next/link"
 import { RUNNER_SIZES } from "@workspace/pricing"
+import { journey } from "@/mcp/journey"
 import { HIVE_TOOLS } from "@/mcp/tool-list"
 import { Code, CodeBlock } from "../code"
 import { MCP_URL, mcpClients, PRODUCT_ORIGIN } from "../site"
 
 const clients = mcpClients()
+
+/** The shared steps mark commands with backticks; here they are set as code. */
+const coded = (text: string) =>
+  text
+    .split("`")
+    .map((part, index) => (index % 2 ? <Code key={index}>{part}</Code> : part))
 
 export function Agents() {
   return (
@@ -21,6 +28,34 @@ export function Agents() {
         There is no API key to paste. The client registers itself and you sign
         in with GitHub in a browser.
       </p>
+
+      <h2 id="from-nothing">From nothing to a first job</h2>
+      <p>
+        Each state you can be in, who acts, and how the agent can tell. An agent
+        does everything except four things only a person can: install the GitHub
+        App, run the install command on a machine, add funds and approve the
+        connection.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Who</th>
+            <th>Do</th>
+            <th>How the agent sees it</th>
+          </tr>
+        </thead>
+        <tbody>
+          {journey(PRODUCT_ORIGIN).map((step) => (
+            <tr key={step.state}>
+              <td>{step.state}</td>
+              <td>{step.who}</td>
+              <td>{coded(step.action)}</td>
+              <td>{step.signal}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       <h2 id="what-an-agent-can-do">What an agent can do</h2>
       <ul>

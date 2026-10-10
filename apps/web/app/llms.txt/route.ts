@@ -15,6 +15,7 @@ import {
   mcpClients,
   PRODUCT_ORIGIN,
 } from "@/components/marketing/site"
+import { journey } from "@/mcp/journey"
 import { HIVE_TOOLS } from "@/mcp/tool-list"
 
 /**
@@ -65,6 +66,17 @@ HiveWorker is the cheapest way to run a team's CI, and an agent can set it up an
 Tools:
 
 ${HIVE_TOOLS.map((tool) => `- \`${tool.name}\` (${tool.scope}): ${tool.description}`).join("\n")}
+
+## From nothing to a first job
+
+Each state, who acts, what they do, and how an agent can tell it is there. Only a person can install the GitHub App, run the install command on a machine, add funds and approve the connection; an agent can do the rest.
+
+${journey(origin)
+  .map(
+    (step, index) =>
+      `${index + 1}. ${step.state} (${step.who}): ${step.action}${step.signal ? ` Seen as: ${step.signal}.` : ""}`
+  )
+  .join("\n")}
 
 ## Run a job
 

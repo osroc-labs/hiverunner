@@ -116,6 +116,23 @@ await redirectsTo(
   await fetch(`${origin}/install`, { redirect: "manual" }),
   "https://github.com/apps/hiveworker-smoke/installations/new"
 )
+// An install begun on an agent's consent page asks GitHub to carry the way
+// back; nothing else may ride along.
+const installAt = "https://github.com/apps/hiveworker-smoke/installations/new"
+await redirectsTo(
+  await fetch(
+    `${origin}/install?next=${encodeURIComponent("/connect?client_id=x")}`,
+    { redirect: "manual" }
+  ),
+  `${installAt}?state=%2Fconnect%3Fclient_id%3Dx`
+)
+for (const next of ["https://evil.example", "/dashboard", "//evil.example"])
+  await redirectsTo(
+    await fetch(`${origin}/install?next=${encodeURIComponent(next)}`, {
+      redirect: "manual",
+    }),
+    installAt
+  )
 for (const path of ["/billing", "/projects"])
   assert.equal((await fetch(`${origin}${path}`)).status, 404, path)
 // MCP is on: its pages want a session and its endpoint wants a token, and
@@ -129,6 +146,14 @@ await redirectsTo(
   const response = await fetch(`${origin}/mcp`, { method: "POST" })
   assert.equal(response.status, 401)
   assert.match(response.headers.get("www-authenticate"), /resource_metadata/)
+  // The body tells the agent behind the client what happens next.
+  const { error } = await response.json()
+  assert.equal(error.code, -32000)
+  assert.match(error.message, /Sign in required/)
+  assert.equal(error.data.docs, `${origin}/docs/agents`)
+  assert.equal(error.data.llms, `${origin}/llms.txt`)
+  assert.ok(error.data.steps.length > 0 && error.data.steps.length < 10)
+  assert.ok(error.data.steps.some((step) => step.includes("/install")))
 }
 // Returning before consuming a POST body made the local Workers proxy drop
 // about 5% of these requests. Exercise the actual HTTP boundary repeatedly;
@@ -725,6 +750,23 @@ async function refusedTool(tokens, name, args, code) {
   assert.ok(result.structuredContent.requestId)
 }
 
+// Someone signed in but in no hive is shown the way to one, and back.
+{
+  const html = await page(outsider, `/connect?client_id=${client.client_id}`)
+  assert.ok(html.includes("/install?next="))
+  assert.ok(html.includes("/github/sync?next="))
+  assert.ok(
+    html.includes(encodeURIComponent(`/connect?client_id=${client.client_id}`))
+  )
+  const allow = html.match(/<button[^>]*>(?:<!-- -->)?Allow access/)
+  assert.ok(allow && /\sdisabled/.test(allow[0]), "Allow is disabled")
+  // The owner, who has a hive, is not sent anywhere.
+  assert.ok(
+    !(await page(owner, `/connect?client_id=${client.client_id}`)).includes(
+      "/install?next="
+    )
+  )
+}
 let tokens = await connect(owner, organizationId)
 const listed = (await json(await rpc(tokens.access_token, "list"))).result.tools
 for (const name of ["get_hive", "update_settings"])
@@ -903,11 +945,19 @@ assert.equal(llms.status, 200)
 assert.match(llms.headers.get("content-type"), /^text\/plain/)
 const llmsText = await llms.text()
 assert.ok(llmsText.startsWith("# HiveWorker\n"))
-for (const part of [`${origin}/mcp`, "runs-on", "get_hive", "claude mcp add"])
+for (const part of [
+  `${origin}/mcp`,
+  "runs-on",
+  "get_hive",
+  "claude mcp add",
+  "From nothing to a first job",
+])
   assert.ok(llmsText.includes(part), part)
 const agentsDoc = await fetch(`${origin}/docs/agents`)
 assert.equal(agentsDoc.status, 200)
-assert.ok((await agentsDoc.text()).includes("get_hive"))
+const agentsHtml = await agentsDoc.text()
+assert.ok(agentsHtml.includes("get_hive"))
+assert.ok(agentsHtml.includes("From nothing to a first job"))
 console.log(
   "Member limits, refresh, revocation and the pages agents read passed."
 )
@@ -969,6 +1019,32 @@ await json(await webhook("installation", installed("created", { id: 9002 })))
 await redirectsTo(
   await owner("/github/setup?installation_id=9002"),
   "/dashboard?installed=1"
+)
+// Begun from an agent's consent page, the install returns there, and only
+// there: `state` has been through GitHub and the address bar.
+await redirectsTo(
+  await owner(
+    `/github/setup?installation_id=9002&state=${encodeURIComponent("/connect?client_id=x")}`
+  ),
+  "/connect?client_id=x"
+)
+for (const state of ["https://evil.example", "/wallet", "//evil.example"])
+  await redirectsTo(
+    await owner(
+      `/github/setup?installation_id=9002&state=${encodeURIComponent(state)}`
+    ),
+    "/dashboard?installed=1"
+  )
+await redirectsTo(
+  await owner(
+    `/github/setup?setup_action=request&state=${encodeURIComponent("/connect?client_id=x")}`
+  ),
+  "/github/status?state=requested-connection"
+)
+assert.ok(
+  (await page(owner, "/github/status?state=requested-connection")).includes(
+    "restart it from your MCP client"
+  )
 )
 assert.equal(
   grants(await page(owner, "/wallet")),

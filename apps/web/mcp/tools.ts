@@ -63,6 +63,8 @@ export function serverInstructions(appUrl: string) {
     "Call get_hive first. It says whether a job can start now, what is blocking it if not, and lists nextSteps: act on those in order.",
     `A job needs three things: a machine online in the hive, a positive balance, and \`runs-on: ${base.label}\` in the workflow. get_workflow returns the YAML, with a fallback runner for when no machine is free.`,
     "Reads need the hive:read permission. Changing settings, the budget, automatic top-up or machines needs hive:write, which only a hive owner or admin can grant; settings need an owner.",
+    "Only a person can do four things: install the GitHub App (as an owner of the organization), run the install command on a machine, add funds, and approve this connection. Say which of those is needed and give them the URL or command.",
+    "Everything else you can do yourself: read the hive, edit and push the workflow, and with hive:write set the budget and settings.",
     "Money is in US dollars. Adding funds is done by a person in the browser, at the wallet URL get_hive returns; no tool takes a payment.",
     "A tool that fails returns isError with a code (FORBIDDEN, CONFLICT, INVALID_INPUT, NOT_FOUND) and a sentence saying why.",
     `Docs for agents: ${appUrl}/docs/agents. A plain-text summary of the product: ${appUrl}/llms.txt.`,

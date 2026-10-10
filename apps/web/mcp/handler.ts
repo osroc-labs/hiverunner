@@ -5,6 +5,7 @@ import product from "@/config/product.json"
 import { auth } from "@/lib/auth"
 import { getDb } from "@/db"
 import web from "../package.json"
+import { journeySteps } from "./journey"
 import { registerHiveTools, serverInstructions } from "./tools"
 
 export async function handleMcp(request: Request) {
@@ -30,6 +31,6 @@ export async function handleMcp(request: Request) {
       { instructions: serverInstructions(env.APP_URL) }
     )(request)
   } catch (error) {
-    return mcpAuthError(error, resource)
+    return mcpAuthError(error, resource, journeySteps(env.APP_URL))
   }
 }
