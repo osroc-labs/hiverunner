@@ -2,13 +2,13 @@
 
 import * as React from "react"
 import type { LiveMachine } from "@workspace/db/live"
+import { OWNER_CORES } from "@workspace/pricing"
 import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { Panel } from "./panel"
 
-/** Cores a Mac keeps for its owner, and the most jobs one Mac takes. */
-const OWNER_CORES = 2
+/** The most jobs one Mac takes. */
 const MAX_JOBS = 8
 
 /** How many 2-vCPU jobs these Macs can run side by side. */

@@ -19,6 +19,7 @@ import {
   APP_PERMISSIONS,
   DAEMON_RELEASED,
   INSTALL_COMMAND,
+  mcpClients,
 } from "@/components/marketing/site"
 import { StartTimeline } from "@/components/marketing/start-timeline"
 import { WorkflowDiff } from "@/components/marketing/workflow-diff"
@@ -205,6 +206,46 @@ export default function HomePage() {
               <WorkflowDiff />
             </Step>
           </ol>
+        </Container>
+      </section>
+
+      <section className="border-t border-border py-14 sm:py-20">
+        <Container className="grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-16">
+          <div className="flex flex-col gap-5">
+            <SectionHeading title="Or let your agent do it.">
+              HiveWorker has an MCP server. Connect Claude Code, Cursor or Codex
+              and it can set up your hive, change the workflow and watch the
+              bill. There is no API key: you sign in with GitHub.
+            </SectionHeading>
+            <p>
+              <Link href="/docs/agents" className={textLink}>
+                Connect an agent
+              </Link>
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-6">
+            <CodeBlock title="Claude Code" wrap>
+              {mcpClients().claudeCode}
+            </CodeBlock>
+            <ul className="flex list-disc flex-col gap-2 pl-5 leading-7 text-muted-foreground">
+              <li>
+                Asks whether a job can start now, and says what is in the way
+                when it cannot.
+              </li>
+              <li>
+                Writes the <Code>runs-on</Code> change, with a fallback for when
+                no machine is free.
+              </li>
+              <li>
+                Reads jobs, signed receipts and what you have saved against
+                GitHub-hosted runners.
+              </li>
+              <li>
+                Sets a monthly budget and changes hive settings, when an owner
+                allows it.
+              </li>
+            </ul>
+          </div>
         </Container>
       </section>
 

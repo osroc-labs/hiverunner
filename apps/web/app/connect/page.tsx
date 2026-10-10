@@ -1,8 +1,8 @@
-import Link from "next/link"
 import { eq } from "drizzle-orm"
 import { listOrganizations } from "@workspace/auth"
 import { oauthClient } from "@workspace/auth/schema"
 import { AuthPage } from "@/components/auth-page"
+import { RouteLink } from "@/components/route-link"
 import { requireServerSession } from "@/lib/session"
 import { getDb } from "@/db"
 import { ConsentForm } from "./consent-form"
@@ -35,10 +35,10 @@ export default async function Page({
       </p>
       {!organizations.length && (
         <p className="mb-4">
-          First{" "}
-          <Link className="underline" href="/hives">
-            create an organization
-          </Link>
+          You are not in a hive yet.{" "}
+          <RouteLink className="underline" to="/install">
+            Install the GitHub App on your organization first
+          </RouteLink>
           , then restart the connection.
         </p>
       )}
