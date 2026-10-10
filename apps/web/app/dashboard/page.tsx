@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers"
 import Link from "next/link"
-import { RUNNER_SIZES, TRIAL_GRANT_USD } from "@workspace/pricing"
+import { TRIAL_GRANT_USD } from "@workspace/pricing"
 import { budgetHolds } from "@workspace/db/budget"
 import { getLiveSnapshot } from "@workspace/db/live"
 import { listUserMachines } from "@workspace/db/machines"
@@ -11,7 +11,9 @@ import { cn } from "@workspace/ui/lib/utils"
 import { AccountPage } from "@/components/account-page"
 import { ActionButton } from "@/components/action-button"
 import { Notice, Panel, Snippet } from "@/components/console/panel"
+import { HexMark } from "@/components/hex-mark"
 import { RunnerSizes } from "@/components/console/runner-sizes"
+import { WorkflowDiff } from "@/components/marketing/workflow-diff"
 import { getDb } from "@/db"
 import { NoHiveSteps } from "@/components/no-hive-steps"
 import {
@@ -236,7 +238,7 @@ function FirstJob({
       body: (
         <>
           <div className="grid items-start gap-6 md:grid-cols-2">
-            <Snippet>{`jobs:\n  test:\n    runs-on: ${RUNNER_SIZES[0].label}`}</Snippet>
+            <WorkflowDiff />
             <RunnerSizes />
           </div>
           <p>
@@ -256,27 +258,35 @@ function FirstJob({
     <Panel
       title="Get your first job running"
       aside={
-        <span className="tabular-nums">
-          {done} of {steps.length} done
-        </span>
+        <>
+          <span className="tabular-nums">
+            {done} of {steps.length} done
+          </span>
+          <span
+            aria-hidden="true"
+            className="hidden h-2.5 w-24 border border-primary/50 sm:block"
+          >
+            <span
+              className="block h-full bee-stripes"
+              style={{ width: `${(done / steps.length) * 100}%` }}
+            />
+          </span>
+        </>
       }
       flush
     >
       <ol className="divide-y divide-border">
         {steps.map((step, index) => (
           <li key={step.title} className="flex gap-4 px-4 py-5 sm:px-6">
-            <span
-              aria-hidden="true"
-              className={
-                step.done
-                  ? "flex size-6 shrink-0 items-center justify-center bg-primary font-mono text-xs font-semibold text-primary-foreground"
-                  : "flex size-6 shrink-0 items-center justify-center border border-border font-mono text-xs text-muted-foreground"
-              }
-            >
-              {step.done ? "✓" : index + 1}
-            </span>
+            <HexMark
+              n={index + 1}
+              state={step.done ? "done" : index === next ? "next" : "todo"}
+            />
             {step.body ? (
-              <details open={index === next} className="group min-w-0 flex-1">
+              <details
+                open={index === next}
+                className="group min-w-0 flex-1 pt-1"
+              >
                 <summary
                   className={cn(
                     "flex cursor-pointer list-none items-baseline justify-between gap-3 outline-none focus-visible:underline [&::-webkit-details-marker]:hidden",
@@ -301,7 +311,7 @@ function FirstJob({
                 </div>
               </details>
             ) : (
-              <p className="min-w-0 flex-1 text-muted-foreground">
+              <p className="min-w-0 flex-1 pt-1 text-muted-foreground">
                 <span className="sr-only">
                   {step.done ? "Done: " : "To do: "}
                 </span>
