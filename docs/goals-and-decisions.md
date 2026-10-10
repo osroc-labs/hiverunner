@@ -22,7 +22,7 @@ HiveWorker is GitHub Actions-compatible runner software that lets an organizatio
 - Every job has a price, a payer, a payee, and a signed receipt.
 - The private pool works with no trust in outsiders. The public pool is opt-in per repo.
 
-Not in v1: replacing GitHub's orchestration, secret-bearing jobs on strangers' machines, Windows hosts, GPU or long-running non-CI workloads.
+Not in v1: replacing GitHub's orchestration, secret-bearing jobs on strangers' machines, Windows jobs or a daemon native to Windows (a Windows 11 PC hosts Linux jobs through WSL 2), GPU or long-running non-CI workloads.
 
 ## Agreed decisions
 

@@ -8,12 +8,13 @@ import {
   DAEMON_RELEASED,
   DAEMON_SIGNER,
   INSTALL_COMMAND,
+  WINDOWS_INSTALL_COMMAND,
 } from "@/components/marketing/site"
 
 export const metadata = {
   title: "Download",
   description:
-    "Install the HiveWorker daemon on an Apple Silicon Mac or a Linux machine: one command, what it installs, and how to update or remove it.",
+    "Install the HiveWorker daemon on an Apple Silicon Mac, a Linux machine or a Windows 11 PC: one command, what it installs, and how to update or remove it.",
 }
 
 export default function DownloadPage() {
@@ -146,9 +147,17 @@ export default function DownloadPage() {
         <p className="leading-7 text-muted-foreground">
           The same command works on Linux, arm64 or x64, on a machine with KVM.
           It needs QEMU, virtiofsd and passt, and tells you how to install
-          whichever is missing; it never asks for your password. Windows hosts
-          are not part of the plan for now.
+          whichever is missing; it never asks for your password.
         </p>
+        <p className="leading-7 text-muted-foreground">
+          A Windows 11 PC with an Intel or AMD processor lends itself through
+          Windows&apos; Linux subsystem (WSL 2). Paste this into PowerShell; it
+          sets up a Linux of its own for the daemon and runs the same install
+          inside it. The PC takes x64 jobs while you are signed in to Windows.
+        </p>
+        <CodeBlock title="PowerShell" wrap className="max-w-3xl">
+          {WINDOWS_INSTALL_COMMAND}
+        </CodeBlock>
       </Band>
     </>
   )

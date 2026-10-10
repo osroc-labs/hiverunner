@@ -42,6 +42,19 @@
     & wsl.exe -d $Distro -u $As -- sh -c $Command | Out-Host
     return ($LASTEXITCODE -eq 0)
   }
+  # Runs a shell script inside it, from a file the Linux reads. Passed as an
+  # argument its quotes and line breaks do not survive the trip, and piped
+  # it would arrive with Windows' line endings and break the shell.
+  function RunScript([string]$As, [string]$Text) {
+    $file = Join-Path $Root 'step.sh'
+    [IO.File]::WriteAllText($file, ($Text -replace "`r`n", "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    try {
+      & wsl.exe -d $Distro -u $As --cd $Root -- sh ./step.sh | Out-Host
+      return ($LASTEXITCODE -eq 0)
+    } finally {
+      Remove-Item -Force $file -ErrorAction SilentlyContinue
+    }
+  }
   # Through cmd where a program's complaints are to be thrown away: Windows
   # PowerShell turns discarded error output into an error of its own.
   function HasDistro {
@@ -124,8 +137,6 @@
     }
 
     Step 'Installing what the daemon needs inside it'
-    # Written with Unix line endings to a file the Linux reads; text piped
-    # from PowerShell would arrive with Windows' and break the shell.
     $setup = @'
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -160,12 +171,7 @@ default=hive
 appendWindowsPath=false
 CONF
 '@
-    $setupFile = Join-Path $Root 'setup.sh'
-    [IO.File]::WriteAllText($setupFile, ($setup -replace "`r`n", "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
-    & wsl.exe -d $Distro -u root --cd $Root -- sh ./setup.sh
-    $ok = ($LASTEXITCODE -eq 0)
-    Remove-Item -Force $setupFile -ErrorAction SilentlyContinue
-    if (-not $ok) { Fail 'could not set up the Linux. Run this again to retry.' }
+    if (-not (RunScript 'root' $setup)) { Fail 'could not set up the Linux. Run this again to retry.' }
 
     # Restarted, so it comes up with systemd and the devices as configured.
     StopKeepAlive
@@ -186,9 +192,17 @@ CONF
     # run in, signing in with GitHub, and the service.
     # (It waits a moment first for this user's own services to be up, which
     # the installer needs to register the daemon with.)
-    $inner = 'export XDG_RUNTIME_DIR=/run/user/$(id -u); cd; for i in $(seq 30); do systemctl --user show-environment >/dev/null 2>&1 && break; sleep 1; done; curl -fsSL "' + $Base + '/install.sh" | HIVE_RELEASES="' + $Base + '" sh'
-    & wsl.exe -d $Distro -u $User -- sh -c $inner
-    if ($LASTEXITCODE -ne 0) { Fail 'the install inside the Linux did not finish. Run this again to retry.' }
+    $install = @'
+set -eu
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+cd
+for i in $(seq 30); do
+  systemctl --user show-environment >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsSL "$HIVE_RELEASES/install.sh" | sh
+'@
+    if (-not (RunScript $User ("export HIVE_RELEASES='$Base'`n" + $install))) { Fail 'the install inside the Linux did not finish. Run this again to retry.' }
 
     Step 'Keeping it running'
     Set-ItemProperty -Path $RunKey -Name 'HiveWorker' -Value $KeepAlive

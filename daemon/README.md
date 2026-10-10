@@ -80,8 +80,15 @@ inside. It asks for no administrator rights; if WSL itself is missing it
 prints the one command that adds it and stops. Setting
 `$env:HIVE_UNINSTALL = '1'` first removes everything.
 
-This script has been checked for syntax only. It has not yet been run on a
-Windows machine.
+The command is for a PowerShell window. Started from `cmd` or over SSH, as
+`powershell -Command "irm ... | iex"`, Microsoft Defender takes that command
+line for a downloader and refuses to start it. There, download the script and
+run the file:
+
+```powershell
+curl.exe -fsSLo install.ps1 https://get.hiveworkr.thecomputerplumbers.com/install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
 
 ## On Linux
 
