@@ -61,6 +61,24 @@ func leftovers(t *testing.T, r *Runner) int {
 	return len(entries)
 }
 
+// everyNode reports whether each Node the runner ships said exactly that
+// on its line of that name. The guest names the Node on each line
+// (NODE[node24]=, INPUTS[node24]=), there being more than one.
+func everyNode(report, name, said string) bool {
+	found := false
+	for _, line := range strings.Split(report, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || !strings.HasPrefix(key, name+"[") {
+			continue
+		}
+		if value != said {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
 func TestAVMBootsReportsAndLeavesNothingBehind(t *testing.T) {
 	r := realRunner(t)
 	ctx, cancel := context.WithTimeout(context.Background(), patient(2*time.Minute))
@@ -70,7 +88,7 @@ func TestAVMBootsReportsAndLeavesNothingBehind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-test: %v\n%s", err, report)
 	}
-	for _, want := range []string{"CPUS=2", "USER=runner", "NETWORK=ok", "RUNNER=" + r.Image.RunnerVersion} {
+	for _, want := range []string{"CPUS=2", "USER=runner", "NETWORK=ok", "DOCKER=ok", "RUNNER=" + r.Image.RunnerVersion} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}
@@ -295,13 +313,13 @@ func TestAVMReachesTheHostsServiceOnItsOwnSocket(t *testing.T) {
 	}
 	// An action that GitHub points at its results service is pointed at the
 	// host instead, by every copy of Node the runner ships.
-	if !strings.Contains(report, "NODE=http://127.0.0.1:47071/") || strings.Contains(report, "NODE=https://") {
+	if !everyNode(report, "NODE", "http://127.0.0.1:47071/") {
 		t.Errorf("an action would not be sent to the host's cache:\n%s", report)
 	}
 	// What stands in front of Node must be invisible to an action: its
 	// inputs, whose names have hyphens, any address that is not GitHub's
 	// results service, and its arguments all arrive as they were sent.
-	if !strings.Contains(report, "INPUTS=kept https://example.com/ a,b c") {
+	if !everyNode(report, "INPUTS", "kept https://example.com/ a,b c") {
 		t.Errorf("an action's inputs or arguments do not survive the trip to Node:\n%s", report)
 	}
 	seen.Lock()
@@ -317,7 +335,7 @@ func TestAVMReachesTheHostsServiceOnItsOwnSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-test: %v\n%s", err, report)
 	}
-	if strings.Contains(report, "CACHE=") || !strings.Contains(report, "NODE=https://results-receiver.actions.githubusercontent.com/") {
+	if strings.Contains(report, "CACHE=") || !everyNode(report, "NODE", "https://results-receiver.actions.githubusercontent.com/") {
 		t.Errorf("with the cache off the guest still changed something:\n%s", report)
 	}
 }

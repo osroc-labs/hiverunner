@@ -1,3 +1,6 @@
+# The VM's one network card and nothing else. The bridges and veth pairs
+# Docker makes (docker0, br-*, veth*) match neither name, and must not:
+# they are Docker's to address.
 [Match]
 Name=en* eth*
 

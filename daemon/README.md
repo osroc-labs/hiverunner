@@ -349,6 +349,18 @@ The guest image is Ubuntu 24.04 arm64 with GitHub's runner, pinned by the hash
 GitHub publishes. It has git, curl, sudo and the usual archive tools; jobs
 install toolchains with `setup-*` actions, as they would anywhere.
 
+It also has Docker: the engine, `docker buildx` and `docker compose`, from
+Docker's own repository, as GitHub's runners have. The runner's user is in
+the `docker` group, so a job uses it without `sudo`, and `services:`,
+`container:` and actions that are themselves containers have what they need.
+Nothing of it runs until it is used: only the socket is there at boot, and
+the engine starts when a job first speaks to it, in under a second, so
+a job that never does waits for nothing. Images are pulled onto the job's
+own disk and go when the VM does. Docker's bridge takes 172.17.0.0/16, or
+the next range along when the machine's own network is already there.
+`hived selftest` runs a container in the VM and has it reach GitHub, and says
+`DOCKER=ok`.
+
 A VM of the default size is kept booted while the lid is open, including on
 battery, so a job of that size starts in under a second instead of about
 three. It is replaced after each job.
@@ -386,7 +398,13 @@ self-test against its image.
 
 ## What it does not do yet
 
-- **Container jobs.** `container:` and `services:` need Docker in the guest.
+- **Job containers without Perl.** In a `container:` job the runner starts
+  each JavaScript action with its own Node, which here stands behind
+  `image/hive-node`, a Perl script. Debian and Ubuntu images always have
+  Perl, and Alpine ones are given a Node of their own that is not wrapped;
+  an image with neither, such as Fedora's, cannot run `actions/checkout`.
+- **Docker layers between jobs.** Each job pulls and builds from nothing,
+  unless it keeps its layers in a registry or in `actions/cache`.
 - **A pre-registered runner.** The runner still registers with GitHub when the
   job arrives, which is most of what is left of the start-up time.
 - **Caches between jobs.** Each job starts from the same clean disk.

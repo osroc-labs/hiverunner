@@ -75,8 +75,8 @@ if [ -r "$share/cache" ]; then
 fi
 
 if [ -e "$share/selftest" ]; then
-  # No credential involved: proves boot, the share, the network and the
-  # runner binary, and nothing more.
+  # No credential involved: proves boot, the share, the network, Docker
+  # and the runner binary, and nothing more.
   {
     cat /etc/hive-release
     echo "OS=$(. /etc/os-release && echo "$PRETTY_NAME")"
@@ -88,6 +88,19 @@ if [ -e "$share/selftest" ]; then
     curl -fsS -o /dev/null -m 20 https://api.github.com/zen && echo "NETWORK=ok" || echo "NETWORK=failed"
     # Whether the host offered its cache, and whether this VM reached it.
     [ -r "$share/cache" ] && echo "CACHE=$cache"
+    # Docker as a job has it: the runner's user, no sudo, and an engine that
+    # starts when first spoken to. One container has to start and reach
+    # GitHub through Docker's own bridge. It is made from a file already on
+    # this disk, so nothing is pulled and Docker Hub is not part of the test.
+    if said=$(timeout 90 sudo -u runner sh -c '
+      tar -c -C /usr/bin busybox | docker import - hive-selftest >/dev/null &&
+      docker run --rm hive-selftest /busybox nc -w 20 api.github.com 443 </dev/null' 2>&1); then
+      echo "DOCKER=ok"
+    else
+      echo "DOCKER=failed"
+      # Why, in the last thing Docker said, on one line of the report.
+      echo "DOCKER_SAID=$(printf %s "$said" | tail -n 1)"
+    fi
     for node in /opt/runner/externals/node*/bin/node; do
       case "$node" in *_alpine/*) continue ;; esac
       # Each Node the runner ships is checked, and says which it is: two of

@@ -200,8 +200,11 @@ jobs:
 Android EAS builds need no Mac: they run on the Linux labels with
 `setup-java` and `android-actions/setup-android`.
 
-Jobs install their own toolchains with `setup-*` actions. `container:` and
-`services:` are not supported yet. Every job starts from a clean disk. What
+Jobs install their own toolchains with `setup-*` actions. Docker is in the
+VM, with buildx and compose, for `docker` in a step, `services:` and
+`container:`; a `container:` image needs Perl or to be Alpine (see "What it
+does not do yet" in `daemon/README.md`). Every job starts from a clean disk,
+with no Docker images on it. What
 `actions/cache` saves is kept on the Mac that ran the job, per repository, and
 restored from there: see "The Actions cache" in `daemon/README.md`. x86-only
 binaries need an arm64 alternative. There is no menu

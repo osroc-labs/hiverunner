@@ -26,6 +26,25 @@ func TestASelfTestReportSaysEachLineOnceAndWhatTheVMIs(t *testing.T) {
 	}
 }
 
+func TestASelfTestFailsOnDockerOnlyWhenTheGuestTriedIt(t *testing.T) {
+	// An image from before Docker was in it: no line, and nothing wrong.
+	if err := reportFailure("RUNNER_VERSION=2.337.0\nNETWORK=ok\n"); err != nil {
+		t.Errorf("an image without Docker failed the self-test: %v", err)
+	}
+	if err := reportFailure("NETWORK=ok\nCACHE=ok\nDOCKER=ok\n"); err != nil {
+		t.Errorf("a working Docker failed the self-test: %v", err)
+	}
+	err := reportFailure("NETWORK=ok\nDOCKER=failed\nDOCKER_SAID=Cannot connect to the Docker daemon\n")
+	if err == nil || !strings.Contains(err.Error(), "Docker") {
+		t.Errorf("a Docker that could not run a container passed: %v", err)
+	}
+	// The network is still what is said first.
+	err = reportFailure("NETWORK=failed\nDOCKER=failed\n")
+	if err == nil || !strings.Contains(err.Error(), "GitHub") {
+		t.Errorf("got %v", err)
+	}
+}
+
 func TestTunnelRowsFitTheBoxAndSayWhenAndWhy(t *testing.T) {
 	now := time.Date(2026, 10, 9, 13, 0, 0, 0, time.Local)
 	screen := ui.For(nil)

@@ -185,6 +185,14 @@ export function LabelsAndSizes() {
           One job per VM. The VM is created for the job and destroyed after it.
         </li>
         <li>
+          Docker is in the VM, with buildx and compose, and needs no{" "}
+          <Code>sudo</Code>: for <Code>docker</Code> in a step,{" "}
+          <Code>services:</Code> and <Code>container:</Code>. A{" "}
+          <Code>container:</Code> image must be based on Debian, Ubuntu or
+          Alpine, or otherwise have Perl. No image is on the disk beforehand:
+          each job pulls what it uses.
+        </li>
+        <li>
           <Code>hive-macos</Code> jobs run on a Mac itself, as a separate user,
           with that Mac&apos;s Xcode. See <a href="#macos">macOS labels</a>.
         </li>
