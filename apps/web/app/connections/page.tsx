@@ -49,10 +49,14 @@ export default async function Page() {
       </p>
       {!grants.length && <p>No connected agents.</p>}
       {grants.map((grant) => (
-        <section key={grant.id} className="border border-border p-5">
-          <h2 className="font-semibold">{grant.client ?? "Application"}</h2>
+        <Panel
+          key={grant.id}
+          title={grant.client ?? "Application"}
+          className="max-w-3xl"
+          bodyClassName="flex flex-col gap-3"
+        >
           <p>{grant.organization}</p>
-          <p className="my-3 text-sm text-muted-foreground">
+          <p className="font-mono text-xs text-muted-foreground">
             {grant.scopes.join(", ")}
           </p>
           <ActionButton
@@ -60,7 +64,7 @@ export default async function Page() {
             path="/api/connections"
             body={{ id: grant.id }}
           />
-        </section>
+        </Panel>
       ))}
     </AccountPage>
   )
