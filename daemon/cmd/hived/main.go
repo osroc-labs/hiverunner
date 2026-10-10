@@ -541,11 +541,13 @@ func selftest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if strings.Contains(report, "CACHE=failed") {
-		return errors.New("the VM booted but could not reach this machine's Actions cache")
-	}
+	// The network first: a VM that cannot reach GitHub runs no job, whatever
+	// else it could not reach.
 	if !strings.Contains(report, "NETWORK=ok") {
 		return errors.New("the VM booted but could not reach GitHub")
+	}
+	if strings.Contains(report, "CACHE=failed") {
+		return errors.New("the VM booted but could not reach this machine's Actions cache")
 	}
 	fmt.Printf("A VM booted, ran and was destroyed in %.1fs.\n", time.Since(started).Seconds())
 	return nil

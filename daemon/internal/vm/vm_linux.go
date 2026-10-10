@@ -222,9 +222,13 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 	// A helper never outlives the daemon, however the daemon dies. (The
 	// signal follows the thread that started the helper; the Go runtime
 	// keeps its threads for the life of the process.)
-	run := func(log string, name string, args ...string) (*exec.Cmd, error) {
+	// A file handed over is the helper's descriptor 3 (inheritedFD).
+	run := func(log string, name string, inherit *os.File, args ...string) (*exec.Cmd, error) {
 		command := exec.Command(name, args...)
 		command.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+		if inherit != nil {
+			command.ExtraFiles = []*os.File{inherit}
+		}
 		output, err := os.OpenFile(filepath.Join(vm.dir, log), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			return nil, err
@@ -237,11 +241,10 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		return command, nil
 	}
 	shareSocket := filepath.Join(sockets, "fs")
-	networkSocket := filepath.Join(sockets, "net")
 
 	// The whole of what the guest can see of the host's files, served from
 	// inside a namespace that contains nothing else.
-	share, err := run("virtiofsd.log", found.virtiofsd,
+	share, err := run("virtiofsd.log", found.virtiofsd, nil,
 		"--socket-path="+shareSocket, "--shared-dir="+vm.share, "--cache=never")
 	if err != nil {
 		return "", err
@@ -253,19 +256,28 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 	// (It also writes a few lines to the system log for each VM. Sending them
 	// to a file instead is refused by the confinement distributions ship it
 	// with, which lets it create a log file but not open one.)
-	network := []string{"--foreground", "--quiet", "--one-off", "--no-map-gw", "--socket", networkSocket}
+	//
+	// The two are joined by a socket made here, one end each, and not by one
+	// passt listens on: the confinement Proxmox VE 9 runs passt under lets it
+	// listen and then refuses the accept, and passt says nothing of it, so
+	// the guest boots with a network card that reaches nowhere.
+	relayEnd, machineEnd, err := socketPair()
+	if err != nil {
+		return "", err
+	}
+	defer relayEnd.Close()
+	defer machineEnd.Close()
+	network := []string{"--foreground", "--quiet", "--one-off", "--no-map-gw", "--fd", inheritedFD}
 	for _, server := range upstreamDNS() {
 		network = append(network, "--dns", server)
 	}
-	relay, err := run("passt.log", found.passt, network...)
+	relay, err := run("passt.log", found.passt, relayEnd, network...)
 	if err != nil {
 		return "", err
 	}
 	helpers = append(helpers, relay)
-	for _, socket := range []string{shareSocket, networkSocket} {
-		if err := waitFor(socket, 10*time.Second, share, relay); err != nil {
-			return "", fmt.Errorf("%w (%s)", err, tail(vm.dir, "virtiofsd.log", "passt.log"))
-		}
+	if err := waitFor(shareSocket, 10*time.Second, share, relay); err != nil {
+		return "", fmt.Errorf("%w (%s)", err, tail(vm.dir, "virtiofsd.log", "passt.log"))
 	}
 
 	var sysinfo unix.Sysinfo_t
@@ -286,7 +298,7 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		// A throwaway disk: nothing on it needs to survive a crash.
 		"-drive", "if=none,id=disk,format=qcow2,cache=unsafe,discard=unmap,file=" + disk,
 		"-device", "virtio-blk-pci,drive=disk",
-		"-netdev", "stream,id=net,server=off,addr.type=unix,addr.path=" + networkSocket,
+		"-netdev", "stream,id=net,server=off,addr.type=fd,addr.str=" + inheritedFD,
 		// No option ROM: the kernel is booted directly, never from the
 		// network, and the ROM is a separate package some systems lack.
 		"-device", "virtio-net-pci,netdev=net,romfile=,mac=" + mac.String(),
@@ -324,7 +336,7 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		}
 	}
 
-	machine, err := run("qemu.log", found.qemu, args...)
+	machine, err := run("qemu.log", found.qemu, machineEnd, args...)
 	if err != nil {
 		return "", err
 	}
@@ -410,6 +422,20 @@ func (r *Runner) listen() error {
 }
 
 type callerKey struct{}
+
+// inheritedFD is the number a helper knows the one file it is handed by:
+// the first after its input, output and errors.
+const inheritedFD = "3"
+
+// socketPair is a connected stream socket, both ends. Neither end is passed
+// on to a helper that was not handed it.
+func socketPair() (*os.File, *os.File, error) {
+	ends, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("make the guest's network socket: %w", err)
+	}
+	return os.NewFile(uintptr(ends[0]), "network"), os.NewFile(uintptr(ends[1]), "network"), nil
+}
 
 // upstreamDNS is what the guest should be told to resolve names with when
 // the host's own resolver is on loopback, where the guest cannot reach it.
