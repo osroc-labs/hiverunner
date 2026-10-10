@@ -281,6 +281,17 @@ jobs:
       - name: Put a release together from what is published
         working-directory: daemon
         run: |
+          # Only an image that is published can be named again. A change to
+          # the image itself has none, and publish.sh would set about
+          # building it, which a Mac runner cannot: the next step is that
+          # change's rehearsal.
+          wanted="$(sed -n 's/^IMAGE_VERSION=//p' image/build.sh)-$(sed -n 's/^RUNNER_VERSION="${RUNNER_VERSION:-\(.*\)}"/\1/p' image/build.sh)"
+          curl -fsS -H "Cache-Control: no-cache" -o "$RUNNER_TEMP/published.json" "$RELEASES/latest.json?published=$(date +%s)"
+          published=$(plutil -extract image.version raw -o - "$RUNNER_TEMP/published.json")
+          if [ "$published" != "$wanted" ]; then
+            echo "The published image is $published and this change builds $wanted, so there is no published image to put a release together from."
+            exit 0
+          fi
           ./release/publish.sh --out "$RUNNER_TEMP/release"
           cat "$RUNNER_TEMP/release/latest.json" "$RUNNER_TEMP"/release/linux-*.txt
       - name: Put a release together from the images just built
