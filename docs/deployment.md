@@ -97,7 +97,7 @@ Mac or Linux box.
 | `latest.json`                                           | The current version, with URLs and checksums                              |
 | `install.sh`                                            | `daemon/release/install.sh`                                               |
 | `hived/<version>/hived-darwin-arm64.zip`                | The daemon, signed and notarized                                          |
-| `images/<image>/image.aar`                              | The guest image, as an Apple Archive                                      |
+| `images/<image>/image-<sum>.aar.aa`, `.ab`, …           | The guest image, as an Apple Archive named for its checksum, in pieces    |
 | `linux-<arch>.txt`                                      | The same as `latest.json`, for Linux                                      |
 | `hived/<version>/hived-linux-<arch>.tar.gz`             | The daemon for Linux                                                      |
 | `images/<image>/image-<arch>-<sum>.tar.gz.aa`, `.ab`, … | The guest image, as a tarball named for its checksum, in pieces of 200 MB |

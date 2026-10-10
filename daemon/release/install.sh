@@ -96,6 +96,7 @@ daemon_sha=$(field daemon.sha256)
 team=$(field daemon.teamId)
 image_version=$(field image.version)
 image_url=$(field image.url)
+image_parts=$(field image.parts)
 image_sha=$(field image.sha256)
 image_mb=$(field image.megabytes)
 [ -n "$version" ] && [ -n "$daemon_url" ] && [ -n "$daemon_sha" ] && [ -n "$image_url" ] && [ -n "$image_sha" ] ||
@@ -131,7 +132,18 @@ if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
-  fetch -# -o "$work/image.aar" "$image_url"
+  # The image is published in pieces. The checksum is of the whole. A
+  # manifest that names no pieces is of an image published whole.
+  if [ -n "$image_parts" ]; then
+    : >"$work/image.aar"
+    for part in $image_parts; do
+      fetch -# -o "$work/image.part" "$image_url.$part"
+      cat "$work/image.part" >>"$work/image.aar"
+      rm -f "$work/image.part"
+    done
+  else
+    fetch -# -o "$work/image.aar" "$image_url"
+  fi
   check "$work/image.aar" "$image_sha"
   mkdir -p "$image_home"
   rm -rf "$image_home/image.new"
