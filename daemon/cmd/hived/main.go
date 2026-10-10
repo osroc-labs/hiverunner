@@ -205,16 +205,11 @@ func login(ctx context.Context, args []string) error {
 	if *hive != "" {
 		machine.OrganizationIDs = strings.Split(*hive, ",")
 	}
-	enrollment, err := client.Enroll(ctx, token, machine)
-	var choose *api.ChoosePoolError
-	if errors.As(err, &choose) {
-		chosen, err := askPools("You belong to more than one hive. Which should this machine serve?", choose.Pools)
-		if err != nil {
-			return err
-		}
-		machine.OrganizationIDs = ids(chosen)
-		enrollment, err = client.Enroll(ctx, token, machine)
-	}
+	enrollment, err := enrollChoosing(machine, func(machine api.Machine) (api.Enrollment, error) {
+		return client.Enroll(ctx, token, machine)
+	}, func(pools []api.Pool) ([]api.Pool, error) {
+		return askPools("You belong to more than one hive. Which should this machine serve?", pools)
+	})
 	var refusal *api.Error
 	if errors.As(err, &refusal) && refusal.Code == "NO_HIVE" {
 		// Signed in fine, but in no hive. Retrying cannot help; say what can.
@@ -247,6 +242,23 @@ func login(ctx context.Context, args []string) error {
 	}
 	fmt.Println("Start it with: hived run")
 	return nil
+}
+
+// enrollChoosing enrolls a machine, and when the server wants to be told
+// which hives, asks and enrolls again with the answer. What it returns is
+// how the last attempt went, not the question that came before it.
+func enrollChoosing(machine api.Machine, enroll func(api.Machine) (api.Enrollment, error), ask func([]api.Pool) ([]api.Pool, error)) (api.Enrollment, error) {
+	enrollment, err := enroll(machine)
+	var choose *api.ChoosePoolError
+	if !errors.As(err, &choose) {
+		return enrollment, err
+	}
+	chosen, err := ask(choose.Pools)
+	if err != nil {
+		return api.Enrollment{}, err
+	}
+	machine.OrganizationIDs = ids(chosen)
+	return enroll(machine)
 }
 
 func run(ctx context.Context) error {
