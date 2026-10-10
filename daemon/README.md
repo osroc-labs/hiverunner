@@ -340,14 +340,24 @@ destroyed when the job ends.
 5. The guest writes its exit code and powers off. The daemon deletes the disk
    and the directory and reports `job.exited`.
 
-What the guest can reach: the internet, outbound, through NAT. What it can see
-of the host: that one directory. Nothing listens in the guest and nothing can
-log in to it. A released job, or one past its timeout, has its VM stopped at
-once.
+What the guest can reach: outbound, whatever the machine it runs on can.
+That is the internet, and it is also the machine's own network: other
+machines on its LAN, and the peers of a VPN or tailnet the machine is on.
+Nothing here narrows that to the internet, so a job has the network position
+of the machine that lends it. On Linux the guest is given the machine's own
+address, routes and DNS servers by passt, which makes each of the guest's
+connections as the daemon's user; hived tells it not to map the machine's
+loopback into the guest. On a Mac the guest is behind the system's NAT.
+Nothing reaches in on either.
+
+What it can see of the host's files: that one directory. Nothing listens in
+the guest and nothing can log in to it. A released job, or one past its
+timeout, has its VM stopped at once.
 
 The guest image is Ubuntu 24.04 arm64 with GitHub's runner, pinned by the hash
-GitHub publishes. It has git, curl, sudo and the usual archive tools; jobs
-install toolchains with `setup-*` actions, as they would anywhere.
+GitHub publishes. It has git, curl, sudo, jq, the usual archive tools and
+the system's `python3` (3.12, with `venv`); jobs install toolchains with
+`setup-*` actions, as they would anywhere.
 
 It also has Docker: the engine, `docker buildx` and `docker compose`, from
 Docker's own repository, as GitHub's runners have. The runner's user is in

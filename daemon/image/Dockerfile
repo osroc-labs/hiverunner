@@ -13,15 +13,24 @@ ENV DEBIAN_FRONTEND=noninteractive
 # usual archive tools, and libatomic, which Node's own arm64 builds load.
 # Deliberately not the hosted runners' toolcache; jobs install what they need
 # with setup-* actions, as they do anywhere.
+#
+# Python is the exception, and only the system's own: workflows and actions
+# call `python3` for a few lines of glue as freely as they call jq, and
+# found none here. It is Ubuntu's 3.12 with venv, and no pip outside a venv;
+# a job that wants a particular Python still asks setup-python for it. The
+# build fails if it cannot read TOML or make a venv with pip in it, which is
+# what that glue does.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv systemd-resolved dbus udev kmod \
       linux-image-virtual initramfs-tools e2fsprogs \
       ca-certificates curl git sudo iproute2 iputils-ping \
       jq tar gzip unzip zip xz-utils zstd openssh-client locales socat \
-      libatomic1 \
+      libatomic1 python3 python3-venv \
  && locale-gen en_US.UTF-8 \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 -c 'import json, sqlite3, ssl, tomllib' \
+ && python3 -m venv /tmp/venv && /tmp/venv/bin/pip --version && rm -rf /tmp/venv
 
 # GitHub's own runner, pinned and verified against the hash in its release.
 RUN useradd --create-home --uid 1001 --shell /bin/bash runner \
