@@ -22,7 +22,11 @@ const log = openSync(`${storage}/worker.log`, "w")
 const signer = generateKeyPairSync("ed25519")
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 })
 const scenario = process.env.HIVE_LISTENER_CASE ?? "offer"
-const direct = scenario !== "offer"
+const direct = scenario === "direct" || scenario === "initial"
+// In the cancelled case the first job never starts: its run is cancelled
+// while the machine readied for it waits, and the job after it is the one
+// that runs and is paid for.
+const firstRequest = scenario === "cancelled" ? 90 : 100
 // The one machine in the pool, and so the one label its four cores can
 // serve: an arm64 Mac takes `hive` jobs, a Linux x64 box `hive-x64` jobs.
 const arch = process.env.HIVE_LISTENER_ARCH ?? "arm64"
@@ -34,7 +38,7 @@ const queue = [
     jobs: [
       {
         messageType: direct ? "JobAssigned" : "JobAvailable",
-        runnerRequestId: direct ? 0 : 100,
+        runnerRequestId: direct ? 0 : firstRequest,
         jobId: direct ? jobIdentity : undefined,
         ownerName: "acme",
         repositoryName: "app",
@@ -42,6 +46,7 @@ const queue = [
     ],
   },
 ]
+let lastMessage = 1
 if (scenario === "initial") queue.length = 0
 let acquisitionCount = 0,
   jitCount = 0,
@@ -140,7 +145,9 @@ const fake = createServer(async (req, res) => {
     if (next)
       return json({
         messageId: next.messageId,
-        statistics: {
+        // A message may say what GitHub's counts were; otherwise one job
+        // is assigned until a batch holds nothing but completions.
+        statistics: next.statistics ?? {
           totalAssignedJobs: next.jobs.every(
             (job) => job.messageType === "JobCompleted"
           )
@@ -351,13 +358,13 @@ try {
     reason: "busy in another pool",
   })
   send({ type: "presence", presence: "online" })
-  const offer = await next("job.assign")
+  let offer = await next("job.assign")
   assert.notEqual(offer.assignmentId, rejected.assignmentId)
   assert.equal(acquisitionCount, 0, "Rejection must not acquire a job")
   // An API retry occurs while the daemon holds its slot.
   acquireFailure = !direct
   send({ type: "job.accepted", assignmentId: offer.assignmentId })
-  const start = await next("job.start")
+  let start = await next("job.start")
   assert.equal(start.assignmentId, offer.assignmentId)
   assert.equal(start.jitConfig, "one-time-jit")
   assert.equal(jitCount, 1)
@@ -371,6 +378,76 @@ try {
     (await sql("SELECT presence FROM machine_pool"))[0].presence,
     "busy"
   )
+  // What GitHub sends for a job whose run was cancelled while it waited for
+  // a runner, as `concurrency: cancel-in-progress` does on every newer push:
+  // a completion that names no runner.
+  const cancelled = (runnerRequestId) => ({
+    messageType: "JobCompleted",
+    runnerRequestId,
+    ownerName: "acme",
+    repositoryName: "app",
+    finishTime: "2026-10-03T12:00:09Z",
+    result: "canceled",
+  })
+  const released = (frame) => frame.type === "job.release"
+  if (scenario === "cancelled") {
+    // GitHub gives a waiting job to any idle runner of the set. While the
+    // runner made for the cancelled job is busy with another, it stays,
+    // even when GitHub's counts have not caught up with it.
+    runnerBusy = true
+    const acknowledged = ackCount
+    queue.push({ messageId: ++lastMessage, jobs: [cancelled(90)] })
+    await eventually(
+      () => ackCount > acknowledged,
+      "Cancellation acknowledged while the runner was busy"
+    )
+    assert.ok(runnerStatusQueries > 0, "GitHub is asked before a VM is stopped")
+    assert.equal(
+      frames.some(released),
+      false,
+      "A runner GitHub handed another job outlives the cancelled one"
+    )
+    // Idle, the machine is given up at once, not after the three minutes a
+    // job is allowed to start in: nothing ages the slot here. The push that
+    // cancelled the run queued a job of its own, which is still on offer.
+    runnerBusy = false
+    const told = Date.now()
+    queue.push({
+      messageId: ++lastMessage,
+      statistics: {
+        totalAssignedJobs: 0,
+        totalRunningJobs: 0,
+        totalAvailableJobs: 1,
+      },
+      jobs: [
+        cancelled(90),
+        {
+          messageType: "JobAvailable",
+          runnerRequestId: 100,
+          ownerName: "acme",
+          repositoryName: "app",
+        },
+      ],
+    })
+    await next("job.release", offer.assignmentId)
+    assert.ok(
+      Date.now() - told < 15000,
+      "A cancelled job releases its machine without waiting for the timeout"
+    )
+    await eventually(
+      () => !runnerPresent,
+      "The cancelled job's runner was removed"
+    )
+    assert.equal((await sql("SELECT count(*) n FROM job"))[0].n, 0)
+    // The VM is gone, and the machine takes the job that replaced it.
+    send({ type: "job.exited", assignmentId: offer.assignmentId, exitCode: -1 })
+    send({ type: "presence", presence: "online" })
+    offer = await next("job.assign")
+    send({ type: "job.accepted", assignmentId: offer.assignmentId })
+    start = await next("job.start", offer.assignmentId)
+    assert.equal(jitCount, 2)
+    assert.equal(runnerName, start.runnerName)
+  }
   if (scenario === "offer") {
     runnerBusy = true
     pollFailure = true
@@ -413,7 +490,7 @@ try {
     jobDisplayName: "test",
   }
   queue.push({
-    messageId: 2,
+    messageId: ++lastMessage,
     jobs: [
       { messageType: "FutureNotification" },
       {
@@ -443,7 +520,7 @@ try {
     finishTime: "2026-10-03T12:01:00Z",
     result: "succeeded",
   }
-  queue.push({ messageId: 3, jobs: [completed] })
+  queue.push({ messageId: ++lastMessage, jobs: [completed] })
   await eventually(
     async () =>
       (
@@ -477,9 +554,10 @@ try {
     )[0].total,
     0
   )
-  queue.push({ messageId: 4, jobs: [completed] })
+  const settled = ackCount
+  queue.push({ messageId: ++lastMessage, jobs: [completed] })
   await eventually(
-    () => ackCount >= (scenario === "initial" ? 3 : 4),
+    () => ackCount > settled,
     "Duplicate completion acknowledged"
   )
   assert.equal(
@@ -495,7 +573,7 @@ try {
   if (scenario === "offer") {
     runnerBusy = false
     queue.push({
-      messageId: 5,
+      messageId: ++lastMessage,
       jobs: [{ ...event, messageType: "JobAvailable", runnerRequestId: 200 }],
     })
     const idle = await next("job.assign")
@@ -518,6 +596,36 @@ try {
         )
       )[0].n,
       3
+    )
+  }
+  if (scenario === "cancelled") {
+    // A runner nobody is waiting for goes as well, whichever job it was
+    // made for: here GitHub's counts fall to nothing while it stands idle.
+    queue.push({
+      messageId: ++lastMessage,
+      jobs: [
+        {
+          messageType: "JobAvailable",
+          runnerRequestId: 200,
+          ownerName: "acme",
+          repositoryName: "app",
+        },
+      ],
+    })
+    const idle = await next("job.assign")
+    send({ type: "job.accepted", assignmentId: idle.assignmentId })
+    await next("job.start", idle.assignmentId)
+    queue.push({ messageId: ++lastMessage, jobs: [cancelled(300)] })
+    await next("job.release", idle.assignmentId)
+    await eventually(() => !runnerPresent, "The idle runner was removed")
+    assert.equal(
+      (
+        await sql(
+          "SELECT count(*) n FROM ledger_entry WHERE job_id IS NOT NULL"
+        )
+      )[0].n,
+      3,
+      "A cancelled job charges nothing"
     )
   }
   console.log(
@@ -545,6 +653,7 @@ try {
 
 if (!process.env.HIVE_LISTENER_CASE) {
   for (const [scenario, arch] of [
+    ["cancelled", "arm64"],
     ["direct", "arm64"],
     ["initial", "arm64"],
     ["direct", "x64"],

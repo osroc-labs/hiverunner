@@ -21,6 +21,7 @@ import {
 } from "@workspace/github/scale-sets"
 import { runnerSize } from "@workspace/pricing"
 import { githubTestAPI } from "./config"
+import type { Pool } from "./pool"
 
 type Settings = { organizationId: string; label: string; vcpus: number }
 type Slot = {
@@ -392,6 +393,8 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
           available: message.statistics.totalAvailableJobs ?? 0,
           messages: message.jobs.length,
         })
+        // Requests GitHub says are over that no runner here ever started.
+        const ended = new Set<string>()
         for (const event of message.jobs) {
           const key = jobKey(event)
           if (key === null) continue
@@ -419,6 +422,10 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
               (slot) => slot.runnerName === event.runnerName
             )
             if (!slot) {
+              // Cancelled while it waited, most often: the completion names
+              // no runner, so there is nobody to settle with. Whoever was
+              // readied for it is seen to once the batch is read.
+              if (event.messageType === "JobCompleted") ended.add(String(key))
               await this.save(state)
               continue
             }
@@ -493,20 +500,50 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
           }
           await this.save(state)
         }
-        if (
-          message.statistics.totalAssignedJobs === 0 &&
-          (message.statistics.totalAvailableJobs ?? 0) === 0
-        ) {
-          for (const slot of Object.values(state.slots)) {
-            if (slot.phase === "running" || slot.githubStarted) continue
-            await pool.release(slot.assignmentId)
-            if (slot.runnerId) await client.removeRunner(slot.runnerId)
-            slot.jitConfig = undefined
-            delete state.slots[slot.assignmentId]
-            delete state.claims[String(slot.requestId)]
+        // A machine is not kept for a job that is not coming. Each job GitHub
+        // has assigned here wants one runner, and each job still on offer
+        // has a machine held for it; a runner beyond those waits for
+        // nothing. So does the one readied for a job that ended before it
+        // started, whatever else is on offer: a job on offer reaches a
+        // machine by being offered, not by a runner standing idle. This is
+        // what a cancelled run leaves behind, and without it the machine
+        // stays busy until the no-start timeout below.
+        //
+        // GitHub's counts are current and its messages can trail them: a
+        // runner may be at work before its start is told here, or finished
+        // before its completion is. So runners are counted twice, all of
+        // them against all the jobs assigned and the unstarted ones against
+        // the jobs not yet running, and one is spare only when both say so.
+        // Done before the acknowledgement, so a failure to ask GitHub about
+        // a runner has the batch delivered again.
+        const assigned = message.statistics.totalAssignedJobs
+        const waiting = Math.max(
+          0,
+          assigned - message.statistics.totalRunningJobs
+        )
+        const onOffer = message.statistics.totalAvailableJobs ?? 0
+        for (const slot of Object.values(state.slots)) {
+          if (slot.githubStarted) continue
+          const held = Object.values(state.slots)
+          const unstarted = held.filter((other) => !other.githubStarted)
+          const over = ended.has(String(slot.requestId))
+          const spare =
+            Math.min(held.length - assigned, unstarted.length - waiting) -
+            (over ? 0 : onOffer)
+          if (spare <= 0) continue
+          if (slot.phase === "running") {
+            // GitHub gives a waiting job to any idle runner of the set, so
+            // this one may have been handed another. Only an idle one goes.
+            await this.releaseIfIdle(client, pool, state, slot)
+            continue
           }
-          await this.save(state)
+          await pool.release(slot.assignmentId)
+          if (slot.runnerId) await client.removeRunner(slot.runnerId)
+          slot.jitConfig = undefined
+          delete state.slots[slot.assignmentId]
+          delete state.claims[String(slot.requestId)]
         }
+        await this.save(state)
         await client.acknowledge(state.session, message.messageId)
         state.cursor = message.messageId
         await this.save(state)
@@ -521,18 +558,7 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
           (await pool.offerStatus(slot.assignmentId)) === "pending"
         )
           continue
-        // Confirm that the runner is idle (or already gone). Unknown or
-        // busy runners are preserved; an API error retries without a kill.
-        this.stage = "runner-status"
-        const runner = await client.runnerByName(slot.runnerName)
-        const status = runner ? await client.runnerStatus(runner.id) : null
-        if (status?.busy) continue
-        await pool.release(slot.assignmentId)
-        if (runner) await client.removeRunner(runner.id)
-        delete state.slots[slot.assignmentId]
-        if (String(slot.requestId).startsWith("demand:"))
-          delete state.claims[String(slot.requestId)]
-        await this.save(state)
+        await this.releaseIfIdle(client, pool, state, slot)
       }
     } catch (error) {
       if (pollSignal.aborted) {
@@ -553,6 +579,29 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
       throw error
     }
     await this.ctx.storage.setAlarm(Date.now() + 1000)
+  }
+
+  /**
+   * Gives up a machine whose VM has a runner GitHub has started no job on,
+   * once GitHub confirms the runner is idle (or already gone). Unknown or
+   * busy runners are preserved; an API error retries without a kill.
+   */
+  private async releaseIfIdle(
+    client: ScaleSetClient,
+    pool: DurableObjectStub<Pool>,
+    state: State,
+    slot: Slot
+  ) {
+    this.stage = "runner-status"
+    const runner = await client.runnerByName(slot.runnerName)
+    const status = runner ? await client.runnerStatus(runner.id) : null
+    if (status?.busy) return
+    await pool.release(slot.assignmentId)
+    if (runner) await client.removeRunner(runner.id)
+    delete state.slots[slot.assignmentId]
+    if (String(slot.requestId).startsWith("demand:"))
+      delete state.claims[String(slot.requestId)]
+    await this.save(state)
   }
 
   private save(state: State) {
