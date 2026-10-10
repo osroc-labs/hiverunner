@@ -10,7 +10,7 @@
 #   install.sh
 #   install.ps1                               the same for Windows: sets up WSL, then runs install.sh in it
 #   hived/<version>/hived-darwin-arm64.zip    signed and notarized
-#   images/<image>/image.aar                  the Linux image, as an Apple Archive
+#   images/<image>/image-<sum>.aar.aa, .ab, …  the Linux image, as an Apple Archive in pieces
 #   linux-<arch>.txt                          what install.sh reads on Linux
 #   tools/virtiofsd-<version>-linux-<arch>-<sum>  for systems without their own
 #   hived/<version>/hived-linux-<arch>.tar.gz
@@ -111,9 +111,13 @@ for manifest in latest.json linux-arm64.txt linux-amd64.txt; do
   curl -fsS -H "Cache-Control: no-cache" -o "$live/$manifest" "$BASE/$manifest?published=$(date +%s)$$" 2>/dev/null || rm -f "$live/$manifest"
 done
 image_dir="${HIVE_IMAGE:-$HOME/Library/Application Support/HiveWorker/image}"
-image_aar=""
+# aar_ and not image_: the Linux half below has an image_url of its own.
+aar_key=""
 if [ "$(plutil -extract image.version raw -o - "$live/latest.json" 2>/dev/null || true)" = "$wanted" ]; then
   image_version="$wanted"
+  aar_url=$(plutil -extract image.url raw -o - "$live/latest.json")
+  # None for an image published whole, as they were before one outgrew that.
+  aar_parts=$(plutil -extract image.parts raw -o - "$live/latest.json" 2>/dev/null || true)
   image_sha=$(plutil -extract image.sha256 raw -o - "$live/latest.json")
   image_mb=$(plutil -extract image.megabytes raw -o - "$live/latest.json")
   echo "   $image_version, $image_mb MB, as already published"
@@ -122,12 +126,19 @@ else
   image_version="$(plutil -extract imageVersion raw -o - "$image_dir/manifest.json")-$(plutil -extract runnerVersion raw -o - "$image_dir/manifest.json")"
   [ "$image_version" = "$wanted" ] || { echo "The image in $image_dir is $image_version; this commit builds $wanted. Rebuild it with ./image/build.sh" >&2; exit 1; }
   mkdir -p "$out/images/$image_version"
-  image_aar="$out/images/$image_version/image.aar"
-  if [ ! -f "$image_aar" ]; then
-    (cd "$image_dir" && aa archive -a lzfse -d . -o "$image_aar" -include-path-list <(printf 'Image\ninitrd\nmanifest.json\nrootfs.img\n'))
-  fi
-  image_sha=$(shasum -a 256 "$image_aar" | cut -d' ' -f1)
-  image_mb=$(($(stat -f %z "$image_aar") / 1048576))
+  packing="$out/images/$image_version/image.packing"
+  (cd "$image_dir" && aa archive -a lzfse -d . -o "$packing" -include-path-list <(printf 'Image\ninitrd\nmanifest.json\nrootfs.img\n'))
+  image_sha=$(shasum -a 256 "$packing" | cut -d' ' -f1)
+  image_mb=$(($(stat -f %z "$packing") / 1048576))
+  # Named for its contents and in pieces, as the Linux tarballs below are
+  # and for their reasons: an archive of the same image is not the same
+  # bytes twice, and the bucket takes at most 300 MB in one upload. An
+  # image with Docker in it is more than that.
+  aar_key="images/$image_version/image-$(printf %.12s "$image_sha").aar"
+  aar_url="$BASE/$aar_key"
+  split -b 200m "$packing" "$out/$aar_key."
+  rm "$packing"
+  aar_parts=$(cd "$out/images/$image_version" && ls "$(basename "$aar_key")".* | sed 's/.*\.//' | tr '\n' ' ' | sed 's/ $//')
   echo "   $image_version, $image_mb MB"
 fi
 
@@ -236,13 +247,24 @@ cat > "$out/latest.json" <<JSON
   },
   "image": {
     "version": "$image_version",
-    "url": "$BASE/images/$image_version/image.aar",
+    "url": "$aar_url",
+    "parts": "$aar_parts",
     "sha256": "$image_sha",
     "megabytes": $image_mb
   }
 }
 JSON
 plutil -lint "$out/latest.json" >/dev/null 2>&1 || python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out/latest.json"
+
+# Nothing here may be more than the bucket takes in one upload. Checked for
+# a build that will not be uploaded too, because that is what a rehearsal
+# is, and an upload refused is a release that stops halfway.
+oversized=$(find "$out" -type f -size +290M)
+if [ -n "$oversized" ]; then
+  echo "Too large to upload in one piece (the bucket takes 300 MB):" >&2
+  echo "$oversized" >&2
+  exit 1
+fi
 
 if [ "$mode" = "out" ]; then
   echo "== Built into $out"
@@ -270,8 +292,14 @@ fi
 
 # The large, versioned files first and the manifest that points at them last:
 # nobody is ever sent to a file that is not there yet.
-if [ -n "$image_aar" ] && ! published "images/$image_version/image.aar"; then
-  put "images/$image_version/image.aar" "$image_aar" application/octet-stream "public, max-age=31536000, immutable"
+if [ -n "$aar_key" ]; then
+  for part in $aar_parts; do
+    # Named for the whole archive's checksum, so a piece already there is
+    # the same piece.
+    if ! published "$aar_key.$part"; then
+      put "$aar_key.$part" "$out/$aar_key.$part" application/octet-stream "public, max-age=31536000, immutable"
+    fi
+  done
 fi
 put "hived/$version/hived-darwin-arm64.zip" "$daemon_zip" application/zip "public, max-age=31536000, immutable"
 for arch in $linux_arches; do
