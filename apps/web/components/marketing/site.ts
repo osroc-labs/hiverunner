@@ -29,6 +29,9 @@ export async function releasedDaemonVersion(): Promise<string | null> {
 
 export const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | sh`
 
+/** The same for a Windows PC, pasted into PowerShell. */
+export const WINDOWS_INSTALL_COMMAND = `irm ${RELEASES_ORIGIN}/install.ps1 | iex`
+
 /** Where the product itself is served: the site, the console and `/mcp`. */
 export const PRODUCT_ORIGIN = "https://hiveworkr.thecomputerplumbers.com"
 
