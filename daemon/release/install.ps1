@@ -240,7 +240,9 @@ fi
       & wsl.exe --terminate $Distro | Out-Null
     }
     # "degraded" is a Linux with one unit unhappy, which is still running.
-    [void](InLinux 'root' 'timeout 90 systemctl is-system-running --wait >/dev/null 2>&1; /usr/local/sbin/hive-devices; loginctl enable-linger hive')
+    # The service that keeps the devices is started here as well as at each
+    # start of the Linux, for one that was left running above.
+    [void](InLinux 'root' 'timeout 90 systemctl is-system-running --wait >/dev/null 2>&1; /usr/local/sbin/hive-devices; systemctl daemon-reload; systemctl restart hive-devices.service; loginctl enable-linger hive')
     if (-not (InLinux $User 'test -r /dev/kvm && test -w /dev/kvm')) {
       Say ''
       Say 'This Linux has no hardware virtualization, so it cannot run jobs. Two things to check:'

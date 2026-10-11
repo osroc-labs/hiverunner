@@ -86,8 +86,9 @@ number. Another distribution starting gives `/dev/kvm` the number of its own
 can no longer open it. So a small service in the distribution,
 `hive-devices`, looks every second and puts the group back. Until it has,
 the daemon declines jobs, and `hived status` and `hived doctor` say why. A PC
-set up before this has to run `install.ps1` once more to get the service;
-updates from inside (`hived update`) do not touch the distribution itself.
+set up before this has to run `install.ps1` once more to get the service,
+which leaves a running distribution running; updates from inside (`hived
+update`) do not touch the distribution itself.
 Running `wsl` with no `-d` starts the default distribution, which is one way
 to set this off without meaning to.
 
