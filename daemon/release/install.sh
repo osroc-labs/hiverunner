@@ -120,6 +120,10 @@ elif [ "${HIVE_DEV:-}" != "1" ]; then
   fail "this release is a development build and is not signed for distribution."
 fi
 mkdir -p "$BIN_DIR"
+# Whether anything this installs is new is remembered as it goes: a daemon
+# that is already all of it is left running at the end.
+changed=""
+cmp -s "$work/daemon/hived" "$BIN_DIR/hived" || changed=yes
 install -m 0755 "$work/daemon/hived" "$BIN_DIR/hived"
 say "Installed $BIN_DIR/hived"
 
@@ -133,6 +137,7 @@ fi
 if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
+  changed=yes
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   # The image is published in pieces. The checksum is of the whole. A
   # manifest that names no pieces is of an image published whole.
@@ -178,7 +183,7 @@ fi
 
 step "Starting the daemon"
 mkdir -p "$LOG_DIR" "$(dirname "$AGENT")"
-cat >"$AGENT" <<PLIST
+cat >"$work/agent.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -208,7 +213,18 @@ cat >"$AGENT" <<PLIST
 </dict>
 </plist>
 PLIST
+cmp -s "$work/agent.plist" "$AGENT" || changed=yes
+cp "$work/agent.plist" "$AGENT"
 domain="gui/$(id -u)"
+# Nothing new, and the daemon is running: it is left alone. Restarting it
+# would cancel a job it is in the middle of, for the same daemon again.
+if [ -z "$changed" ] && launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
+  say "hived $version is already running, and was left as it is."
+  say ""
+  say "Done. Nothing needed updating."
+  tips "this Mac" "~/.zshrc && exec zsh"
+  exit 0
+fi
 # Stopping an older daemon first. A job it was running is cancelled and
 # GitHub re-queues nothing by itself, so update when the Mac is idle.
 if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
@@ -323,6 +339,10 @@ mkdir "$work/daemon"
 tar -xzf "$work/hived.tar.gz" -C "$work/daemon"
 [ -f "$work/daemon/hived" ] || fail "the download did not contain the daemon."
 mkdir -p "$BIN_DIR"
+# Whether anything this installs is new is remembered as it goes: a daemon
+# that is already all of it is left running at the end.
+changed=""
+cmp -s "$work/daemon/hived" "$BIN_DIR/hived" || changed=yes
 install -m 0755 "$work/daemon/hived" "$BIN_DIR/hived"
 say "Installed $BIN_DIR/hived"
 
@@ -353,6 +373,7 @@ fi
 if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
+  changed=yes
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   # The image is published in pieces. The checksum is of the whole.
   : >"$work/image.tar.gz"
@@ -396,7 +417,7 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
   exit 0
 fi
 mkdir -p "$UNIT_DIR"
-cat >"$UNIT_DIR/$UNIT" <<SERVICE
+cat >"$work/$UNIT" <<SERVICE
 [Unit]
 Description=HiveWorker daemon
 After=network-online.target
@@ -412,6 +433,17 @@ TimeoutStopSec=60
 [Install]
 WantedBy=default.target
 SERVICE
+cmp -s "$work/$UNIT" "$UNIT_DIR/$UNIT" || changed=yes
+cp "$work/$UNIT" "$UNIT_DIR/$UNIT"
+# Nothing new, and the daemon is running: it is left alone. Restarting it
+# would cancel a job it is in the middle of, for the same daemon again.
+if [ -z "$changed" ] && systemctl --user is-active --quiet "$UNIT"; then
+  say "hived $version is already running, and was left as it is."
+  say ""
+  say "Done. Nothing needed updating."
+  tips "this machine" "~/.profile"
+  exit 0
+fi
 systemctl --user daemon-reload
 systemctl --user enable "$UNIT" >/dev/null 2>&1 || true
 # Restart, not start: an older daemon is replaced. A job it was running is

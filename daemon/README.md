@@ -54,7 +54,9 @@ curl -fsSL https://get.hiveworkr.thecomputerplumbers.com/install.sh | sh
 It checks the machine, downloads the daemon and the guest image and verifies
 both, installs under the home directory, runs `hived login`, and starts a
 per-user service: a launch agent on a Mac, a systemd user unit on Linux.
-Running it again updates. `hived uninstall` removes
+Running it again updates, and restarts the daemon only if it installed
+something new: a daemon that is already current keeps the job it is running.
+`hived uninstall` removes
 the service, the image, the Actions cache, the settings, the sign-in and the
 binary, after asking.
 
