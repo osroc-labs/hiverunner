@@ -49,7 +49,8 @@ const usage = `hived, the HiveWorker daemon
   hived doctor      Check this machine keeps taking jobs with nobody at it
   hived cache       Show or empty this machine's Actions cache
   hived macos       Set this Mac up for macOS jobs (Xcode, iOS builds)
-  hived update      Update to the current release, if this is not it
+  hived update      Update to the current release, if this is not it, once
+                    the jobs it is running have finished; --now to not wait
   hived pause       Stop taking jobs until you say otherwise
   hived resume      Take jobs again
   hived logout      Forget this machine's token
@@ -100,7 +101,10 @@ func main() {
 	case "macos":
 		err = macos(ctx, os.Args[2:])
 	case "update":
-		err = updateCommand(ctx)
+		err = updateCommand(ctx, os.Args[2:])
+	case "drain":
+		// What the installer runs before it replaces a running daemon.
+		err = drainCommand(ctx, os.Args[2:])
 	case "macos-job":
 		// The child that runs one macOS job as the hiveworker user. Only
 		// ever started by hived itself, through sudo.
@@ -270,6 +274,11 @@ func run(ctx context.Context) error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	log.Info("starting", "version", version, "machine", machine.MachineID)
+	// An update that waited for this machine's jobs paused it to do so. A
+	// daemon starting is what it was waiting to do, so the pause is over.
+	if err := endDrain(); err != nil {
+		log.Warn("could not lift the pause an update put on", "error", err)
+	}
 	live, err := settings.Watch()
 	if err != nil {
 		return err
@@ -487,7 +496,16 @@ func sameMove(a, b *move) bool {
 
 // updateCommand is `hived update`: the installer, run again, if there is a
 // newer release than this one. The daemon's own service is restarted by it.
-func updateCommand(ctx context.Context) error {
+func updateCommand(ctx context.Context, args []string) error {
+	now := false
+	for _, arg := range args {
+		switch arg {
+		case "--now":
+			now = true
+		default:
+			return errors.New("usage: hived update [--now]")
+		}
+	}
 	state, _ := update.LoadState()
 	latest, _, err := update.Check(ctx, &state)
 	_ = update.SaveState(state)
@@ -501,8 +519,12 @@ func updateCommand(ctx context.Context) error {
 		}
 		return nil
 	}
-	fmt.Printf("Updating hived %s to %s. A job running on this machine would be cancelled;\nthe daemon is restarted at the end.\n\n", version, latest.Version)
-	_, err = update.Apply(ctx, false)
+	if now {
+		fmt.Printf("Updating hived %s to %s now. A job running on this machine is cancelled.\n\n", version, latest.Version)
+	} else {
+		fmt.Printf("Updating hived %s to %s. The daemon is restarted once this machine has no job.\n\n", version, latest.Version)
+	}
+	_, err = update.Apply(ctx, false, now)
 	return err
 }
 

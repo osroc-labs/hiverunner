@@ -651,6 +651,11 @@ func pause(paused bool) error {
 		return err
 	}
 	current.Paused = paused
+	// Either way the owner has spoken: the pause is no longer an update's
+	// to lift.
+	if mark, err := drainMark(); err == nil {
+		_ = os.Remove(mark)
+	}
 	if paused {
 		return saved(current, "Paused. A job already running finishes; no new ones start. Undo with: hived resume")
 	}

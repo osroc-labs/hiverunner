@@ -54,7 +54,14 @@ curl -fsSL https://get.hiveworkr.thecomputerplumbers.com/install.sh | sh
 It checks the machine, downloads the daemon and the guest image and verifies
 both, installs under the home directory, runs `hived login`, and starts a
 per-user service: a launch agent on a Mac, a systemd user unit on Linux.
-Running it again updates. `hived uninstall` removes
+Running it again updates. A daemon that is already current is left alone.
+One that is not is drained first: it takes no new jobs, the update waits for
+the ones it has (and says that it is waiting), and only then is the daemon
+replaced and restarted. `hived update` does the same. `hived update --now`,
+or `HIVE_NOW=1` with the installer, does not wait and cancels what is
+running. The daemon's own update, when `auto-update` is on, has always
+waited for the machine to be idle.
+`hived uninstall` removes
 the service, the image, the Actions cache, the settings, the sign-in and the
 binary, after asking.
 
@@ -248,8 +255,9 @@ owner has set `auto-update off`, it stops taking new jobs, waits for the ones
 it has, and runs the installer in its own session (the service manager stops
 the daemon's process group when the installer restarts the service, and the
 installer must outlive that). The installer checks every download against its
-published checksum, as at first install. `hived update` does the same at once,
-from the terminal. A daemon run from anywhere but `~/.local/bin/hived` is a
+published checksum, as at first install. `hived update` does the same from the
+terminal, waiting for the machine's jobs in the same way unless it is given
+`--now`. A daemon run from anywhere but `~/.local/bin/hived` is a
 developer's build: it is told about releases and never replaced by one. The
 state is `update.json` beside `machine.json`.
 
