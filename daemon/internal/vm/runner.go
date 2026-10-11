@@ -61,6 +61,11 @@ type Runner struct {
 	// stale is set once GitHub has refused this image's runner as too old.
 	// Nothing clears it: a new image means a new daemon start.
 	stale atomic.Bool
+	// unable is why the last look found this machine could not run a VM,
+	// so that it is said when it changes and not on every look.
+	unable atomic.Value
+	// preflight stands in for Preflight in tests.
+	preflight func() error
 	// What the host's hypervisor keeps between VMs, if anything.
 	platform platformState
 }
@@ -71,7 +76,26 @@ func (r *Runner) Unusable() string {
 	if r.stale.Load() {
 		return ReasonStaleImage
 	}
-	return ""
+	// Asked each time and not once at the start: what a VM needs of the
+	// machine can go while the daemon runs, and come back. /dev/kvm changing
+	// hands is one way, and a job offered then fails where it could have
+	// gone to another machine.
+	look := Preflight
+	if r.preflight != nil {
+		look = r.preflight
+	}
+	reason := ""
+	if err := look(); err != nil {
+		reason = "this machine cannot run a VM: " + err.Error()
+	}
+	if before, _ := r.unable.Swap(reason).(string); before != reason && r.Log != nil {
+		if reason != "" {
+			r.Log.Error("declining jobs until this is put right", "reason", reason)
+		} else {
+			r.Log.Info("this machine can run VMs again")
+		}
+	}
+	return reason
 }
 
 // A machine runs a handful of jobs at once at most, with perhaps a warm VM

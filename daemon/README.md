@@ -87,6 +87,18 @@ inside. It asks for no administrator rights; if WSL itself is missing it
 prints the one command that adds it and stops. Setting
 `$env:HIVE_UNINSTALL = '1'` first removes everything.
 
+Every Linux under WSL shares one `/dev`, and the group on a device is a
+number. Another distribution starting gives `/dev/kvm` the number of its own
+`kvm` group, which in the HiveWorker one is some other group, and the daemon
+can no longer open it. So a small service in the distribution,
+`hive-devices`, looks every second and puts the group back. Until it has,
+the daemon declines jobs, and `hived status` and `hived doctor` say why. A PC
+set up before this has to run `install.ps1` once more to get the service,
+which leaves a running distribution running; updates from inside (`hived
+update`) do not touch the distribution itself.
+Running `wsl` with no `-d` starts the default distribution, which is one way
+to set this off without meaning to.
+
 The command is for a PowerShell window. Started from `cmd` or over SSH, as
 `powershell -Command "irm ... | iex"`, Microsoft Defender takes that command
 line for a downloader and refuses to start it. There, download the script and

@@ -350,10 +350,15 @@ func run(ctx context.Context) error {
 	// Without a guest image the machine still connects and reports presence;
 	// it declines jobs and says why.
 	var runner jobs.Runner
-	if vmRunner, err := newRunner(log, live.Get()); err != nil {
+	// A machine that cannot start a VM right now is another matter: the
+	// runner is kept, declines jobs while that lasts, and says so.
+	if vmRunner, err := loadRunner(log, live.Get()); err != nil {
 		log.Warn("this machine cannot run jobs yet", "reason", err)
 	} else {
 		runner = vmRunner
+		// Asked now so that it is in the log's first lines, where the
+		// installer and the owner both look.
+		vmRunner.Unusable()
 		// One hived per work directory. Holding it is also what makes the
 		// sweep below safe: with the lock held, nothing else can be
 		// using what is in there.
@@ -528,18 +533,30 @@ func updateCommand(ctx context.Context, args []string) error {
 	return err
 }
 
+// newRunner is a runner for a command that boots a VM now, and so wants to
+// hear at once that this machine cannot.
 func newRunner(log *slog.Logger, current settings.Settings) (*vm.Runner, error) {
-	dir, err := imageDir(current)
-	if err != nil {
-		return nil, err
-	}
-	image, err := vm.LoadImage(dir)
+	runner, err := loadRunner(log, current)
 	if err != nil {
 		return nil, err
 	}
 	// Said now, in words the owner can act on, rather than by every job
 	// failing later.
 	if err := vm.Preflight(); err != nil {
+		return nil, err
+	}
+	return runner, nil
+}
+
+// loadRunner is a runner over the installed image, whether or not this
+// machine can start a VM at the moment.
+func loadRunner(log *slog.Logger, current settings.Settings) (*vm.Runner, error) {
+	dir, err := imageDir(current)
+	if err != nil {
+		return nil, err
+	}
+	image, err := vm.LoadImage(dir)
+	if err != nil {
 		return nil, err
 	}
 	return &vm.Runner{Image: image, WorkDir: workDir(dir), Log: log}, nil

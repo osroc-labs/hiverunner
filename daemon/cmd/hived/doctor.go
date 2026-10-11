@@ -16,6 +16,7 @@ import (
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
 	"github.com/thecomputerplumbers/hiveworker/daemon/internal/ui"
+	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
 )
 
 // asleep is what to say when the owner lends with the lid closed but the
@@ -63,6 +64,8 @@ func doctor() error {
 		}
 	}
 	if reason, fix := current.Holding(power, time.Now()), current.Fix(power, time.Now()); reason != "" {
+		checks = append(checks, host.Check{Name: "jobs", Found: "not taking jobs: " + reason, Fix: fix})
+	} else if reason, fix := cannotRunVMs(); reason != "" {
 		checks = append(checks, host.Check{Name: "jobs", Found: "not taking jobs: " + reason, Fix: fix})
 	} else {
 		checks = append(checks, host.Check{Name: "jobs", Found: "taking jobs", OK: true})
@@ -186,4 +189,17 @@ func reach(machine config.Machine) []host.Check {
 		}
 	}
 	return checks
+}
+
+// cannotRunVMs is why this machine cannot start a VM right now and what
+// would put it right, or two empty strings if it can. The daemon declines
+// jobs for as long as it is so, whatever the owner's settings say.
+func cannotRunVMs() (reason, fix string) {
+	err := vm.Preflight()
+	if err == nil {
+		return "", ""
+	}
+	// The hypervisor's complaints say what to do after a colon.
+	reason, fix, _ = strings.Cut(err.Error(), ": ")
+	return reason, fix
 }
