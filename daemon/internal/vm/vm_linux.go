@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,7 +67,7 @@ func kvmUsable() error {
 		return errors.New("this machine has no /dev/kvm: virtualization is switched off in its firmware, or this is a cloud VM without nested virtualization")
 	}
 	if errors.Is(err, os.ErrPermission) {
-		return errors.New("your user cannot open /dev/kvm: run `sudo usermod -aG kvm $USER`, then log out and back in")
+		return errors.New(denied("/dev/kvm").reason())
 	}
 	if err != nil {
 		return fmt.Errorf("/dev/kvm: %w", err)
@@ -83,12 +85,42 @@ func vsockUsable() error {
 		return errors.New("the vhost_vsock module is not loaded: sudo modprobe vhost_vsock")
 	}
 	if errors.Is(err, os.ErrPermission) {
-		return errors.New("your user cannot open /dev/vhost-vsock: run `sudo usermod -aG kvm $USER`, then log out and back in")
+		return errors.New(denied("/dev/vhost-vsock").reason())
 	}
 	if err != nil {
 		return fmt.Errorf("/dev/vhost-vsock: %w", err)
 	}
 	return file.Close()
+}
+
+// denied looks at a device this user could not open, for what to say of it.
+func denied(path string) deniedDevice {
+	found := deniedDevice{Path: path, UID: os.Getuid(), Group: "kvm", KVM: true}
+	kvm, err := user.LookupGroup("kvm")
+	if err != nil {
+		return found
+	}
+	var stat unix.Stat_t
+	if unix.Stat(path, &stat) == nil {
+		owner := strconv.FormatUint(uint64(stat.Gid), 10)
+		found.KVM = owner == kvm.Gid
+		found.Group = owner
+		if named, err := user.LookupGroupId(owner); err == nil {
+			found.Group = named.Name
+		}
+	}
+	if me, err := user.Current(); err == nil {
+		if listed, err := me.GroupIds(); err == nil {
+			found.Listed = slices.Contains(listed, kvm.Gid)
+		}
+	}
+	if held, err := os.Getgroups(); err == nil {
+		gid, _ := strconv.Atoi(kvm.Gid)
+		found.Holds = slices.Contains(held, gid) || os.Getegid() == gid
+	}
+	release, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+	found.Windows = strings.Contains(strings.ToLower(string(release)), "microsoft")
+	return found
 }
 
 func findTools() (tools, error) {
@@ -127,7 +159,7 @@ func findTools() (tools, error) {
 	look(&found.virtiofsd, bundled, "virtiofsd", "/usr/libexec/virtiofsd", "/usr/lib/virtiofsd")
 	look(&found.passt, "passt")
 	if len(missing) > 0 {
-		return tools{}, fmt.Errorf("missing %s. On Debian or Ubuntu: sudo apt install qemu-system qemu-utils passt; run the installer again for virtiofsd", strings.Join(missing, ", "))
+		return tools{}, fmt.Errorf("%s missing: on Debian or Ubuntu run `sudo apt install qemu-system qemu-utils passt`, and the installer again for virtiofsd", strings.Join(missing, ", "))
 	}
 	return found, nil
 }

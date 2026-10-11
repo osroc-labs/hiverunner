@@ -207,8 +207,12 @@ func gather() (snapshot, host.Facts, settings.Settings, host.Power, error) {
 	}
 
 	s.Jobs.Reason = current.Holding(power, time.Now())
-	s.Jobs.Taking = s.Jobs.Reason == ""
 	s.Jobs.Fix = current.Fix(power, time.Now())
+	// The owner's settings may allow a job that the machine cannot run.
+	if s.Jobs.Reason == "" && s.Image != nil {
+		s.Jobs.Reason, s.Jobs.Fix = cannotRunVMs()
+	}
+	s.Jobs.Taking = s.Jobs.Reason == ""
 
 	for _, vcpus := range settings.Sizes {
 		reason := refusal(vcpus, facts, current)

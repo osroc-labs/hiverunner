@@ -175,17 +175,40 @@ usermod -aG kvm hive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   qemu-system-x86 qemu-utils passt virtiofsd uidmap curl ca-certificates dbus-user-session >/dev/null
-# Each time this Linux starts: the two devices a VM needs, made usable by the
-# daemon's user.
+# The two devices a VM needs, made usable by the daemon's user: when this
+# Linux starts, and for as long as it runs. Every Linux under Windows shares
+# one /dev, and the group on a device is a number, so another Linux starting
+# gives these the number its own kvm group has, and the daemon here can no
+# longer open them. A look every second puts them back; nothing tells this
+# Linux that another one changed them. Only a device that is wrong is touched.
 cat > /usr/local/sbin/hive-devices <<'DEVICES'
 #!/bin/sh
 modprobe -a kvm_intel kvm_amd vhost_vsock 2>/dev/null
-for device in /dev/kvm /dev/vhost-vsock; do
-  [ -e "$device" ] && chgrp kvm "$device" && chmod 0660 "$device"
+while :; do
+  for device in /dev/kvm /dev/vhost-vsock; do
+    [ -e "$device" ] || continue
+    [ "$(stat -c '%G %a' "$device")" = "kvm 660" ] && continue
+    chgrp kvm "$device" && chmod 0660 "$device"
+  done
+  [ "${1:-}" = keep ] || exit 0
+  sleep 1
 done
-exit 0
 DEVICES
 chmod 0755 /usr/local/sbin/hive-devices
+cat > /etc/systemd/system/hive-devices.service <<'UNIT'
+[Unit]
+Description=Keep the HiveWorker daemon's VM devices its own
+
+[Service]
+ExecStart=/usr/local/sbin/hive-devices keep
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+# Enabled by hand: systemd is not running the first time through here.
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf ../hive-devices.service /etc/systemd/system/multi-user.target.wants/hive-devices.service
 # systemd, so the daemon is a service like on any Linux; the daemon's user by
 # default; Windows' own programs off the PATH.
 cat > /etc/wsl.conf.new <<'CONF'
