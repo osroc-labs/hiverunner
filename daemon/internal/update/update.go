@@ -227,7 +227,11 @@ func Notify(version string) {
 // and restarts the service, which ends the daemon that started it when
 // detached is true. Detached runs leave their output in a log file whose
 // path is returned; attached runs share this process's terminal.
-func Apply(ctx context.Context, detached bool) (logPath string, err error) {
+//
+// The installer waits for the machine's jobs to finish before it restarts
+// the daemon, unless now is true: the daemon passes true for its own
+// update, having done that waiting itself.
+func Apply(ctx context.Context, detached, now bool) (logPath string, err error) {
 	dir, err := os.MkdirTemp("", "hiveworker-update-")
 	if err != nil {
 		return "", err
@@ -258,6 +262,9 @@ func Apply(ctx context.Context, detached bool) (logPath string, err error) {
 
 	cmd := exec.Command("/bin/sh", script)
 	cmd.Env = append(os.Environ(), "HIVE_RELEASES="+Base())
+	if now {
+		cmd.Env = append(cmd.Env, "HIVE_NOW=1")
+	}
 	if !detached {
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		err := cmd.Run()
@@ -309,6 +316,11 @@ type Options struct {
 	Updating *atomic.Bool
 	// For tests: how long to wait before the first check, and between them.
 	First, Every time.Duration
+	// For tests: in place of the installer, of asking whether this daemon
+	// is the installed one, and of ten seconds between looks at Busy.
+	apply     func(context.Context) error
+	installed func() bool
+	poll      time.Duration
 }
 
 // Watch runs until ctx is cancelled: a check soon after start and then once
@@ -360,7 +372,21 @@ func tick(ctx context.Context, options Options) {
 		Notify(latest.Version)
 		state.Notified = latest.Version
 	}
-	if options.AutoUpdate == nil || !options.AutoUpdate() || !Installed() {
+	installed, apply, poll := Installed, func(ctx context.Context) error {
+		// now: the waiting for jobs is done here, just below.
+		_, err := Apply(ctx, true, true)
+		return err
+	}, 10*time.Second
+	if options.installed != nil {
+		installed = options.installed
+	}
+	if options.apply != nil {
+		apply = options.apply
+	}
+	if options.poll != 0 {
+		poll = options.poll
+	}
+	if options.AutoUpdate == nil || !options.AutoUpdate() || !installed() {
 		return
 	}
 	if !state.Failed.IsZero() && time.Since(state.Failed) < Every {
@@ -378,12 +404,12 @@ func tick(ctx context.Context, options Options) {
 		case <-ctx.Done():
 			options.Updating.Store(false)
 			return
-		case <-time.After(10 * time.Second):
+		case <-time.After(poll):
 		}
 	}
 	options.Log.Info("updating HiveWorker", "from", options.Version, "to", latest.Version)
 	_ = SaveState(state)
-	if _, err := Apply(ctx, true); err != nil {
+	if err := apply(ctx); err != nil {
 		options.Log.Error("the update did not take; carrying on with this version", "error", err)
 		state.Failed = time.Now()
 		options.Updating.Store(false)

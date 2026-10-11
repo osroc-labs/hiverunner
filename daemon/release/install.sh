@@ -10,7 +10,10 @@
 # background service for your user. Nothing is installed system-wide and
 # nothing asks for your password.
 #
-# Run it again to update. To remove everything: `hived uninstall`.
+# Run it again to update. A daemon that is running jobs is not restarted
+# under them: it stops taking new ones, and the update waits for the ones it
+# has. HIVE_NOW=1 does not wait, and cancels them. To remove everything:
+# `hived uninstall`.
 set -eu
 
 BASE="${HIVE_RELEASES:-https://get.hiveworkr.thecomputerplumbers.com}"
@@ -26,6 +29,16 @@ fail() {
   printf '\nhiveworker: %s\n' "$*" >&2
   exit 1
 }
+# Before a running daemon is replaced: it is told to take no more jobs, and
+# the ones it has are waited for. Restarting it at once would cancel them,
+# and GitHub runs nothing again by itself. $1 is the hived that does the
+# asking, which is the new one: an older daemon does as it is asked all the
+# same, and the daemon that starts afterwards takes jobs again.
+drain() {
+  [ "${HIVE_NOW:-}" = "1" ] && return 0
+  "$1" drain || fail "the daemon was left running as it was. To update now, and cancel the jobs it is running: hived update --now"
+}
+
 # Said in place of signing in, to a machine that already is. Someone running
 # this again for a second hive is told it did not add one, and what does.
 signed_in() {
@@ -121,9 +134,15 @@ elif [ "${HIVE_DEV:-}" != "1" ]; then
 fi
 mkdir -p "$BIN_DIR"
 # Whether anything this installs is new is remembered as it goes: a daemon
-# that is already all of it is left running at the end.
+# that is already all of it is left running at the end, and one that is not
+# is drained before the first thing under it is replaced.
 changed=""
-cmp -s "$work/daemon/hived" "$BIN_DIR/hived" || changed=yes
+running=""
+launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 && running=yes
+if ! cmp -s "$work/daemon/hived" "$BIN_DIR/hived"; then
+  changed=yes
+  [ -z "$running" ] || drain "$work/daemon/hived"
+fi
 install -m 0755 "$work/daemon/hived" "$BIN_DIR/hived"
 say "Installed $BIN_DIR/hived"
 
@@ -138,6 +157,7 @@ if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
   changed=yes
+  [ -z "$running" ] || drain "$BIN_DIR/hived"
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   # The image is published in pieces. The checksum is of the whole. A
   # manifest that names no pieces is of an image published whole.
@@ -225,9 +245,11 @@ if [ -z "$changed" ] && launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
   tips "this Mac" "~/.zshrc && exec zsh"
   exit 0
 fi
-# Stopping an older daemon first. A job it was running is cancelled and
-# GitHub re-queues nothing by itself, so update when the Mac is idle.
+# Stopping an older daemon first, once it has no job. (It was drained
+# above if the daemon or the image is new; this is for a change to nothing
+# but how it is started.)
 if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
+  drain "$BIN_DIR/hived"
   launchctl bootout "$domain/$LABEL" 2>/dev/null || true
   # The old daemon destroys its VM on the way out, which takes a few
   # seconds, and the service cannot be started again until it is gone.
@@ -246,7 +268,11 @@ for attempt in 1 2 3 4 5; do
   fi
   sleep 2
 done
-[ -n "$started" ] || fail "could not start the daemon. See $LOG_DIR/hived.log"
+if [ -z "$started" ]; then
+  # Nothing started to lift the pause the drain put on.
+  "$BIN_DIR/hived" drain --end >/dev/null 2>&1 || true
+  fail "could not start the daemon. See $LOG_DIR/hived.log"
+fi
 
 say ""
 say "Done. This Mac now runs jobs for your hive whenever it is awake."
@@ -342,7 +368,12 @@ mkdir -p "$BIN_DIR"
 # Whether anything this installs is new is remembered as it goes: a daemon
 # that is already all of it is left running at the end.
 changed=""
-cmp -s "$work/daemon/hived" "$BIN_DIR/hived" || changed=yes
+running=""
+systemctl --user is-active --quiet "$UNIT" 2>/dev/null && running=yes
+if ! cmp -s "$work/daemon/hived" "$BIN_DIR/hived"; then
+  changed=yes
+  [ -z "$running" ] || drain "$work/daemon/hived"
+fi
 install -m 0755 "$work/daemon/hived" "$BIN_DIR/hived"
 say "Installed $BIN_DIR/hived"
 
@@ -374,6 +405,7 @@ if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
   changed=yes
+  [ -z "$running" ] || drain "$BIN_DIR/hived"
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   # The image is published in pieces. The checksum is of the whole.
   : >"$work/image.tar.gz"
@@ -444,11 +476,19 @@ if [ -z "$changed" ] && systemctl --user is-active --quiet "$UNIT"; then
   tips "this machine" "~/.profile"
   exit 0
 fi
+# A running daemon is replaced once it has no job. (It was drained above if
+# the daemon or the image is new; this is for a change to nothing but how it
+# is started.)
+if systemctl --user is-active --quiet "$UNIT"; then
+  drain "$BIN_DIR/hived"
+fi
 systemctl --user daemon-reload
 systemctl --user enable "$UNIT" >/dev/null 2>&1 || true
-# Restart, not start: an older daemon is replaced. A job it was running is
-# cancelled and GitHub re-queues nothing by itself, so update when idle.
-systemctl --user restart "$UNIT" || fail "could not start the daemon. See: journalctl --user -u hiveworker"
+if ! systemctl --user restart "$UNIT"; then
+  # Nothing started to lift the pause the drain put on.
+  "$BIN_DIR/hived" drain --end >/dev/null 2>&1 || true
+  fail "could not start the daemon. See: journalctl --user -u hiveworker"
+fi
 # Without this the service stops when you log out.
 if ! loginctl enable-linger "$(id -un)" >/dev/null 2>&1; then
   say "To keep it running after you log out:  sudo loginctl enable-linger $(id -un)"

@@ -1,7 +1,9 @@
 // Runs daemon/release/install.sh for real against a release served from this
-// process, in a home of its own, with the service manager stood in for: a
-// run of the installer that finds nothing new must leave a running daemon
-// alone, because restarting it cancels the job it is in the middle of.
+// process, in a home of its own, with the service manager stood in for.
+// Restarting a daemon cancels the job it is in the middle of, so a run of
+// the installer that finds nothing new must leave a running daemon alone,
+// and one that has something new must have the daemon's jobs waited for
+// before anything under it is replaced.
 import assert from "node:assert/strict"
 import { execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -66,7 +68,15 @@ function release(root, origin) {
       join(making, "image/manifest.json"),
       JSON.stringify({ imageVersion: state.image, runnerVersion: "2.0.0" })
     )
-    script(join(making, "daemon/hived"), `# ${state.daemon}\nexit 0`)
+    // It writes down what it is asked, and refuses to drain when told to:
+    // a machine whose jobs outlast the wait.
+    script(
+      join(making, "daemon/hived"),
+      `# ${state.daemon}
+echo "hived $*" >> "${join(root, "asked.log")}"
+[ "$1" = drain ] && [ "\${2:-}" != --end ] && [ -e "${join(root, "busy")}" ] && exit 1
+exit 0`
+    )
     if (mac) {
       // The installer wants a signature macOS accepts. A script can carry
       // one made on the spot, and the archive keeps it.
@@ -173,21 +183,22 @@ esac`
       script(join(bin, name), "exit 0")
     script(join(bin, "virtiofsd"), 'echo "virtiofsd 1.13.2"')
   }
+  const lines = () => readFileSync(asked, "utf8").split("\n")
   return {
     bin,
     running,
+    // How many times the daemon was asked to stop taking jobs and wait.
+    drains: () => lines().filter((line) => line === "hived drain").length,
     // How many times a running daemon was stopped or a stopped one started.
     restarts: () =>
-      readFileSync(asked, "utf8")
-        .split("\n")
-        .filter((line) =>
-          mac ? line.startsWith("launchctl bootstrap") : / restart /.test(line)
-        ).length,
+      lines().filter((line) =>
+        mac ? line.startsWith("launchctl bootstrap") : / restart /.test(line)
+      ).length,
   }
 }
 
 test(
-  "the installer leaves a daemon running when it has nothing new for it",
+  "the installer never restarts a daemon under a job it need not cancel",
   { skip: unusable() || false },
   async (t) => {
     const root = mkdtempSync(join(tmpdir(), "hive-installer-"))
@@ -209,10 +220,11 @@ test(
     served = published.dir
     const service = standIns(root)
 
-    const install = async () => {
+    const install = async (extra = {}, expected = 0) => {
       const child = spawn("sh", [installer], {
         env: {
           ...process.env,
+          ...extra,
           HOME: home,
           XDG_CONFIG_HOME: "",
           HIVE_RELEASES: origin,
@@ -225,7 +237,7 @@ test(
       child.stdout.on("data", (chunk) => (said += chunk))
       child.stderr.on("data", (chunk) => (said += chunk))
       const [code] = await once(child, "exit")
-      assert.equal(code, 0, said)
+      assert.equal(code, expected, said)
       return said
     }
 
@@ -233,6 +245,7 @@ test(
     await install()
     assert.equal(service.restarts(), 1, "a first install starts the daemon")
     assert.ok(existsSync(service.running))
+    assert.equal(service.drains(), 0, "there was no daemon to wait for")
 
     // Run again with the same release out: this is `hived update`, or
     // someone running the installer, on a machine that is in the middle
@@ -240,27 +253,51 @@ test(
     const again = await install()
     assert.equal(service.restarts(), 1, `nothing was new, yet:\n${again}`)
     assert.match(again, /already running, and was left as it is/)
+    assert.equal(service.drains(), 0)
 
     // The same release, but the daemon is not running: it is started.
     rmSync(service.running)
     await install()
     assert.equal(service.restarts(), 2, "a stopped daemon is started")
 
-    // A new daemon is what a restart is for.
+    // A new daemon is what a restart is for, once the running one has been
+    // asked to finish its jobs. While it has not, nothing is replaced.
+    const installed = () =>
+      readFileSync(join(home, ".local/bin/hived"), "utf8").split("\n")[1]
     published.state.version = "9.9.1"
     published.state.daemon = "newer"
     published.publish()
+    writeFileSync(join(root, "busy"), "")
+    const refused = await install({}, 1)
+    assert.match(refused, /left running as it was/)
+    assert.match(refused, /hived update --now/)
+    assert.equal(service.restarts(), 2, "restarted under a job it was running")
+    assert.equal(installed(), "# ", "the daemon on disk was replaced anyway")
+    rmSync(join(root, "busy"))
+    const drained = service.drains()
     await install()
     assert.equal(service.restarts(), 3, "a new daemon replaces the old one")
+    assert.ok(service.drains() > drained, "it was not asked to finish first")
+    assert.equal(installed(), "# newer")
 
     // So is a new image: the running daemon has the old one open.
     published.state.image = 2
     published.publish()
+    const before = service.drains()
     await install()
     assert.equal(service.restarts(), 4, "a new image is taken up")
+    assert.ok(service.drains() > before, "it was not asked to finish first")
 
-    // And after either, the next run is quiet again.
+    // HIVE_NOW=1 is for whoever means to cancel what is running.
+    published.state.image = 3
+    published.publish()
+    const untilNow = service.drains()
+    await install({ HIVE_NOW: "1" })
+    assert.equal(service.restarts(), 5)
+    assert.equal(service.drains(), untilNow, "asked to wait when told not to")
+
+    // And after any of these, the next run is quiet again.
     await install()
-    assert.equal(service.restarts(), 4)
+    assert.equal(service.restarts(), 5)
   }
 )
