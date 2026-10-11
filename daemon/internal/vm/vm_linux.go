@@ -3,7 +3,6 @@
 package vm
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -267,7 +266,10 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 	}
 	defer relayEnd.Close()
 	defer machineEnd.Close()
-	network := []string{"--foreground", "--quiet", "--one-off", "--no-map-gw", "--fd", inheritedFD}
+	// The host's search domains stay with the host. A job resolves the
+	// names it wrote, not those names inside the owner's tailnet or LAN,
+	// and does not ask a public resolver about either.
+	network := []string{"--foreground", "--quiet", "--one-off", "--no-map-gw", "--no-dhcp-search", "--fd", inheritedFD}
 	for _, server := range upstreamDNS() {
 		network = append(network, "--dns", server)
 	}
@@ -437,49 +439,10 @@ func socketPair() (*os.File, *os.File, error) {
 	return os.NewFile(uintptr(ends[0]), "network"), os.NewFile(uintptr(ends[1]), "network"), nil
 }
 
-// upstreamDNS is what the guest should be told to resolve names with when
-// the host's own resolver is on loopback, where the guest cannot reach it.
-// Empty means the host's resolv.conf is usable as it is.
+// upstreamDNS is what the guest should be told to resolve names with, or
+// nil when the host's own resolv.conf will do as it is.
 func upstreamDNS() []string {
-	servers := nameservers("/etc/resolv.conf")
-	usable := servers[:0:0]
-	for _, server := range servers {
-		if ip := net.ParseIP(server); ip != nil && !ip.IsLoopback() {
-			usable = append(usable, server)
-		}
-	}
-	if len(usable) > 0 {
-		return nil
-	}
-	// systemd-resolved keeps the real servers here.
-	for _, server := range nameservers("/run/systemd/resolve/resolv.conf") {
-		if ip := net.ParseIP(server); ip != nil && !ip.IsLoopback() {
-			usable = append(usable, server)
-		}
-	}
-	if len(usable) == 0 {
-		// A guest that cannot resolve names cannot run a job at all.
-		usable = []string{"1.1.1.1", "8.8.8.8"}
-	}
-	return usable
-}
-
-func nameservers(file string) []string {
-	handle, err := os.Open(file)
-	if err != nil {
-		return nil
-	}
-	defer handle.Close()
-	var servers []string
-	scanner := bufio.NewScanner(handle)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 2 && fields[0] == "nameserver" {
-			// An IPv6 server may carry a zone, which is not part of it.
-			servers = append(servers, strings.SplitN(fields[1], "%", 2)[0])
-		}
-	}
-	return servers
+	return guestDNS("/etc/resolv.conf", "/run/systemd/resolve/resolv.conf")
 }
 
 // waitFor waits for a helper's socket to appear, and gives up early if a

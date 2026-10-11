@@ -345,10 +345,21 @@ That is the internet, and it is also the machine's own network: other
 machines on its LAN, and the peers of a VPN or tailnet the machine is on.
 Nothing here narrows that to the internet, so a job has the network position
 of the machine that lends it. On Linux the guest is given the machine's own
-address, routes and DNS servers by passt, which makes each of the guest's
-connections as the daemon's user; hived tells it not to map the machine's
-loopback into the guest. On a Mac the guest is behind the system's NAT.
-Nothing reaches in on either.
+address and routes by passt, which makes each of the guest's connections as
+the daemon's user; hived tells it not to map the machine's loopback into the
+guest. On a Mac the guest is behind the system's NAT. Nothing reaches in on
+either.
+
+Names are resolved by the machine's resolvers, except the ones only the
+machine can use. A resolver on its loopback is out of the guest's reach.
+Tailscale's (100.100.100.100 and its IPv6 twin) answers only until a job
+starts a Tailscale of its own, which takes that address over, and then
+public names stop resolving mid-job. In place of either the guest gets the
+machine's other resolvers, or the ones behind systemd-resolved's stub, or
+failing those Cloudflare's and Google's. On Linux the guest is not given the
+machine's search domains: a job resolves the names it wrote. On a Mac the
+system's NAT answers the guest's questions itself, at an address no
+Tailscale claims, and does pass the Mac's search domains on.
 
 What it can see of the host's files: that one directory. Nothing listens in
 the guest and nothing can log in to it. A released job, or one past its
