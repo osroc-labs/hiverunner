@@ -3,7 +3,7 @@ import Link from "next/link"
 import { TRIAL_GRANT_USD } from "@workspace/pricing"
 import { budgetHolds } from "@workspace/db/budget"
 import { getLiveSnapshot } from "@workspace/db/live"
-import { listUserMachines } from "@workspace/db/machines"
+import { joinedHives, listUserMachines } from "@workspace/db/machines"
 import { getPoolSettings } from "@workspace/db/settings"
 import { roleAtLeast } from "@workspace/auth"
 import { cn } from "@workspace/ui/lib/utils"
@@ -12,6 +12,7 @@ import { AccountPage } from "@/components/account-page"
 import { AgentPrompt } from "@/components/agent-prompt"
 import { CopyButton } from "@/components/console/invite"
 import { ActionButton } from "@/components/action-button"
+import { AddAllButton } from "@/components/console/add-all"
 import { Notice, Panel, Snippet } from "@/components/console/panel"
 import { HexMark } from "@/components/hex-mark"
 import { RunnerSizes } from "@/components/console/runner-sizes"
@@ -34,12 +35,15 @@ export const metadata = { title: "Dashboard" }
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ installed?: string }>
+  searchParams: Promise<{
+    installed?: string | string[]
+    joined?: string | string[]
+  }>
 }) {
   const { pool, session } = await getPool()
   if (!pool) return <NoPool />
 
-  const { installed } = await searchParams
+  const { installed, joined } = await searchParams
   const { organizationId, installation, membership } = pool
   const db = getDb()
   const [live, settings, released, held] = await Promise.all([
@@ -53,13 +57,33 @@ export default async function DashboardPage({
   ).length
   // Set up means a job has run here. Until then the page leads with a checklist.
   const ready = live.recent.length > 0
-  // The caller's machines that serve other hives. Only asked for while this
-  // hive has none: they are the quickest way to give it one.
+  // The caller's machines that serve other hives. Asked for while this hive
+  // has none, when they are the quickest way to give it one, and on arriving
+  // from the install. Never otherwise: /machines is where the offer lives.
   const elsewhere =
-    ready || live.machines.length > 0
-      ? []
-      : await listUserMachines(db, session.user.id)
+    installed || (!ready && live.machines.length === 0)
+      ? (await listUserMachines(db, session.user.id)).filter(
+          (mine) => !live.machines.some((machine) => machine.id === mine.id)
+        )
+      : []
   const owner = roleAtLeast(membership.role, "owner")
+  // What joining a hive just now did to the caller's machines. The install
+  // names this hive and `/github/sync` names any the sign-in put them in; a
+  // hive they did not just join yields nothing, whatever the URL says.
+  const news = await joinedHives(db, {
+    userId: session.user.id,
+    organizationIds: [
+      ...(installed ? [organizationId] : []),
+      ...(typeof joined === "string" ? joined.split(",") : []),
+    ],
+  })
+  const installedHere = installed
+    ? news.find((hive) => hive.organizationId === organizationId)
+    : undefined
+  const joinedNews = news.filter(
+    (hive) =>
+      hive !== installedHere && (hive.autoJoined.length > 0 || hive.missing > 0)
+  )
 
   return (
     <AccountPage title={installation.accountLogin} live={live}>
@@ -68,8 +92,37 @@ export default async function DashboardPage({
           HiveWorker is installed on{" "}
           <strong>{installation.accountLogin}</strong>, with ${TRIAL_GRANT_USD}{" "}
           of credit to start. The steps to your first job are below.
+          {installedHere && installedHere.autoJoined.length > 0 && (
+            <>
+              {" "}
+              <AutoJoined names={installedHere.autoJoined} />
+            </>
+          )}
         </Notice>
       )}
+      {joinedNews.map((hive) => (
+        <Notice key={hive.organizationId}>
+          You are now in the <strong>{hive.login}</strong> hive.
+          {hive.autoJoined.length > 0 && (
+            <>
+              {" "}
+              <AutoJoined names={hive.autoJoined} />
+            </>
+          )}
+          {hive.missing > 0 && (
+            <>
+              {" "}
+              {hive.missing === 1
+                ? "A machine of yours does not serve it yet. "
+                : `${hive.missing} of your machines do not serve it yet. `}
+              <Link className="underline" href={`/join/${hive.login}`}>
+                {hive.missing === 1 ? "Add it" : "Add them"}
+              </Link>
+              ; there is nothing to install.
+            </>
+          )}
+        </Notice>
+      ))}
       {installation.status !== "active" && (
         <Notice tone="alert">
           {installation.status === "suspended"
@@ -110,6 +163,30 @@ export default async function DashboardPage({
           agentPrompt={setupPrompt(env.APP_URL)}
         />
       )}
+
+      {installed &&
+        elsewhere.length > 0 &&
+        (ready || live.machines.length > 0) && (
+          <Panel
+            title={
+              elsewhere.length > 1 ? "add your machines" : "add your machine"
+            }
+            bodyClassName="flex max-w-3xl flex-col gap-3 text-sm text-muted-foreground"
+          >
+            <p>
+              {elsewhere.length === 1
+                ? "A machine of yours already runs HiveWorker for another hive."
+                : "Machines of yours already run HiveWorker for another hive."}{" "}
+              Nothing to install; each picks this hive up within a minute of
+              being added.
+            </p>
+            <Elsewhere
+              machines={elsewhere}
+              organization={installation.accountLogin}
+              organizationId={organizationId}
+            />
+          </Panel>
+        )}
 
       <LiveDashboard
         released={released}
@@ -205,16 +282,11 @@ function FirstJob({
                   <code>hived link {organization}</code>. Nothing to install; it
                   picks this hive up within a minute.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {elsewhere.map((machine) => (
-                    <ActionButton
-                      key={machine.id}
-                      label={`Add ${machine.name} to ${organization}`}
-                      path="/api/machines/pools"
-                      body={{ machineId: machine.id, organizationId }}
-                    />
-                  ))}
-                </div>
+                <Elsewhere
+                  machines={elsewhere}
+                  organization={organization}
+                  organizationId={organizationId}
+                />
                 <p>Or add a different machine:</p>
               </>
             )}
@@ -351,6 +423,50 @@ function FirstJob({
         withAgent={<AgentPrompt prompt={agentPrompt} bare />}
       />
     </Panel>
+  )
+}
+
+/** One button for all of the caller's machines elsewhere, then one each. */
+function Elsewhere({
+  machines,
+  organization,
+  organizationId,
+}: {
+  machines: Array<{ id: string; name: string }>
+  organization: string
+  organizationId: string
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <AddAllButton
+        machines={machines}
+        organizationId={organizationId}
+        organization={organization}
+      />
+      {machines.map((machine) => (
+        <ActionButton
+          key={machine.id}
+          label={`Add ${machine.name} to ${organization}`}
+          path="/api/machines/pools"
+          body={{ machineId: machine.id, organizationId }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** Says that machines were added without anyone asking just now, and why. */
+function AutoJoined({ names }: { names: string[] }) {
+  return (
+    <>
+      {new Intl.ListFormat("en-US", { type: "conjunction" }).format(names)}{" "}
+      {names.length === 1 ? "was" : "were"} added to it, because auto-join is on
+      for {names.length === 1 ? "that machine" : "those machines"}.{" "}
+      <Link className="underline" href="/account">
+        Change that
+      </Link>
+      .
+    </>
   )
 }
 

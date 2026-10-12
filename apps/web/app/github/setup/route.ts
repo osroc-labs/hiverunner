@@ -1,4 +1,5 @@
 import { provisionInstallation } from "@workspace/db/installations"
+import { autoJoinMachines } from "@workspace/db/machines"
 import {
   repairActiveOrganization,
   syncMemberships,
@@ -56,12 +57,19 @@ export async function GET(request: Request) {
     const provisioned = await provisionInstallation(db, installation)
     if (!provisioned.supported) return status("personal")
 
-    const { organizationIds } = await syncMemberships(db, app, {
+    const { organizationIds, joined } = await syncMemberships(db, app, {
       userId: session.user.id,
       userToken,
     })
     if (!organizationIds.includes(provisioned.organizationId))
       return status("not-member")
+    // The dashboard says which machines this added; see `joinedHives`.
+    await autoJoinMachines(db, app, {
+      userId: session.user.id,
+      joined,
+      // Neither a yes nor a no, and no reason to fail the install.
+      onError: (error) => logError(error, "machine.auto-join"),
+    })
     await repairActiveOrganization(db, {
       userId: session.user.id,
       organizationIds,

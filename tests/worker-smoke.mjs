@@ -593,6 +593,65 @@ assert.equal(
   ).status,
   404
 )
+// Several at once: each is decided separately, and one success is success.
+{
+  const several = await json(
+    await owner("/api/machines/pools", {
+      machineIds: [enrolled.machineId, memberMachine.machineId],
+      organizationId,
+    })
+  )
+  assert.deepEqual(several.added, [enrolled.machineId])
+  assert.deepEqual(
+    several.refused.map((refusal) => [refusal.machineId, refusal.code]),
+    [[memberMachine.machineId, "NOT_FOUND"]]
+  )
+  assert.equal(
+    (
+      await member("/api/machines/pools", {
+        machineIds: [enrolled.machineId],
+        organizationId,
+      })
+    ).status,
+    404
+  )
+  for (const machineIds of [[], [1], Array(26).fill(enrolled.machineId)])
+    assert.equal(
+      (await owner("/api/machines/pools", { machineIds, organizationId }))
+        .status,
+      400
+    )
+}
+// Auto-join is standing consent, so only its owner at a browser gives it. A
+// machine token is refused, and so is any bearer, even beside a good cookie.
+{
+  const setting = (request, autoJoin, extra) =>
+    request(
+      "/api/machines/auto-join",
+      { machineId: enrolled.machineId, autoJoin },
+      extra
+    )
+  const bearer = { Authorization: `Bearer ${enrolled.token}` }
+  assert.equal((await setting(anonymous, true, bearer)).status, 403)
+  assert.equal((await setting(owner, true, bearer)).status, 403)
+  assert.equal(
+    (await setting(owner, true, { Authorization: "Bearer anything" })).status,
+    403
+  )
+  assert.equal((await setting(anonymous, true)).status, 401)
+  assert.equal(
+    (await setting(owner, true, { Origin: "https://evil.example" })).status,
+    403
+  )
+  assert.equal((await setting(member, true)).status, 404)
+  assert.equal((await setting(outsider, true)).status, 404)
+  assert.equal((await setting(owner, "yes")).status, 400)
+  assert.ok((await page(owner, "/account")).includes("Turn auto-join on"))
+  await json(await setting(owner, true))
+  assert.ok((await page(owner, "/account")).includes("Turn auto-join off"))
+  assert.ok(!(await page(member, "/account")).includes("Turn auto-join off"))
+  await json(await setting(owner, false))
+}
 console.log("Device sign-in, enrollment, team limits and removal rules passed.")
 
 // An agent connects over MCP: OAuth discovery, dynamic registration, PKCE and

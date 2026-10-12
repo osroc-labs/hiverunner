@@ -20,6 +20,12 @@ export type MembershipSource = Pick<
 export type SyncResult = {
   /** Organizations the person belongs to after the sync. */
   organizationIds: string[]
+  /**
+   * Organizations this sync made the person a member of, with the role they
+   * were given. A member row is inserted once, so this is empty on every
+   * later sync until they leave and come back.
+   */
+  joined: Array<{ organizationId: string; role: "owner" | "member" }>
 }
 
 /**
@@ -128,9 +134,10 @@ export async function syncMemberships(
       )
   }
 
+  const joined: SyncResult["joined"] = []
   for (const [organizationId, role] of confirmed) {
     const existing = cached.find((row) => row.organizationId === organizationId)
-    if (!existing)
+    if (!existing) {
       await db
         .insert(member)
         .values({
@@ -144,7 +151,8 @@ export async function syncMemberships(
           target: [member.organizationId, member.userId],
           set: { role },
         })
-    else if (existing.role !== role)
+      joined.push({ organizationId, role })
+    } else if (existing.role !== role)
       await db.update(member).set({ role }).where(eq(member.id, existing.id))
   }
   // Only rows backed by an installation are ours to remove.
@@ -160,7 +168,7 @@ export async function syncMemberships(
     })
   }
 
-  return { organizationIds: [...confirmed.keys()] }
+  return { organizationIds: [...confirmed.keys()], joined }
 }
 
 /**

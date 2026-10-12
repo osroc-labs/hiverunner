@@ -1,11 +1,11 @@
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 
 import type { AuthDb } from "@workspace/auth/db"
 import { member, organization, session, user } from "@workspace/auth/schema"
 import type { GitHubApp } from "@workspace/github"
 import { runnerArch } from "@workspace/pricing"
 
-import { canAddMachines } from "@workspace/db/membership"
+import { canAddMachines, type SyncResult } from "@workspace/db/membership"
 import {
   githubInstallation,
   machine,
@@ -15,6 +15,15 @@ import {
 
 /** Enough for a laptop, a desktop and a few build boxes; not for abuse. */
 export const MAX_MACHINES_PER_PERSON = 10
+
+/** How many machines one request may ask to add to a pool. */
+export const MAX_MACHINES_PER_REQUEST = 25
+
+/**
+ * How long after a person joins a hive a page may still tell them what that
+ * did to their machines. Past it the link that carried the news says nothing.
+ */
+export const JOINED_NOTICE_MS = 15 * 60_000
 
 export type MachineFacts = {
   name: string
@@ -261,6 +270,188 @@ export async function addMachineToPool(
   return null
 }
 
+/**
+ * The same for several of the caller's machines, each decided separately.
+ * Says which were added and why each of the others was not.
+ */
+export async function addMachinesToPool(
+  db: AuthDb,
+  github: GitHubChecks | null,
+  input: { userId: string; machineIds: string[]; organizationId: string },
+  now = new Date()
+) {
+  const added: string[] = []
+  const refused: Array<{ machineId: string } & Refusal> = []
+  for (const machineId of new Set(input.machineIds)) {
+    const refusal = await addMachineToPool(
+      db,
+      github,
+      { userId: input.userId, machineId, organizationId: input.organizationId },
+      now
+    )
+    if (refusal) refused.push({ machineId, ...refusal })
+    else added.push(machineId)
+  }
+  return { added, refused }
+}
+
+/**
+ * Whether a machine joins hives its owner newly becomes an owner of. Only its
+ * owner may say, and only from a browser: the route that calls this refuses
+ * every other credential.
+ */
+export async function setMachineAutoJoin(
+  db: AuthDb,
+  input: { userId: string; machineId: string; autoJoin: boolean }
+): Promise<Refusal | null> {
+  const changed = await db
+    .update(machine)
+    .set({ autoJoin: input.autoJoin })
+    .where(
+      and(
+        eq(machine.id, input.machineId),
+        eq(machine.userId, input.userId),
+        eq(machine.status, "active")
+      )
+    )
+    .returning({ id: machine.id })
+  // The same answer whether it does not exist or is someone else's.
+  return changed.length
+    ? null
+    : { code: "NOT_FOUND", message: "No such machine" }
+}
+
+/**
+ * Adds a person's auto-join machines to the hives a sync has just made them
+ * an owner of, and says which it added.
+ *
+ * It acts on new member rows only. That is what keeps a machine its owner
+ * later takes out of a hive from coming back, and what keeps turning the
+ * setting on from reaching hives they were already in. Hives they are only a
+ * member of are never joined this way.
+ *
+ * Every add is authorized like any other. One that throws, because GitHub
+ * could not be asked, is handed to `onError` and is neither a yes nor a no.
+ */
+export async function autoJoinMachines(
+  db: AuthDb,
+  github: GitHubChecks | null,
+  input: {
+    userId: string
+    joined: SyncResult["joined"]
+    onError?: (error: unknown) => void
+  },
+  now = new Date()
+) {
+  const added: Array<{
+    machineId: string
+    name: string
+    organizationId: string
+  }> = []
+  const owned = input.joined.filter((hive) => hive.role === "owner")
+  if (!owned.length) return added
+  const machines = (await listUserMachines(db, input.userId)).filter(
+    (row) => row.autoJoin
+  )
+  if (!machines.length) return added
+  const serving = await listUserMachineHives(db, input.userId)
+  for (const { organizationId } of owned)
+    for (const row of machines) {
+      if (
+        serving.some(
+          (pool) =>
+            pool.machineId === row.id && pool.organizationId === organizationId
+        )
+      )
+        continue
+      try {
+        const refusal = await addMachineToPool(
+          db,
+          github,
+          { userId: input.userId, machineId: row.id, organizationId },
+          now
+        )
+        if (!refusal)
+          added.push({ machineId: row.id, name: row.name, organizationId })
+      } catch (error) {
+        input.onError?.(error)
+      }
+    }
+  return added
+}
+
+/**
+ * What joining these hives meant for the person's machines, for the page
+ * they land on to say: which machines auto-join put in each, and how many of
+ * theirs do not serve it yet.
+ *
+ * The hive ids come from a URL, so they choose only which hives are spoken
+ * of. Everything said is read here, and only for a hive joined within
+ * `JOINED_NOTICE_MS`: a link kept in a tab or a bookmark goes quiet.
+ */
+export async function joinedHives(
+  db: AuthDb,
+  input: { userId: string; organizationIds: string[] },
+  now = new Date()
+) {
+  const asked = [...new Set(input.organizationIds)].slice(0, 10)
+  if (!asked.length) return []
+  const hives = (
+    await db
+      .select({
+        organizationId: member.organizationId,
+        login: githubInstallation.accountLogin,
+        role: member.role,
+        createdAt: member.createdAt,
+      })
+      .from(member)
+      .innerJoin(
+        githubInstallation,
+        eq(githubInstallation.organizationId, member.organizationId)
+      )
+      .where(
+        and(
+          eq(member.userId, input.userId),
+          inArray(member.organizationId, asked),
+          eq(githubInstallation.status, "active")
+        )
+      )
+  )
+    .filter(
+      (hive) => now.getTime() - hive.createdAt.getTime() <= JOINED_NOTICE_MS
+    )
+    // In the order asked for, so the page reads the same on a reload.
+    .sort(
+      (a, b) =>
+        asked.indexOf(a.organizationId) - asked.indexOf(b.organizationId)
+    )
+  if (!hives.length) return []
+  const [machines, serving] = await Promise.all([
+    listUserMachines(db, input.userId),
+    listUserMachineHives(db, input.userId),
+  ])
+  return hives.map((hive) => {
+    const here = new Set(
+      serving
+        .filter((pool) => pool.organizationId === hive.organizationId)
+        .map((pool) => pool.machineId)
+    )
+    return {
+      organizationId: hive.organizationId,
+      login: hive.login,
+      /** Machines auto-join put here. Only an owner's hive is auto-joined. */
+      autoJoined:
+        hive.role === "owner"
+          ? machines
+              .filter((row) => row.autoJoin && here.has(row.id))
+              .map((row) => row.name)
+          : [],
+      /** How many of their machines do not serve this hive. */
+      missing: machines.filter((row) => !here.has(row.id)).length,
+    }
+  })
+}
+
 async function poolIsActive(db: AuthDb, organizationId: string) {
   const [row] = await db
     .select({ status: githubInstallation.status })
@@ -307,11 +498,41 @@ export async function listMachines(db: AuthDb, organizationId: string) {
 /** A person's own machines, wherever they serve. */
 export async function listUserMachines(db: AuthDb, userId: string) {
   return db
-    .select({ id: machine.id, name: machine.name, model: machine.model })
+    .select({
+      id: machine.id,
+      name: machine.name,
+      model: machine.model,
+      autoJoin: machine.autoJoin,
+    })
     .from(machine)
     .where(and(eq(machine.userId, userId), eq(machine.status, "active")))
     .orderBy(desc(machine.createdAt))
     .limit(100)
+}
+
+/** Which hives each of a person's machines serves. */
+export async function listUserMachineHives(db: AuthDb, userId: string) {
+  return db
+    .select({
+      machineId: machinePool.machineId,
+      organizationId: machinePool.organizationId,
+      login: githubInstallation.accountLogin,
+    })
+    .from(machinePool)
+    .innerJoin(machine, eq(machine.id, machinePool.machineId))
+    .innerJoin(
+      githubInstallation,
+      eq(githubInstallation.organizationId, machinePool.organizationId)
+    )
+    .where(
+      and(
+        eq(machine.userId, userId),
+        eq(machine.status, "active"),
+        eq(machinePool.status, "active")
+      )
+    )
+    .orderBy(githubInstallation.accountLogin)
+    .limit(1000)
 }
 
 /**

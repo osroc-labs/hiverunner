@@ -20,6 +20,12 @@ import {
 } from "../packages/db/src/settings.ts"
 import {
   addMachineToPool,
+  addMachinesToPool,
+  autoJoinMachines,
+  joinedHives,
+  listUserMachines,
+  setMachineAutoJoin,
+  JOINED_NOTICE_MS,
   authenticateMachine,
   authenticateMachineForPool,
   enrollMachine,
@@ -653,4 +659,367 @@ test("a person cannot fill a pool with machines", async (t) => {
   for (let i = 0; i < MAX_MACHINES_PER_PERSON; i++)
     assert.equal((await enrollMachine(db, inAcme(), input)).ok, true)
   assert.equal((await enrollMachine(db, inAcme(), input)).code, "CONFLICT")
+})
+
+const ownsBoth = () =>
+  github({
+    viewer,
+    installations: [9001, 9002],
+    roles: { "acme/ada": "admin", "globex/ada": "admin" },
+  })
+const names = (added) => added.map((row) => row.name).sort()
+
+test("several machines are added at once, each decided separately", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  await provisionInstallation(db, globex)
+  person(sqlite, "ada", 1)
+  person(sqlite, "bob", 2)
+  await syncMemberships(db, inBoth(), sync)
+  await syncMemberships(
+    db,
+    github({
+      viewer: { id: 2, login: "bob" },
+      installations: [9001],
+      roles: { "acme/bob": "member" },
+    }),
+    { userId: "bob", userToken: "token" }
+  )
+  const enroll = (userId, name) =>
+    enrollMachine(db, inBoth(), {
+      userId,
+      organizationIds: [orgId],
+      facts: { ...mac, name },
+    })
+  const one = await enroll("ada", "one")
+  const two = await enroll("ada", "two")
+  const gone = await enroll("ada", "gone")
+  const bobs = await enroll("bob", "bob's")
+  await revokeMachine(db, gone.machineId)
+
+  const result = await addMachinesToPool(db, inBoth(), {
+    userId: "ada",
+    machineIds: [
+      one.machineId,
+      bobs.machineId,
+      two.machineId,
+      gone.machineId,
+      "no-such-machine",
+      one.machineId,
+    ],
+    organizationId: globexId,
+  })
+  assert.deepEqual(result.added, [one.machineId, two.machineId])
+  assert.deepEqual(
+    result.refused.map((refusal) => [refusal.machineId, refusal.code]),
+    [
+      [bobs.machineId, "NOT_FOUND"],
+      [gone.machineId, "NOT_FOUND"],
+      ["no-such-machine", "NOT_FOUND"],
+    ]
+  )
+  assert.equal((await listMachines(db, globexId)).length, 2)
+  assert.equal(await authenticateMachineForPool(db, bobs.token, globexId), null)
+
+  // A hive she may not add to refuses every one, and adds none.
+  assert.equal(
+    await updatePoolSettings(db, globexId, {
+      allowedTeams: ["ci"],
+      earningsDestination: "developer",
+      macosJobs: false,
+      routing: "fastest",
+      version: 1,
+    }),
+    true
+  )
+  await removeMachineFromPool(db, {
+    machineId: one.machineId,
+    organizationId: globexId,
+  })
+  const closed = await addMachinesToPool(db, inBoth(), {
+    userId: "ada",
+    machineIds: [one.machineId],
+    organizationId: globexId,
+  })
+  assert.deepEqual(closed.added, [])
+  assert.equal(closed.refused[0].code, "FORBIDDEN")
+})
+
+test("auto-join is its owner's to set, and off until they do", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  person(sqlite, "bob", 2)
+  await syncMemberships(db, inAcme(), sync)
+  const enrolled = await enrollMachine(db, inAcme(), {
+    userId: "ada",
+    organizationIds: [orgId],
+    facts: mac,
+  })
+  const setting = async () =>
+    (await listUserMachines(db, "ada")).map((row) => row.autoJoin)
+  assert.deepEqual(await setting(), [false])
+
+  const set = (userId, autoJoin, machineId = enrolled.machineId) =>
+    setMachineAutoJoin(db, { userId, machineId, autoJoin })
+  // Nobody else can turn it on, and they learn nothing about the machine.
+  assert.equal((await set("bob", true)).code, "NOT_FOUND")
+  assert.equal((await set("ada", true, "no-such-machine")).code, "NOT_FOUND")
+  assert.deepEqual(await setting(), [false])
+
+  assert.equal(await set("ada", true), null)
+  assert.deepEqual(await setting(), [true])
+  assert.equal(await set("ada", false), null)
+  assert.deepEqual(await setting(), [false])
+
+  await revokeMachine(db, enrolled.machineId)
+  assert.equal((await set("ada", true)).code, "NOT_FOUND")
+})
+
+test("auto-join adds a machine to a hive its owner newly owns, and to no other", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  const first = await syncMemberships(db, inAcme(), sync)
+  assert.deepEqual(first.joined, [{ organizationId: orgId, role: "member" }])
+  const input = { userId: "ada", organizationIds: [orgId] }
+  const auto = await enrollMachine(db, inAcme(), {
+    ...input,
+    facts: { ...mac, name: "auto" },
+  })
+  const manual = await enrollMachine(db, inAcme(), {
+    ...input,
+    facts: { ...mac, name: "manual" },
+  })
+  await setMachineAutoJoin(db, {
+    userId: "ada",
+    machineId: auto.machineId,
+    autoJoin: true,
+  })
+
+  // Globex installs, and she is an admin of it on GitHub.
+  await provisionInstallation(db, globex)
+  const gh = github({
+    viewer,
+    installations: [9001, 9002],
+    roles: { "acme/ada": "member", "globex/ada": "admin" },
+  })
+  const synced = await syncMemberships(db, gh, sync)
+  assert.deepEqual(synced.joined, [{ organizationId: globexId, role: "owner" }])
+  const added = await autoJoinMachines(db, gh, {
+    userId: "ada",
+    joined: synced.joined,
+  })
+  assert.deepEqual(added, [
+    { machineId: auto.machineId, name: "auto", organizationId: globexId },
+  ])
+  assert.ok(await authenticateMachineForPool(db, auto.token, globexId))
+  assert.equal(
+    await authenticateMachineForPool(db, manual.token, globexId),
+    null
+  )
+
+  // What the page she lands on may say: one joined by itself, one is left.
+  assert.deepEqual(
+    await joinedHives(db, {
+      userId: "ada",
+      organizationIds: [globexId, orgId, "gh-0"],
+    }),
+    [
+      {
+        organizationId: globexId,
+        login: "globex",
+        autoJoined: ["auto"],
+        missing: 1,
+      },
+      // She only belongs to acme, so nothing there is called auto-joined.
+      { organizationId: orgId, login: "acme", autoJoined: [], missing: 0 },
+    ]
+  )
+  // The link that carried the news goes quiet.
+  assert.deepEqual(
+    await joinedHives(
+      db,
+      { userId: "ada", organizationIds: [globexId, orgId] },
+      new Date(Date.now() + JOINED_NOTICE_MS + 60_000)
+    ),
+    []
+  )
+
+  // The next sign-in joins nothing new, so nothing is added again: a
+  // machine she takes out of the hive stays out.
+  await removeMachineFromPool(db, {
+    machineId: auto.machineId,
+    organizationId: globexId,
+  })
+  const again = await syncMemberships(db, gh, sync)
+  assert.deepEqual(again.joined, [])
+  assert.deepEqual(
+    await autoJoinMachines(db, gh, { userId: "ada", joined: again.joined }),
+    []
+  )
+  assert.equal(await authenticateMachineForPool(db, auto.token, globexId), null)
+})
+
+test("auto-join never reaches a hive its owner is only a member of", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  const admin = github({
+    viewer,
+    installations: [9001],
+    roles: { "acme/ada": "admin" },
+  })
+  await syncMemberships(db, admin, sync)
+  const enrolled = await enrollMachine(db, admin, {
+    userId: "ada",
+    organizationIds: [orgId],
+    facts: mac,
+  })
+  await setMachineAutoJoin(db, {
+    userId: "ada",
+    machineId: enrolled.machineId,
+    autoJoin: true,
+  })
+
+  await provisionInstallation(db, globex)
+  const gh = github({
+    viewer,
+    installations: [9001, 9002],
+    roles: { "acme/ada": "admin", "globex/ada": "member" },
+  })
+  const synced = await syncMemberships(db, gh, sync)
+  assert.deepEqual(synced.joined, [
+    { organizationId: globexId, role: "member" },
+  ])
+  assert.deepEqual(
+    await autoJoinMachines(db, gh, { userId: "ada", joined: synced.joined }),
+    []
+  )
+  assert.equal(
+    await authenticateMachineForPool(db, enrolled.token, globexId),
+    null
+  )
+  // She is pointed at the hive instead, and nothing is called auto-joined.
+  assert.deepEqual(
+    await joinedHives(db, { userId: "ada", organizationIds: [globexId] }),
+    [
+      {
+        organizationId: globexId,
+        login: "globex",
+        autoJoined: [],
+        missing: 1,
+      },
+    ]
+  )
+
+  // Being promoted there later is not newly joining it.
+  const promoted = await syncMemberships(db, ownsBoth(), sync)
+  assert.deepEqual(promoted.joined, [])
+  assert.deepEqual(members(sqlite), [
+    `ada:${orgId}:owner`,
+    `ada:${globexId}:owner`,
+  ])
+  assert.equal(
+    await authenticateMachineForPool(db, enrolled.token, globexId),
+    null
+  )
+})
+
+test("turning auto-join on does not reach hives already joined", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  await provisionInstallation(db, globex)
+  person(sqlite, "ada", 1)
+  const joined = await syncMemberships(db, ownsBoth(), sync)
+  assert.equal(joined.joined.length, 2)
+  const enrolled = await enrollMachine(db, ownsBoth(), {
+    userId: "ada",
+    organizationIds: [orgId],
+    facts: mac,
+  })
+  await setMachineAutoJoin(db, {
+    userId: "ada",
+    machineId: enrolled.machineId,
+    autoJoin: true,
+  })
+  const synced = await syncMemberships(db, ownsBoth(), sync)
+  assert.deepEqual(synced.joined, [])
+  assert.deepEqual(
+    await autoJoinMachines(db, ownsBoth(), {
+      userId: "ada",
+      joined: synced.joined,
+    }),
+    []
+  )
+  assert.equal(
+    await authenticateMachineForPool(db, enrolled.token, globexId),
+    null
+  )
+})
+
+test("auto-join stops at the machine limit and survives a GitHub error", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  const admin = github({
+    viewer,
+    installations: [9001],
+    roles: { "acme/ada": "admin" },
+  })
+  await syncMemberships(db, admin, sync)
+  // More machines than one hive takes from one person, spread over time so
+  // that no single enrollment is over the limit.
+  const total = MAX_MACHINES_PER_PERSON + 2
+  for (let i = 0; i < total; i++) {
+    const enrolled = await enrollMachine(db, admin, {
+      userId: "ada",
+      organizationIds: [orgId],
+      facts: { ...mac, name: `mac ${i}` },
+    })
+    assert.equal(enrolled.ok, true)
+    await setMachineAutoJoin(db, {
+      userId: "ada",
+      machineId: enrolled.machineId,
+      autoJoin: true,
+    })
+    if (i >= MAX_MACHINES_PER_PERSON - 1)
+      await removeMachineFromPool(db, {
+        machineId: enrolled.machineId,
+        organizationId: orgId,
+      })
+  }
+
+  await provisionInstallation(db, globex)
+  const synced = await syncMemberships(db, ownsBoth(), sync)
+  assert.deepEqual(synced.joined, [{ organizationId: globexId, role: "owner" }])
+
+  // GitHub cannot be asked: nothing is added, nothing is refused for good,
+  // and the caller hears of each failure instead of the sign-in failing.
+  const errors = []
+  const down = { ...ownsBoth(), getLogin: async () => viewer.login }
+  down.getOrgRole = async () => {
+    throw new GitHubError(502, "GitHub responded 502")
+  }
+  assert.deepEqual(
+    await autoJoinMachines(db, down, {
+      userId: "ada",
+      joined: synced.joined,
+      onError: (error) => errors.push(error),
+    }),
+    []
+  )
+  assert.equal(errors.length, total)
+  assert.equal((await listMachines(db, globexId)).length, 0)
+
+  const added = await autoJoinMachines(db, ownsBoth(), {
+    userId: "ada",
+    joined: synced.joined,
+  })
+  assert.equal(added.length, MAX_MACHINES_PER_PERSON)
+  assert.equal(
+    (await listMachines(db, globexId)).length,
+    MAX_MACHINES_PER_PERSON
+  )
+  assert.equal(names(added).length, new Set(names(added)).size)
 })
