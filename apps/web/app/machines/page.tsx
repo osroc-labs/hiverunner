@@ -7,6 +7,7 @@ import { getPoolSettings } from "@workspace/db/settings"
 
 import { AccountPage } from "@/components/account-page"
 import { ActionButton } from "@/components/action-button"
+import { AddAllButton } from "@/components/console/add-all"
 import { InvitePanel } from "@/components/console/invite"
 import { Panel, Snippet } from "@/components/console/panel"
 import {
@@ -70,14 +71,28 @@ export default async function MachinesPage() {
       </Panel>
       {addable.length > 0 && (
         <Panel
-          title="add one of your machines"
+          title={
+            addable.length > 1
+              ? "add your machines"
+              : "add one of your machines"
+          }
           bodyClassName="flex flex-col gap-3"
         >
           <p className="max-w-3xl text-sm text-muted-foreground">
             These already run HiveWorker for another organization. Adding one
             here needs nothing installed; its daemon picks this hive up within a
-            minute.
+            minute. To have a machine join hives you set up later by itself,
+            turn on auto-join for it under{" "}
+            <Link className="text-foreground underline" href="/account">
+              account
+            </Link>
+            .
           </p>
+          <AddAllButton
+            machines={addable}
+            organizationId={organizationId}
+            organization={installation.accountLogin}
+          />
           <ul className="divide-y divide-border border-y border-border">
             {addable.map((machine) => (
               <li

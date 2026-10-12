@@ -133,6 +133,13 @@ export const machine = sqliteTable(
      * itself. Written from each hello, so it follows the owner's setting.
      */
     macos: integer("macos", { mode: "boolean" }).notNull().default(false),
+    /**
+     * Its owner said, in a browser, that it joins hives they newly become an
+     * owner of. Never written from a machine token or by the daemon.
+     */
+    autoJoin: integer("auto_join", { mode: "boolean" })
+      .notNull()
+      .default(false),
     daemonVersion: text("daemon_version").notNull(),
     /** SHA-256 of the machine token, hex. */
     tokenHash: text("token_hash").notNull(),

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
 
 import { ActionButton } from "@/components/action-button"
+import { AddAllButton } from "@/components/console/add-all"
 import { CombLegend, PoolComb } from "@/components/console/comb"
 import { CopyButton, parallelJobs } from "@/components/console/invite"
 import { useLive } from "@/components/console/live"
@@ -35,6 +36,29 @@ export function JoinPool({
   const joined = mine.length > 0
   const others = snapshot.machines.length - mine.length
   const slots = parallelJobs(snapshot.machines)
+  // Machines of theirs that are not here yet, whether or not another is.
+  const rest = elsewhere.length > 0 && (
+    <div className="flex flex-col gap-3 border-t border-border pt-4">
+      <p className="text-sm text-muted-foreground">
+        {joined
+          ? `Other machines of yours run HiveWorker and do not serve ${login} yet. Nothing to install:`
+          : "Already running HiveWorker for another organization? Nothing to install:"}
+      </p>
+      <AddAllButton
+        machines={elsewhere}
+        organizationId={organizationId}
+        organization={login}
+      />
+      {elsewhere.map((machine) => (
+        <ActionButton
+          key={machine.id}
+          label={`Add ${machine.name} to ${login}`}
+          path="/api/machines/pools"
+          body={{ machineId: machine.id, organizationId }}
+        />
+      ))}
+    </div>
+  )
 
   return (
     <>
@@ -111,6 +135,7 @@ export function JoinPool({
             <div>
               <Button render={<Link href="/dashboard" />}>See the hive</Button>
             </div>
+            {rest}
           </Panel>
         ) : (
           <Panel
@@ -148,22 +173,7 @@ export function JoinPool({
                 </p>
               </li>
             </ol>
-            {elsewhere.length > 0 && (
-              <div className="flex flex-col gap-3 border-t border-border pt-4">
-                <p className="text-sm text-muted-foreground">
-                  Already running HiveWorker for another organization? Nothing
-                  to install:
-                </p>
-                {elsewhere.map((machine) => (
-                  <ActionButton
-                    key={machine.id}
-                    label={`Add ${machine.name} to ${login}`}
-                    path="/api/machines/pools"
-                    body={{ machineId: machine.id, organizationId }}
-                  />
-                ))}
-              </div>
-            )}
+            {rest}
           </Panel>
         )}
       </div>
