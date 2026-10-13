@@ -1,0 +1,1 @@
+HiveWorker: GitHub Actions on the Macs your team already has. Change runs-on: ubuntu-latest to runs-on: hive.
