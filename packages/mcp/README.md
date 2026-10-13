@@ -58,9 +58,13 @@ Names, titles and descriptions live in `apps/web/mcp/tool-list.ts`, which the
 docs page and `llms.txt` render too. Every tool delegates to
 `apps/web/operations/hive.ts`; nothing in a tool touches the database.
 
-`get_hive` is the one call that answers most questions: balance, whether a
+`get_hive` is the one call that answers most questions: `you`, balance, whether a
 job can start and what blocks it, machines, labels with prices, budget,
-settings and `nextSteps`. `profile` and `email` govern whether
+settings and `nextSteps`. `you` keeps apart what one person often is at once:
+their role (a hive owner is an owner of the GitHub organization, the only
+person who can install or unsuspend the App), the machines that are theirs,
+and what this connection's scopes allow; `can` is the three combined, and
+`nextSteps` is worded for that person. `profile` and `email` govern whether
 `get_current_user` returns those fields. `update_settings` takes the
 `version` from `get_hive` and refuses a stale one with `CONFLICT`.
 `remove_machine` takes a machine out of the granted hive only; it never

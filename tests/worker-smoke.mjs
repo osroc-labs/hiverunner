@@ -846,6 +846,14 @@ let hive = await tool(tokens, "get_hive")
 assert.equal(hive.hive.login, "acme")
 assert.equal(hive.hive.id, organizationId)
 assert.equal(hive.hive.yourRole, "owner")
+// An owner who also runs a machine is told both, and what each allows.
+assert.equal(hive.you.role, "owner")
+assert.equal(hive.you.githubOrganizationOwner, true)
+assert.equal(hive.you.machines.total, 1)
+assert.equal(hive.you.connection.canWrite, true)
+assert.equal(hive.you.can.updateSettings, true)
+assert.equal(hive.you.can.addMachine, "yes")
+assert.equal((await tool(tokens, "get_current_user")).role, "owner")
 assert.equal(hive.balance.usd, 5)
 assert.equal(hive.balance.microTokens, 5_000_000)
 assert.deepEqual(hive.settings.allowedTeams, ["ci"])
@@ -943,7 +951,16 @@ console.log("OAuth discovery, PKCE, hive-bound consent and owner tools passed.")
 // not left to each tool.
 assert.equal(await connect(member, organizationId, fullScope, 400), null)
 const memberTokens = await connect(member, organizationId, readScope)
-assert.equal((await tool(memberTokens, "get_hive")).hive.yourRole, "member")
+const asMember = await tool(memberTokens, "get_hive")
+assert.equal(asMember.hive.yourRole, "member")
+// A member with a machine: theirs to run, but nothing here is theirs to change.
+assert.equal(asMember.you.githubOrganizationOwner, false)
+assert.equal(asMember.you.machines.total, 1)
+assert.equal(asMember.you.connection.canWrite, false)
+assert.equal(asMember.you.can.manageGitHubApp, false)
+assert.equal(asMember.you.can.setBudget, false)
+assert.equal(asMember.you.can.removeOwnMachine, false)
+assert.equal(asMember.you.can.addMachine, "allowed-teams-only")
 await refusedTool(
   memberTokens,
   "update_settings",

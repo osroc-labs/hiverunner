@@ -62,6 +62,8 @@ export function serverInstructions(appUrl: string) {
     "This connection is bound to one hive, the one chosen when it was approved. To work with another hive, connect again and choose it.",
     "Call get_hive first. It says whether a job can start now, what is blocking it if not, and lists nextSteps: act on those in order.",
     `A job needs three things: a machine online in the hive, a positive balance, and \`runs-on: ${base.label}\` in the workflow. get_workflow returns the YAML, with a fallback runner for when no machine is free.`,
+    "One person is often several things at once, and they are separate: their role in the GitHub organization (owner, or a member), which is their role in the hive; whether they run machines in it, which any member may and most should; and what this connection was allowed. get_hive's `you` says which apply to the person you act for and what they can do; read it before saying who has to do something.",
+    "The GitHub App is installed, reinstalled and unsuspended on GitHub by an owner of the organization. The person who signed up may not be one: they request the install and an owner approves it.",
     "Reads need the hive:read permission. Changing settings, the budget, automatic top-up or machines needs hive:write, which only a hive owner or admin can grant; settings need an owner.",
     "Only a person can do four things: install the GitHub App (as an owner of the organization), run the install command on a machine, add funds, and approve this connection. Say which of those is needed and give them the URL or command.",
     "Everything else you can do yourself: read the hive, edit and push the workflow, and with hive:write set the budget and settings.",
