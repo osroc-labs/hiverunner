@@ -11,7 +11,7 @@ export const HIVE_TOOLS = [
     scope: "hive:read",
     role: "Member",
     description:
-      "Everything about the connected hive in one call: balance, whether a job can start now and what blocks it, machines, labels and prices, budget, settings, lifetime savings, and nextSteps to act on. Call this first.",
+      "Everything about the connected hive in one call: who you are in it (`you`: role, your machines, what you can change), balance, whether a job can start now and what blocks it, machines, labels and prices, budget, settings, lifetime savings, and nextSteps to act on. Call this first.",
   },
   {
     name: "get_current_user",
@@ -19,7 +19,7 @@ export const HIVE_TOOLS = [
     scope: "hive:read",
     role: "Member",
     description:
-      "The person this connection acts as. Use it to tell which machines and jobs are theirs.",
+      "The person this connection acts as and their role in the hive. get_hive's `you` says which machines are theirs and what they can change.",
   },
   {
     name: "list_machines",

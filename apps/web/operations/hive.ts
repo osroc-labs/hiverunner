@@ -162,6 +162,73 @@ function jobShape(job: LiveJob) {
   }
 }
 
+/**
+ * Who the caller is here. One person often wears several of these at once, so
+ * each is its own answer: their role in the hive (which is their role in the
+ * GitHub organization), what this connection was allowed, and the machines
+ * that are theirs. `can` is the three put together, so an agent does not have
+ * to work out for itself who "an owner" in a sentence is.
+ */
+function youShape(
+  context: OperationContext,
+  input: {
+    role: string
+    login: string
+    presences: Array<{ yours: boolean; presence: string }>
+    allowedTeams: string[]
+  }
+) {
+  const { scopes } = context.actor
+  // A browser session has no scopes and is held to the role alone.
+  const writes = !scopes || scopes.includes("hive:write")
+  const owner = roleAtLeast(input.role, "owner")
+  const admin = roleAtLeast(input.role, "admin")
+  const mine = input.presences.filter((each) => each.yours)
+  const count = (...states: string[]) =>
+    mine.filter((each) => states.includes(each.presence)).length
+  const machines = {
+    total: mine.length,
+    online: count("online"),
+    busy: count("busy"),
+    paused: count("paused", "draining"),
+    offline: count("offline"),
+  }
+  const hats = [
+    owner
+      ? `an owner of ${input.login} on GitHub, so an owner of this hive`
+      : admin
+        ? `an admin of this hive, but not an owner of ${input.login} on GitHub`
+        : `a member of ${input.login}, not an owner or admin`,
+    machines.total
+      ? `the owner of ${machines.total} of the hive's machines`
+      : "not running a machine in this hive yet",
+  ]
+  return {
+    userId: context.actor.userId,
+    role: input.role,
+    // The hive's owners are exactly the organization's owners on GitHub.
+    githubOrganizationOwner: owner,
+    connection: {
+      scopes: scopes ?? null,
+      canWrite: writes,
+    },
+    machines,
+    can: {
+      // On GitHub, by an owner of the organization; anyone else can only ask.
+      manageGitHubApp: owner,
+      addMachine:
+        owner || input.allowedTeams.length === 0
+          ? ("yes" as const)
+          : ("allowed-teams-only" as const),
+      updateSettings: owner && writes,
+      setBudget: admin && writes,
+      removeOwnMachine: writes,
+      removeAnyMachine: owner && writes,
+    },
+    summary: `You are ${hats.join(", and ")}. These are separate: a role in the organization says what you may change, and anyone in it may also run machines.`,
+  }
+}
+
 /** Everything about the hive in one read. What an agent should call first. */
 export async function getHive(context: OperationContext) {
   const membership = await authorize(context, "hive:read")
@@ -197,7 +264,18 @@ export async function getHive(context: OperationContext) {
   ])
   if (!installation) throw new AppError("NOT_FOUND", "No such hive")
 
-  const presences = live.machines.map((machine) => presenceOf(machine, live))
+  const login = installation.accountLogin
+  const mine = live.machines.map((machine) => ({
+    yours: machine.userId === context.actor.userId,
+    presence: presenceOf(machine, live),
+  }))
+  const you = youShape(context, {
+    role: membership.role,
+    login,
+    presences: mine,
+    allowedTeams: settings?.allowedTeams ?? [],
+  })
+  const presences = mine.map((each) => each.presence)
   const count = (...states: string[]) =>
     presences.filter((presence) => states.includes(presence)).length
   const machines = {
@@ -248,23 +326,36 @@ export async function getHive(context: OperationContext) {
   }))
 
   const links = urls()
-  const login = installation.accountLogin
+  // Said to the person this is, not to "an owner" they then have to find.
+  const asOwner = you.can.manageGitHubApp
+    ? `You are an owner of ${login} on GitHub, so you can`
+    : `Only an owner of ${login} on GitHub can, and you are not one: ask one to`
+  const whoAdds =
+    you.can.addMachine === "yes"
+      ? "You can do this yourself, as can anyone in the organization the hive allows."
+      : `Only members of these GitHub teams may: ${(settings?.allowedTeams ?? []).join(", ")}.`
   const nextSteps: string[] = []
   if (installation.status === "removed")
     nextSteps.push(
-      `The GitHub App was uninstalled from ${login}. Reinstall it at ${links.install} to run jobs; the balance and history are kept.`
+      `The GitHub App was uninstalled from ${login}. ${asOwner} reinstall it at ${links.install} to run jobs; the balance and history are kept.`
     )
   if (installation.status === "suspended")
     nextSteps.push(
-      `The GitHub App is suspended on ${login}. An owner must unsuspend it on GitHub before jobs are picked up.`
+      `The GitHub App is suspended on ${login}. ${asOwner} unsuspend it in the organization's GitHub settings before jobs are picked up.`
     )
   if (machines.total === 0)
     nextSteps.push(
-      `Add a machine: on an Apple Silicon Mac or a Linux machine with KVM, run \`${INSTALL_COMMAND}\` and sign in with GitHub.`
+      `Add a machine: on an Apple Silicon Mac or a Linux machine with KVM, run \`${INSTALL_COMMAND}\` and sign in with GitHub. ${whoAdds}`
     )
   else if (connected === 0)
     nextSteps.push(
-      "A machine is in the hive but none is connected. Start it with `hived run`, or open its lid; jobs wait until one is."
+      you.machines.total
+        ? `None of the hive's machines is connected, and ${you.machines.total} of them ${you.machines.total === 1 ? "is" : "are"} yours. Start yours with \`hived run\`, or open its lid; jobs wait until one is.`
+        : "A machine is in the hive but none is connected, and none of them is yours: its owner starts it with `hived run`, or you add your own. Jobs wait until one is connected. list_machines says whose each is."
+    )
+  if (machines.total > 0 && you.machines.total === 0)
+    nextSteps.push(
+      `You have no machine of your own in this hive; the more people who add one, the more jobs it can run. On yours, run \`${INSTALL_COMMAND}\`, or \`hived link\` if it already serves another hive. ${whoAdds}`
     )
   if (live.lifetime.jobs === 0 && live.running.length === 0)
     nextSteps.push(
@@ -276,7 +367,13 @@ export async function getHive(context: OperationContext) {
     )
   if (held)
     nextSteps.push(
-      `This month's budget is spent, so new jobs wait in GitHub's queue. Raise or remove it with set_budget, or at ${links.wallet}.`
+      `This month's budget is spent, so new jobs wait in GitHub's queue. ${
+        you.can.setBudget
+          ? `Raise or remove it with set_budget, or at ${links.wallet}.`
+          : roleAtLeast(membership.role, "admin")
+            ? `You may raise or remove it at ${links.wallet}; this connection is read-only, so set_budget needs you to connect again and approve hive:write.`
+            : `Only an owner or admin of the hive can raise or remove it, at ${links.wallet}, and you are neither: ask one.`
+      }`
     )
 
   const spentUsd = microTokensToUsd(live.lifetime.price)
@@ -291,6 +388,7 @@ export async function getHive(context: OperationContext) {
       },
       yourRole: membership.role,
     },
+    you,
     balance: {
       usd: microTokensToUsd(live.balance),
       microTokens: live.balance,
