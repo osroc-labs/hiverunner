@@ -255,7 +255,7 @@ Tests use fresh local data and generated fixture keys. They never deploy,
 read production job data, or send real email. Real GitHub smoke jobs are a
 separate coordinated experiment so two listeners do not compete for a session.
 
-The [integrated smoke run](https://github.com/thecomputerplumbers/hiveworker/actions/runs/37178137715)
+The [integrated smoke run](https://github.com/thecomputerplumbers/hiverunner/actions/runs/37178137715)
 passed on this Mac using a warm `hive` VM: checkout, arm64/CPU/user checks,
 setup-go and Linux daemon tests. The local coordinator verified GitHub's
 timestamps, signed the receipt and produced three ledger entries summing to

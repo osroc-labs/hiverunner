@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
 )
 
 func TestChoosingHivesByNumber(t *testing.T) {

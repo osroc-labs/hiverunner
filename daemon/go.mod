@@ -1,4 +1,4 @@
-module github.com/thecomputerplumbers/hiveworker/daemon
+module github.com/thecomputerplumbers/hiverunner/daemon
 
 go 1.27
 

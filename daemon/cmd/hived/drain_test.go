@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 )
 
 // quick is a drain that looks often and believes at once.

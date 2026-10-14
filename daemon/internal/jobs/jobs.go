@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/protocol"
 )
 
 // Job is one GitHub Actions job to run in a throwaway VM, or, for a

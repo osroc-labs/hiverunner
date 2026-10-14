@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/cache"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/ui"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cache"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
 
 // cacheLimit is the most the cache may hold, in bytes: what the owner chose,

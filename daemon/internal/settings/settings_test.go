@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 )
 
 func at(clock string) time.Time {

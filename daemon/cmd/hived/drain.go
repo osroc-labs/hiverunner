@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 )
 
 // A machine is drained before its daemon is replaced: it stops taking jobs,

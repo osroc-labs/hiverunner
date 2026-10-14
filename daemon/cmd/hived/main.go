@@ -17,17 +17,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/bench"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/native"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/pools"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/update"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/bench"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/connection"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/native"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/pools"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/update"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".

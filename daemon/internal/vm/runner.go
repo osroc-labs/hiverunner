@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
 )
 
 const (

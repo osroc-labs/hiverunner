@@ -7,7 +7,7 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
 )
 
 // Runner is unavailable where there is neither Apple's hypervisor nor KVM.

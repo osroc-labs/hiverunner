@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/ui"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
 
 func TestASelfTestReportSaysEachLineOnceAndWhatTheVMIs(t *testing.T) {

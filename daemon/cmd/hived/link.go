@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
 )
 
 // signIn has a person say who they are in a browser, and returns a token
