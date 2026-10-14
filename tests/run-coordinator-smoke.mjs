@@ -213,8 +213,9 @@ try {
         `select presence from machine_pool where machine_id='${id}' and organization_id='${pool}'`
       )
     )[0].presence
+  // Twenty seconds: a shared CI runner can take several to write through.
   async function eventually(check, message) {
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 200; i++) {
       if (await check()) return
       await delay(100)
     }
