@@ -1,0 +1,35 @@
+name: Something is broken
+description: A job, a machine, the dashboard or the daemon did the wrong thing.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - The daemon (hived) or its installer
+        - A job that ran, or did not
+        - The dashboard or sign-in
+        - The MCP server or an agent
+        - Hosting my own copy
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: hived doctor
+      description: For anything on a machine, paste the output of `hived doctor`.
+      render: text
+  - type: input
+    id: job
+    attributes:
+      label: Job or run
+      description: A link to the job on the dashboard or the run on GitHub, if there is one.

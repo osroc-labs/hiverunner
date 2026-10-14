@@ -84,3 +84,18 @@ on-chain payments.
 
 `AGENTS.md` has the rules for working in this codebase: the two databases,
 package boundaries, auth, and the checks.
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) says
+how to set up, what to run before a pull request and how commits are signed
+off, and the [code of conduct](CODE_OF_CONDUCT.md) says how we treat each
+other. Report a vulnerability privately, as [SECURITY.md](SECURITY.md)
+describes, not in an issue.
+
+## License
+
+[AGPL-3.0-only](LICENSE), copyright The Computer Plumbers LLC. You may run,
+change and host Hive Runner; a changed version offered to others over a
+network must publish its source. [Licensing](docs/licensing.md) covers the
+dependencies and what ships inside the daemon.

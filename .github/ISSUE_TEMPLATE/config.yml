@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/thecomputerplumbers/hiveworker/security/advisories/new
+    about: Privately, please. Not as a public issue.
+  - name: Documentation
+    url: https://hiveworkr.thecomputerplumbers.com/docs
+    about: Setup, labels and sizes, pricing, and what a job can reach.
