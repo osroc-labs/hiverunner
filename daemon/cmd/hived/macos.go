@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/native"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/native"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 )
 
 const macosUsage = `hived macos setup    Make this Mac take macOS jobs (runs-on: hive-macos)

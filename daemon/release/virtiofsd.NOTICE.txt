@@ -21,7 +21,7 @@ licenses (mostly MIT or Apache-2.0).
 To rebuild it yourself, with your own copies of the libraries above, run the
 script Hive Runner builds it with, which needs only Docker:
 
-  https://github.com/thecomputerplumbers/hiveworker/blob/main/daemon/release/virtiofsd.sh
+  https://github.com/thecomputerplumbers/hiverunner/blob/main/daemon/release/virtiofsd.sh
 
 You may use your distribution's virtiofsd instead: put it on your PATH and
 remove Hive Runner's copy from its configuration directory.

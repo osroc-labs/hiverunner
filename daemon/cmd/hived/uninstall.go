@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/cache"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cache"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 )
 
 // homes are the places outside the defaults that may hold something of

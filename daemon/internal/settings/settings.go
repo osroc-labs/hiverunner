@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 )
 
 // Settings are the owner's choices. The zero value is not the default: use

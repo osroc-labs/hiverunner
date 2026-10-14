@@ -15,8 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/protocol"
 )
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))

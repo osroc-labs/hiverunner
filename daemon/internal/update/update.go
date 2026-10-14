@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
 )
 
 // DefaultBase is where releases are published; the installer reads the same.

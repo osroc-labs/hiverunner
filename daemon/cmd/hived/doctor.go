@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/host"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/ui"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/connection"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
 
 // asleep is what to say when the owner lends with the lid closed but the

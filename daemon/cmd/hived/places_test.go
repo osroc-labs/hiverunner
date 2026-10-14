@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
 
 // aMachine is a home directory with an image and a cache in the default

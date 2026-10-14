@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/protocol"
 )
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))

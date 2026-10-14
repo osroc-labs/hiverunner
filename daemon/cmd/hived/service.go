@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 )
 
 // installedService is the service the installer set up, or an error saying

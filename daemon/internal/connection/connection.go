@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/config"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
 )
 
 // Hive is one hive's tunnel as the daemon last knew it.

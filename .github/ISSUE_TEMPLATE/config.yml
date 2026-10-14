@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security problem
-    url: https://github.com/thecomputerplumbers/hiveworker/security/advisories/new
+    url: https://github.com/thecomputerplumbers/hiverunner/security/advisories/new
     about: Privately, please. Not as a public issue.
   - name: Documentation
     url: https://hiveworkr.thecomputerplumbers.com/docs

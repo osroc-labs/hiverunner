@@ -10,11 +10,11 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/api"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/connection"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/jobs"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/protocol"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/tunnel"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/connection"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/protocol"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/tunnel"
 )
 
 type Options struct {

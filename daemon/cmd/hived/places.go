@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/cache"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/settings"
-	"github.com/thecomputerplumbers/hiveworker/daemon/internal/vm"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cache"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
 
 // Where hived keeps what takes room, which an owner may put on another disk:
