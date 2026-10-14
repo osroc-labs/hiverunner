@@ -167,6 +167,7 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
     const capacity = allowed ? await pool.capacity(size) : 0
     if (!capacity && !Object.keys(state?.slots ?? {}).length) {
       if (state?.session) {
+        console.info("Scale idle", { label: settings.label, closing: true })
         await this.close(client, state)
         await this.save(state)
       }
@@ -225,6 +226,11 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
       if (slot.phase === "running") continue
       if (status === "pending") continue
       if (status !== "accepted") {
+        console.info("Scale offer ended", {
+          label: settings.label,
+          status,
+          phase: slot.phase,
+        })
         await pool.release(slot.assignmentId)
         slot.jitConfig = undefined
         // A lost JIT response can have created the runner, too. Look up the
@@ -263,6 +269,7 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
             [Number(slot.requestId)]
           )
           if (!acquired.includes(Number(slot.requestId)) && !retry) {
+            console.info("Scale acquire lost", { label: settings.label })
             await pool.release(slot.assignmentId)
             delete state.slots[slot.assignmentId]
             delete state.available[String(slot.requestId)]
@@ -316,8 +323,15 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
         if (
           !state.claims[String(jobKey(available))] &&
           Object.keys(state.slots).length >= desired
-        )
+        ) {
+          console.info("Scale offer held", {
+            label: settings.label,
+            slots: Object.keys(state.slots).length,
+            desired,
+            known: Object.keys(state.available).length,
+          })
           break
+        }
         if (
           Object.values(state.slots).some(
             (slot) => String(slot.requestId) === String(jobKey(available))
@@ -330,6 +344,10 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
           label: settings.label,
           ...size,
           timeoutMinutes: 360,
+        })
+        console.info("Scale offer", {
+          label: settings.label,
+          machine: chosen?.machineId ?? null,
         })
         if (!chosen) break
         state.slots[assignmentId] = {
@@ -392,6 +410,7 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
           assigned: message.statistics.totalAssignedJobs,
           available: message.statistics.totalAvailableJobs ?? 0,
           messages: message.jobs.length,
+          kinds: message.jobs.map((event) => event.messageType).join(","),
         })
         // Requests GitHub says are over that no runner here ever started.
         const ended = new Set<string>()
