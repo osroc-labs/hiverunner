@@ -17,7 +17,7 @@ inputs:
     default: "15"
   coordinator:
     description: The Hive Runner coordinator to ask. Leave this alone.
-    default: https://connect.hiveworkr.thecomputerplumbers.com
+    default: https://connect.hiverunner.dev
 outputs:
   runner:
     description: The label to give runs-on.

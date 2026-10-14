@@ -79,9 +79,11 @@ Durable Objects. Marketing copy changes must not disconnect the fleet.
 | Cron            | Coordinator, daily       | Membership reconcile, stale-machine sweep                            |
 | Email Service   | Web                      | Low balance, machine revoked                                         |
 
-`<domain>` is `hiveworkr.thecomputerplumbers.com` for now (staging:
-`hiveworkr-staging.thecomputerplumbers.com`); the product domain is undecided.
-Sibling hosts nest under it (`connect.hiveworkr.…`, `get.hiveworkr.…`). That
+`<domain>` is `hiverunner.dev` (staging:
+`hiveworkr-staging.thecomputerplumbers.com`). Sibling hosts nest under it
+(`connect.hiverunner.dev`, `get.hiverunner.dev`). The old
+`hiveworkr.thecomputerplumbers.com` hosts still answer for daemons and route
+actions installed before the move. That
 is two levels below the zone, which the zone's default certificate does not
 cover; Cloudflare issued a certificate for the coordinator's custom domain
 on its first deploy, so this works as configured. Hosts come from configuration, never from string-building,

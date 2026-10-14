@@ -55,7 +55,7 @@ it never to change under you:
 - uses: thecomputerplumbers/hiverunner/route@<commit sha>
 ```
 
-[Hive Runner](https://hiveworkr.thecomputerplumbers.com) runs GitHub Actions
+[Hive Runner](https://hiverunner.dev) runs GitHub Actions
 jobs on your own team's machines. This action is MIT licensed, unlike the rest
 of the repository, so it can sit in anyone's workflow without a second
 thought.

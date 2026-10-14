@@ -45,7 +45,7 @@
   "account_id": "865d0c927a18e87c0a0701b8d1f18ee9",
   "vars": {
     "APP_URL": "https://hiverunner.dev",
-    "COORDINATOR_URL": "wss://connect.hiveworkr.thecomputerplumbers.com/v1/tunnel",
+    "COORDINATOR_URL": "wss://connect.hiverunner.dev/v1/tunnel",
     "EMAIL_FROM": "auth@thecomputerplumbers.com",
   },
   // hiverunner.dev is the site. The old host stays for what is already out

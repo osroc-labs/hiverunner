@@ -4,7 +4,7 @@
  */
 
 /** Where the daemon and its installer are served from (the releases bucket). */
-export const RELEASES_ORIGIN = "https://get.hiveworkr.thecomputerplumbers.com"
+export const RELEASES_ORIGIN = "https://get.hiverunner.dev"
 
 /** Where the daemon's installer is served from (the releases bucket). */
 export const INSTALL_SCRIPT_URL = `${RELEASES_ORIGIN}/install.sh`
@@ -54,8 +54,7 @@ export function mcpClients(url = MCP_URL) {
 }
 
 /** The coordinator's public origin, and the OIDC audience a capacity probe asks for. */
-export const COORDINATOR_ORIGIN =
-  "https://connect.hiveworkr.thecomputerplumbers.com"
+export const COORDINATOR_ORIGIN = "https://connect.hiverunner.dev"
 
 /**
  * Whether `INSTALL_COMMAND` works: a signed daemon and its image are

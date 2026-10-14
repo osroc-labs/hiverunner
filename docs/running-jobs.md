@@ -271,13 +271,13 @@ what this section describes.
 
 GitHub Actions can run a preflight job on `ubuntu-latest` and pass its selected
 runner through a job output to `runs-on`. A workflow can poll
-`GET https://connect.hiveworkr.thecomputerplumbers.com/v1/capacity?label=hive-4cpu`
+`GET https://connect.hiverunner.dev/v1/capacity?label=hive-4cpu`
 for up to 15 seconds, then select `ubuntu-latest` if no machine is available.
 An available machine ends the probe immediately. The polling deadline begins
 after the preflight runner starts; it does not include GitHub runner startup.
 
 Authorize the request with a GitHub Actions OIDC bearer token, requested with
-audience `https://connect.hiveworkr.thecomputerplumbers.com`. The preflight job
+audience `https://connect.hiverunner.dev`. The preflight job
 needs `permissions: { id-token: write }`. The coordinator verifies GitHub's
 signature, issuer, audience, expiry and immutable repository owner ID, then
 checks the owner's active App installation and positive credit. Selected-repo

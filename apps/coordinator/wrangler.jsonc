@@ -7,6 +7,12 @@
   "account_id": "865d0c927a18e87c0a0701b8d1f18ee9",
   "workers_dev": false,
   "routes": [
+    // connect.hiverunner.dev is the coordinator; the old host stays for
+    // daemons and route actions that still name it.
+    {
+      "pattern": "connect.hiverunner.dev",
+      "custom_domain": true,
+    },
     {
       "pattern": "connect.hiveworkr.thecomputerplumbers.com",
       "custom_domain": true,

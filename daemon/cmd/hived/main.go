@@ -33,7 +33,7 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "0.0.0-dev"
 
-const defaultServer = "https://hiveworkr.thecomputerplumbers.com"
+const defaultServer = "https://hiverunner.dev"
 
 const usage = `hived, the Hive Runner daemon
 

@@ -2,7 +2,7 @@
 # Installs the Hive Runner daemon on this machine and adds it to your hive.
 # It runs on Apple Silicon Macs and on Linux with KVM (arm64 or x86-64).
 #
-#   curl -fsSL https://get.hiveworkr.thecomputerplumbers.com/install.sh | sh
+#   curl -fsSL https://get.hiverunner.dev/install.sh | sh
 #
 # It downloads the daemon and the Linux image jobs run in, checks both
 # against the checksums published with them, installs them under your home
@@ -16,7 +16,7 @@
 # `hived uninstall`.
 set -eu
 
-BASE="${HIVE_RELEASES:-https://get.hiveworkr.thecomputerplumbers.com}"
+BASE="${HIVE_RELEASES:-https://get.hiverunner.dev}"
 LABEL="com.thecomputerplumbers.hiveworker"
 BIN_DIR="$HOME/.local/bin"
 DATA_DIR="$HOME/Library/Application Support/HiveWorker"

@@ -44,7 +44,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BUCKET="hiveworker-releases"
-BASE="${HIVE_RELEASES:-https://get.hiveworkr.thecomputerplumbers.com}"
+BASE="${HIVE_RELEASES:-https://get.hiverunner.dev}"
 mode=""
 out=""
 while [ $# -gt 0 ]; do
@@ -107,6 +107,10 @@ wanted="$(sed -n 's/^IMAGE_VERSION=//p' image/build.sh)-$(sed -n 's/^RUNNER_VERS
 # twice does not give the same bytes, and a published name is cached for a
 # year.
 live=$(mktemp -d)
+# A published URL moved onto this release's host: files keep their names in
+# the bucket whichever host serves them, and the keys are read back from the
+# URLs below by stripping $BASE.
+rebase() { printf '%s/%s' "$BASE" "${1#https://*/}"; }
 for manifest in latest.json linux-arm64.txt linux-amd64.txt; do
   curl -fsS -H "Cache-Control: no-cache" -o "$live/$manifest" "$BASE/$manifest?published=$(date +%s)$$" 2>/dev/null || rm -f "$live/$manifest"
 done
@@ -115,7 +119,7 @@ image_dir="${HIVE_IMAGE:-$HOME/Library/Application Support/HiveWorker/image}"
 aar_key=""
 if [ "$(plutil -extract image.version raw -o - "$live/latest.json" 2>/dev/null || true)" = "$wanted" ]; then
   image_version="$wanted"
-  aar_url=$(plutil -extract image.url raw -o - "$live/latest.json")
+  aar_url=$(rebase "$(plutil -extract image.url raw -o - "$live/latest.json")")
   # None for an image published whole, as they were before one outgrew that.
   aar_parts=$(plutil -extract image.parts raw -o - "$live/latest.json" 2>/dev/null || true)
   image_sha=$(plutil -extract image.sha256 raw -o - "$live/latest.json")
@@ -163,11 +167,11 @@ linux() { # arch image-directory
   rm -rf "$binary"
   this_image="$wanted"
   if as_published "$arch"; then
-    image_url=$(live_value "$arch" image_url)
+    image_url=$(rebase "$(live_value "$arch" image_url)")
     image_parts=$(live_value "$arch" image_parts)
     image_tar_sha=$(live_value "$arch" image_sha256)
     image_megabytes=$(live_value "$arch" image_megabytes)
-    virtiofsd_url=$(live_value "$arch" virtiofsd_url)
+    virtiofsd_url=$(rebase "$(live_value "$arch" virtiofsd_url)")
     virtiofsd_sha=$(live_value "$arch" virtiofsd_sha256)
   else
     [ -f "$dir/manifest.json" ] || { echo "No image in $dir" >&2; exit 1; }

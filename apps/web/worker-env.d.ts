@@ -5,7 +5,7 @@ interface __BaseEnv_CloudflareEnv {
 	DB: D1Database;
 	EMAIL: SendEmail;
 	ASSETS: Fetcher;
-	COORDINATOR_URL: "wss://connect.hiveworkr.thecomputerplumbers.com/v1/tunnel";
+	COORDINATOR_URL: "wss://connect.hiverunner.dev/v1/tunnel";
 	APP_URL: string;
 	EMAIL_FROM: string;
 	BETTER_AUTH_SECRET: string;

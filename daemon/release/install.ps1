@@ -1,6 +1,6 @@
 # Installs the Hive Runner daemon on this Windows PC and adds it to your hive.
 #
-#   irm https://get.hiveworkr.thecomputerplumbers.com/install.ps1 | iex
+#   irm https://get.hiverunner.dev/install.ps1 | iex
 #
 # Jobs are Linux, so on Windows the daemon is the Linux one, running in a
 # small Linux of its own under Windows' Linux subsystem (WSL 2), which gives
@@ -24,7 +24,7 @@
 
   $Distro = 'HiveWorker'
   $User = 'hive'
-  $Base = if ($env:HIVE_RELEASES) { $env:HIVE_RELEASES.TrimEnd('/') } else { 'https://get.hiveworkr.thecomputerplumbers.com' }
+  $Base = if ($env:HIVE_RELEASES) { $env:HIVE_RELEASES.TrimEnd('/') } else { 'https://get.hiverunner.dev' }
   $Root = Join-Path $env:LOCALAPPDATA 'HiveWorker'
   $Bin = Join-Path $Root 'bin'
   $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'

@@ -15,7 +15,7 @@ const label = input("label", "hive")
 const fallback = input("fallback", "ubuntu-latest")
 const coordinator = input(
   "coordinator",
-  "https://connect.hiveworkr.thecomputerplumbers.com"
+  "https://connect.hiverunner.dev"
 ).replace(/\/+$/, "")
 const wait = Math.min(Math.max(Number(input("wait", "15")) || 0, 0), 120)
 
