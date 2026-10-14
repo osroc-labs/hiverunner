@@ -129,7 +129,7 @@ export async function chargeDueTopUps(
           payment_method: claim.paymentMethodId,
           off_session: true,
           confirm: true,
-          description: "HiveWorker credit (automatic top-up)",
+          description: "Hive Runner credit (automatic top-up)",
           metadata: { kind: AUTO, organization_id: organizationId },
         },
         // The claim's time names this one charge. Sending it again, from a

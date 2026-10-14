@@ -1,4 +1,4 @@
-# HiveWorker: build spec
+# Hive Runner: build spec
 
 As of October 3, 2026. Product goals and agreed decisions are in
 [goals-and-decisions.md](goals-and-decisions.md); this document does not repeat
@@ -20,10 +20,10 @@ a spike before building on them. Items marked **Open** need a decision.
 | Releases       | Daemon binaries, VM images, update manifest                               | R2                                   | Published by CI                |
 
 The coordinator is never in a job's data path. The runner inside the VM talks
-to GitHub directly for the job, its logs, and its artifacts. HiveWorker stores
+to GitHub directly for the job, its logs, and its artifacts. Hive Runner stores
 no logs and proxies no job traffic, which is most of what keeps it lean.
 
-Everything HiveWorker operates runs on Cloudflare. The things that cannot:
+Everything Hive Runner operates runs on Cloudflare. The things that cannot:
 the daemon (developer machines), GitHub, Base and Coinbase's facilitator, and
 Stripe.
 
@@ -102,7 +102,7 @@ only PKCS#8, so convert once with `openssl pkcs8 -topk8 -nocrypt` before
 Better Auth 1.7.6, already in the starter. All three plugins named below ship
 in that version.
 
-**Sign-in.** One provider: GitHub, using the HiveWorker GitHub App's own client
+**Sign-in.** One provider: GitHub, using the Hive Runner GitHub App's own client
 ID and secret. One App therefore covers both installation and sign-in. The App
 needs the account permission _Email addresses: read_ or GitHub returns no email
 and Better Auth rejects the sign-in.
@@ -171,7 +171,7 @@ Apple Silicon macOS only.
 ## 5. GitHub App installation
 
 One App per environment, owned by a GitHub organization named for the product
-so the install screen reads "HiveWorker". The repository lives under
+so the install screen reads "Hive Runner". The repository lives under
 `thecomputerplumbers`; whether the App does too is **Open**. The App is
 defined by a manifest committed at `apps/web/github-app.json`.
 
@@ -355,7 +355,7 @@ edge. A signed-in visitor sees the same page with "Dashboard" in the header.
 | Route                | Content                                                                                                                                                                  |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `/`                  | The one-line diff (`ubuntu-latest` → `hive`). Cheaper, faster, simple. How it works in three steps: install, sign in, change one line. Isolation summary. Install button |
-| `/pricing`           | Calculator: minutes per month and runner size in; GitHub, Blacksmith, HiveWorker out. Fed by `packages/pricing`. Trial grant                                             |
+| `/pricing`           | Calculator: minutes per month and runner size in; GitHub, Blacksmith, Hive Runner out. Fed by `packages/pricing`. Trial grant                                            |
 | `/security`          | Hardware-virtualized VM per job, nothing touches the host, App permissions (no code access), private pool trust model, owner stays in control                            |
 | `/docs/*`            | MDX in the repo: quickstart, labels and sizes, the daemon, pools, pricing, FAQ                                                                                           |
 | `/download`          | Daemon for Apple Silicon, `curl` installer, system requirements                                                                                                          |

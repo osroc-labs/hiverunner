@@ -6,7 +6,7 @@ import product from "@/config/product.json"
 export const metadata = {
   title: "Terms of service",
   description:
-    "The terms that apply to using HiveWorker: accounts, machines, jobs, payment and liability.",
+    "The terms that apply to using Hive Runner: accounts, machines, jobs, payment and liability.",
 }
 
 const COMPANY = "The Computer Plumbers"

@@ -20,8 +20,8 @@ export function NoHiveSteps({
   return (
     <div className="flex flex-col gap-5">
       <p className="text-muted-foreground">
-        A hive belongs to a GitHub organization with HiveWorker installed on it.
-        Your GitHub account is not in one yet. Three steps:
+        A hive belongs to a GitHub organization with Hive Runner installed on
+        it. Your GitHub account is not in one yet. Three steps:
       </p>
       <ol className="flex flex-col gap-5 text-muted-foreground">
         <Step n={1}>
@@ -41,11 +41,11 @@ export function NoHiveSteps({
         </Step>
         <Step n={2}>
           <strong className="font-medium text-foreground">
-            Install HiveWorker on that organization.
+            Install Hive Runner on that organization.
           </strong>{" "}
           On GitHub&apos;s install screen, choose the organization, not your
           personal account. If you are not an owner of it, GitHub sends the
-          owners a request instead, and HiveWorker is ready once one of them
+          owners a request instead, and Hive Runner is ready once one of them
           approves it.
         </Step>
         <Step n={3}>

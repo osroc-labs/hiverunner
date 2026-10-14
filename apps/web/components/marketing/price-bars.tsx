@@ -29,7 +29,7 @@ export function PriceBars({
       usd: competitorUsdPerMinute("blacksmith", vcpus),
       ours: false,
     },
-    { label: "HiveWorker", usd: ours, ours: true },
+    { label: "Hive Runner", usd: ours, ours: true },
   ]
   const widest = Math.max(...rows.map((row) => row.usd))
 

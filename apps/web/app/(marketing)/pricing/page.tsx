@@ -24,7 +24,7 @@ import { Container } from "@workspace/ui-shell/components/page-header"
 export const metadata = {
   title: "Pricing",
   description:
-    "What a month of GitHub Actions minutes costs on GitHub-hosted runners, Blacksmith and a HiveWorker hive.",
+    "What a month of GitHub Actions minutes costs on GitHub-hosted runners, Blacksmith and a Hive Runner hive.",
 }
 
 const percent = new Intl.NumberFormat("en-US", { style: "percent" })
@@ -55,7 +55,7 @@ export default function PricingPage() {
             <thead className="font-mono text-xs text-muted-foreground">
               <tr>
                 <th className="py-2 pr-4 font-medium">Size</th>
-                <th className="py-2 pr-4 font-medium">HiveWorker</th>
+                <th className="py-2 pr-4 font-medium">Hive Runner</th>
                 <th className="py-2 pr-4 font-medium">
                   {COMPETITOR_RATES.github.name}
                 </th>
@@ -90,7 +90,7 @@ export default function PricingPage() {
           </table>
         </div>
         <p className="text-sm leading-6 text-muted-foreground">
-          HiveWorker runs Linux arm64 jobs, so the comparison uses each
+          Hive Runner runs Linux arm64 jobs, so the comparison uses each
           provider's Linux arm64 list price, checked on{" "}
           {formatIsoDate(COMPETITOR_RATES.asOf)} against{" "}
           <a href={COMPETITOR_RATES.github.source} className={textLink}>
@@ -100,14 +100,14 @@ export default function PricingPage() {
           <a href={COMPETITOR_RATES.blacksmith.source} className={textLink}>
             Blacksmith's pricing page
           </a>
-          . Free minutes and plan allowances are left out. HiveWorker prices are
-          at reference speed in a hive whose machines are your own.
+          . Free minutes and plan allowances are left out. Hive Runner prices
+          are at reference speed in a hive whose machines are your own.
         </p>
       </Band>
 
       <Band title="How the price works">
         <p className="leading-7">
-          Your organization pays the full price of each job. HiveWorker keeps{" "}
+          Your organization pays the full price of each job. Hive Runner keeps{" "}
           {percent.format(JOB_TAX_RATE)} of it, which is its only revenue, and
           the rest goes to the machine that ran the job.
         </p>
@@ -158,7 +158,7 @@ export default function PricingPage() {
 
       <Band title="How jobs are paid for">
         <p className="leading-7 text-muted-foreground">
-          Jobs are paid for with the HiveWorker token. Each job has a price, a
+          Jobs are paid for with the Hive Runner token. Each job has a price, a
           payer, a payee and a receipt. This site shows US dollar estimates so
           the figures can be compared with other runners.
         </p>

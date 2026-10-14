@@ -26,7 +26,7 @@ var (
 	// still serve other pools.
 	ErrRevoked     = errors.New("this machine no longer serves this hive")
 	ErrReplaced    = errors.New("another daemon connected as this machine; only one can run at a time")
-	ErrUnsupported = errors.New("this daemon is too old for the coordinator; update HiveWorker")
+	ErrUnsupported = errors.New("this daemon is too old for the coordinator; update Hive Runner")
 )
 
 // errLimitChanged ends a session so the next one can tell the pool the

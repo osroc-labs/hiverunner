@@ -17,7 +17,7 @@ interface AppSecrets {
   BETTER_AUTH_SECRET?: string
 
   /**
-   * The HiveWorker GitHub App. One App per environment; see
+   * The Hive Runner GitHub App. One App per environment; see
    * docs/github-app.md. The private key may be the PKCS#1 file GitHub issues.
    */
   GITHUB_APP_ID?: string

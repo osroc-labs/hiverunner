@@ -136,7 +136,7 @@ export class Pool extends DurableObject<CoordinatorEnv> {
 
     if (message.type === "hello") {
       if (message.protocol !== PROTOCOL_VERSION)
-        return socket.close(CLOSE.UNSUPPORTED, "Update the HiveWorker daemon")
+        return socket.close(CLOSE.UNSUPPORTED, "Update the Hive Runner daemon")
       state.greeted = true
       state.jobs = {}
       for (const assignmentId of message.holding ?? []) {

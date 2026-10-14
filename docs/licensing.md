@@ -7,7 +7,7 @@ commit as if it already were.
 
 AGPL-3.0-only, copyright The Computer Plumbers LLC. The text is in `LICENSE`
 and every `package.json` carries the identifier. Anyone may run, modify, and
-host HiveWorker, but a modified version offered over a network must publish
+host Hive Runner, but a modified version offered over a network must publish
 its source. The token tax is enforced by the contract, not by keeping code
 closed.
 

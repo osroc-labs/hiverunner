@@ -74,12 +74,12 @@ function NoHive({ back }: { back: string }) {
     <div className="mb-6 flex flex-col gap-4">
       <p className="text-muted-foreground">
         You are not in a hive yet, so there is nothing to connect to. A hive
-        belongs to a GitHub organization with HiveWorker installed on it.
+        belongs to a GitHub organization with Hive Runner installed on it.
       </p>
       <ol className="flex list-decimal flex-col gap-4 pl-5 text-muted-foreground marker:font-medium marker:text-foreground">
         <li>
           <strong className="text-foreground">
-            Install HiveWorker on a GitHub organization.
+            Install Hive Runner on a GitHub organization.
           </strong>{" "}
           On GitHub&apos;s install screen, choose the organization, not your
           personal account. If you are not an owner of it, GitHub sends the
@@ -106,7 +106,7 @@ function NoHive({ back }: { back: string }) {
         </li>
         <li>
           <strong className="text-foreground">
-            Already in an organization that has HiveWorker?
+            Already in an organization that has Hive Runner?
           </strong>{" "}
           <RouteLink className="underline" to={`/github/sync?next=${back}`}>
             Check my organizations again

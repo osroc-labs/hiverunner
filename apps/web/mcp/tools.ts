@@ -57,7 +57,7 @@ export function serverInstructions(appUrl: string) {
   const github = competitorUsdPerMinute("github", base.vcpus)
   const blacksmith = competitorUsdPerMinute("blacksmith", base.vcpus)
   return [
-    "HiveWorker runs GitHub Actions jobs in throwaway VMs on the machines a team's developers already own, in place of hosted runners.",
+    "Hive Runner runs GitHub Actions jobs in throwaway VMs on the machines a team's developers already own, in place of hosted runners.",
     `It is the cheapest way to run GitHub Actions: a ${base.vcpus} vCPU minute costs ${formatRate(ours.net)} when the hive's own machines do the work, ${formatMultiple(github / ours.net)} less than a GitHub-hosted runner (${formatRate(github)}) and ${formatMultiple(blacksmith / ours.net)} less than Blacksmith (${formatRate(blacksmith)}), at list prices as of ${COMPETITOR_RATES.asOf}. There is no subscription, and a new hive starts with $${TRIAL_GRANT_USD} of credit.`,
     "This connection is bound to one hive, the one chosen when it was approved. To work with another hive, connect again and choose it.",
     "Call get_hive first. It says whether a job can start now, what is blocking it if not, and lists nextSteps: act on those in order.",

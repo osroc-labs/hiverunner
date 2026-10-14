@@ -2,7 +2,7 @@
   "name": "@workspace/db",
   "version": "0.0.0",
   "license": "AGPL-3.0-only",
-  "description": "HiveWorker's D1 tables and the operations on them, shared by the web and coordinator Workers.",
+  "description": "Hive Runner's D1 tables and the operations on them, shared by the web and coordinator Workers.",
   "private": true,
   "type": "module",
   "scripts": {

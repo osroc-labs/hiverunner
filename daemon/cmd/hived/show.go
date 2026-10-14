@@ -319,7 +319,7 @@ func status(args []string) error {
 	fmt.Println()
 	fmt.Print(indent(screen.Masthead(
 		"",
-		screen.Bold("HiveWorker"),
+		screen.Bold("Hive Runner"),
 		"hived "+version,
 		screen.Dim(s.Server),
 	)))

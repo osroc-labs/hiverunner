@@ -79,7 +79,7 @@ export default async function MachinesPage() {
           bodyClassName="flex flex-col gap-3"
         >
           <p className="max-w-3xl text-sm text-muted-foreground">
-            These already run HiveWorker for another organization. Adding one
+            These already run Hive Runner for another organization. Adding one
             here needs nothing installed; its daemon picks this hive up within a
             minute. To have a machine join hives you set up later by itself,
             turn on auto-join for it under{" "}

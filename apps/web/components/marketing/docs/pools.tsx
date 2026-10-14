@@ -25,7 +25,7 @@ export function Pools() {
       <h2 id="no-free-machine">When no machine is free</h2>
       <p>
         A job that asks for a <Code>hive</Code> label directly stays queued at
-        GitHub until a machine of the right size is free. HiveWorker does not
+        GitHub until a machine of the right size is free. Hive Runner does not
         move a queued job to another runner.
       </p>
       <p>
@@ -37,7 +37,7 @@ export function Pools() {
 
       <h2 id="empty-wallet">When the wallet is empty</h2>
       <p>
-        HiveWorker stops taking new jobs for the organization. They wait in
+        Hive Runner stops taking new jobs for the organization. They wait in
         GitHub's queue and the dashboard says why. Jobs already running are not
         interrupted.
       </p>

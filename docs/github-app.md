@@ -12,7 +12,7 @@ make GitHub match.
 1. On GitHub, open the owning organization's **Settings → Developer settings →
    GitHub Apps → New GitHub App**, and enter the values from
    `apps/web/github-app.json`. For staging, use the staging origin and name it
-   `HiveWorker (staging)`.
+   `Hive Runner (staging)`.
 2. Permissions, exactly:
 
    | Permission                        | Access       | Why                                |

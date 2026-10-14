@@ -14,7 +14,7 @@ import {
 export const metadata = {
   title: "Download",
   description:
-    "Install the HiveWorker daemon on an Apple Silicon Mac, a Linux machine or a Windows 11 PC: one command, what it installs, and how to update or remove it.",
+    "Install the Hive Runner daemon on an Apple Silicon Mac, a Linux machine or a Windows 11 PC: one command, what it installs, and how to update or remove it.",
 }
 
 export default function DownloadPage() {
@@ -99,8 +99,8 @@ export default function DownloadPage() {
             macOS {DAEMON_MIN_MACOS} or later, and about 3 GB of free disk.
           </li>
           <li>
-            A GitHub account that belongs to an organization with the HiveWorker
-            GitHub App installed.
+            A GitHub account that belongs to an organization with the Hive
+            Runner GitHub App installed.
           </li>
           <li>
             An outbound internet connection. The daemon needs no inbound ports

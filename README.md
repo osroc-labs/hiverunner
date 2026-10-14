@@ -1,4 +1,4 @@
-# HiveWorker
+# Hive Runner
 
 GitHub Actions-compatible runners on your own developers' machines. Licensed
 under [AGPL-3.0](LICENSE).
@@ -47,7 +47,7 @@ pnpm cf:typegen      # Regenerate Cloudflare binding and runtime types
 | `apps/web`                          | Marketing site, dashboard, sign-in, GitHub App endpoints (vinext)   |
 | `apps/coordinator`                  | Machine tunnels, scale-set listeners, dispatch and job metering     |
 | `daemon`                            | macOS daemon and isolated Linux VM runner                           |
-| `packages/db`                       | HiveWorker's D1 tables and the operations on them                   |
+| `packages/db`                       | Hive Runner's D1 tables and the operations on them                  |
 | `packages/github`                   | GitHub App over `fetch` and WebCrypto                               |
 | `packages/pricing`                  | Compute-unit math, the floor, comparison rates. Every price is here |
 | `packages/auth`                     | Better Auth on D1: GitHub sign-in, sessions, hive membership        |
@@ -73,7 +73,7 @@ publishing a release is in [deployment](docs/deployment.md).
 
 ### Agents
 
-An agent reaches HiveWorker through its MCP server at `/mcp`: OAuth with
+An agent reaches Hive Runner through its MCP server at `/mcp`: OAuth with
 dynamic client registration, one hive per connection, and tools to read the
 hive, write the workflow change and set a budget. `/docs/agents` has the
 command for each client and `/llms.txt` says the same to a model. See

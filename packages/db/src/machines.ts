@@ -87,7 +87,7 @@ export function validateMachineFacts(facts: MachineFacts) {
   // a validation tweak.
   if (!hostArch(facts))
     fields.os =
-      "HiveWorker runs on Apple Silicon Macs, and on Linux on arm64 or x64"
+      "Hive Runner runs on Apple Silicon Macs, and on Linux on arm64 or x64"
   if (!Number.isInteger(facts.cores) || facts.cores < 1 || facts.cores > 512)
     fields.cores = "Invalid core count"
   if (!Number.isSafeInteger(facts.memoryBytes) || facts.memoryBytes < 2 ** 30)

@@ -1,5 +1,5 @@
 [Unit]
-Description=HiveWorker job agent
+Description=Hive Runner job agent
 After=network-online.target systemd-resolved.service
 Wants=network-online.target
 

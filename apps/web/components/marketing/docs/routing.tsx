@@ -10,7 +10,7 @@ export function Routing() {
   return (
     <>
       <p>
-        Route every workflow you move to HiveWorker. A routed job runs on your
+        Route every workflow you move to Hive Runner. A routed job runs on your
         hive when one of its machines is free and on the runner you use now when
         none is, so a closed laptop never leaves a job waiting. It is one small
         job in front of the ones you already have.
@@ -24,7 +24,7 @@ export function Routing() {
         <a href={HIVE_ROUTE}>
           <Code>thecomputerplumbers/hive-route</Code>
         </a>
-        , which asks HiveWorker whether a machine in your hive is free and
+        , which asks Hive Runner whether a machine in your hive is free and
         writes the answer to an output. Every job you want routed takes{" "}
         <Code>needs: route</Code> and reads that output in <Code>runs-on</Code>.
         Nothing else in the job changes.
@@ -112,7 +112,7 @@ export function Routing() {
         the label and still enrolled in your hive. A machine that is paused,
         busy with a job for this or another hive, or revoked does not. The job
         also falls back when your organization&apos;s balance has run out, when
-        the label is not one your hive serves, and when HiveWorker cannot be
+        the label is not one your hive serves, and when Hive Runner cannot be
         reached. The step never fails your workflow, and its log says which of
         these happened.
       </p>
@@ -121,7 +121,7 @@ export function Routing() {
       <p>
         The step needs <Code>id-token: write</Code> and nothing else. It uses
         that to ask GitHub for the job&apos;s own OIDC token, which proves to
-        HiveWorker which repository is asking. It reads nothing from the
+        Hive Runner which repository is asking. It reads nothing from the
         repository. The whole action is{" "}
         <a href={HIVE_ROUTE}>one short file with no dependencies</a>; pin it to
         a commit if you want it never to change under you.

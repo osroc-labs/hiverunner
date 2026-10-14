@@ -36,7 +36,7 @@ import { RouteLink } from "@/components/route-link"
 
 export const metadata = {
   title: {
-    absolute: "HiveWorker: GitHub Actions on the Macs your team already has",
+    absolute: "Hive Runner: GitHub Actions on the Macs your team already has",
   },
   description:
     "Change runs-on to hive and the job runs in a throwaway VM on a Mac your team already owns. Same workflows, same logs, same checks on the pull request.",
@@ -106,8 +106,8 @@ export default function HomePage() {
             <p>
               GitHub still starts the workflow, streams the log and posts the
               check on the pull request. Inside the VM is GitHub's own runner,
-              registered for one job. HiveWorker's part is to hand that job to a
-              free Mac in your hive. It is not in the job's data path, and its
+              registered for one job. Hive Runner's part is to hand that job to
+              a free Mac in your hive. It is not in the job's data path, and its
               GitHub App has no permission to read code, contents or secrets.
             </p>
             <p>
@@ -148,7 +148,7 @@ export default function HomePage() {
             <p>
               Each provider's list price for a {base.vcpus} vCPU Linux arm64
               minute, beside the same minute in a hive of your own Macs. The
-              HiveWorker price is what is left after the machine's share comes
+              Hive Runner price is what is left after the machine's share comes
               back to your organization's wallet: {percent.format(JOB_TAX_RATE)}{" "}
               of the charge. There is no subscription, no seats and no platform
               fee. You pay per job, by the minute.
@@ -184,7 +184,7 @@ export default function HomePage() {
           <ol className="mt-10 grid border-t border-l border-border lg:grid-cols-3">
             <Step number={1} title="Install the GitHub App">
               <p>
-                An organization owner installs HiveWorker on the organization.
+                An organization owner installs Hive Runner on the organization.
                 That creates the runner labels, a hive, and a wallet holding a
                 trial credit.
               </p>
@@ -232,9 +232,9 @@ export default function HomePage() {
         <Container className="grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-16">
           <SectionHeading title="Or let your agent do it">
             <p>
-              HiveWorker has an MCP server. Connect Claude Code, Cursor or Codex
-              and it can set up your hive, change the workflow and watch the
-              bill. There is no API key: you sign in with GitHub.
+              Hive Runner has an MCP server. Connect Claude Code, Cursor or
+              Codex and it can set up your hive, change the workflow and watch
+              the bill. There is no API key: you sign in with GitHub.
             </p>
             <SectionLink href="/docs/agents">Connect an agent</SectionLink>
             <div>
@@ -285,7 +285,7 @@ export default function HomePage() {
                 A job runs in its own hardware-virtualized VM and the VM is
                 destroyed when the job ends. It cannot read the Mac's files or
                 keychain. The daemon runs as the user, not root, and opens no
-                inbound ports: one outbound connection to HiveWorker, which
+                inbound ports: one outbound connection to Hive Runner, which
                 carries assignments and no job data.
               </Fact>
               <Fact title="What if nobody's Mac is awake?">
@@ -329,8 +329,8 @@ export default function HomePage() {
           <SectionHeading title="A job never touches the Mac it runs on">
             <p>
               Every job gets its own hardware-virtualized VM, destroyed when the
-              job ends. The runner inside it talks to GitHub directly.
-              HiveWorker assigns the job and is not in its data path.
+              job ends. The runner inside it talks to GitHub directly. Hive
+              Runner assigns the job and is not in its data path.
             </p>
             <SectionLink href="/security">
               How isolation and trust work

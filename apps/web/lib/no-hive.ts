@@ -8,7 +8,7 @@ import { env } from "cloudflare:workers"
 export function noHiveMessage() {
   return (
     "Your GitHub account is not in a hive yet. A hive is a GitHub " +
-    "organization with HiveWorker installed. Install it on yours at " +
+    "organization with Hive Runner installed. Install it on yours at " +
     `${env.APP_URL}/install, or ask a hive owner for their invite link, ` +
     "then run hived login again."
   )

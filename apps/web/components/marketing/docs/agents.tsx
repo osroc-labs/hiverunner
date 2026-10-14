@@ -17,7 +17,7 @@ export function Agents() {
   return (
     <>
       <p>
-        HiveWorker has an MCP server. Point Claude Code, Cursor, Codex or any
+        Hive Runner has an MCP server. Point Claude Code, Cursor, Codex or any
         MCP client at one URL and it can read your hive, write the workflow
         change and tell you what a month would cost.
       </p>
@@ -126,7 +126,7 @@ export function Agents() {
       </ol>
       <p>
         You need to be in a hive first. If your organization has not installed
-        HiveWorker, start with the{" "}
+        Hive Runner, start with the{" "}
         <Link href="/docs/quickstart">Quickstart</Link>.
       </p>
 
@@ -187,7 +187,7 @@ export function Agents() {
       <h2 id="llms-txt">llms.txt</h2>
       <p>
         <a href={`${PRODUCT_ORIGIN}/llms.txt`}>/llms.txt</a> is a plain-text
-        summary of HiveWorker for a model to read: what it is, the price, the
+        summary of Hive Runner for a model to read: what it is, the price, the
         MCP endpoint and the one-line workflow change (
         <Code>runs-on: {RUNNER_SIZES[0].label}</Code>
         ).

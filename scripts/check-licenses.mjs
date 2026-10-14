@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { root } from "./project-lib.mjs"
 
-// Licenses a public HiveWorker repository can depend on without obligations
+// Licenses a public Hive Runner repository can depend on without obligations
 // beyond attribution. See docs/licensing.md before adding to either list.
 const allowed = new Set([
   "MIT",

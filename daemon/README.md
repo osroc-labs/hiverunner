@@ -1,6 +1,6 @@
 # hived
 
-The HiveWorker daemon. One static Go binary that enrolls a machine in its
+The Hive Runner daemon. One static Go binary that enrolls a machine in its
 organization's hive and holds the single outbound tunnel jobs arrive through.
 It runs on Apple Silicon Macs and on Linux with KVM, arm64 or x86-64.
 
@@ -77,7 +77,7 @@ virtualization through. `release/install.ps1` does the setup:
 irm https://get.hiveworkr.thecomputerplumbers.com/install.ps1 | iex
 ```
 
-It imports Ubuntu 24.04 as a distribution named `HiveWorker`, separate from
+It imports Ubuntu 24.04 as a distribution named `Hive Runner`, separate from
 any other, installs QEMU, virtiofsd and passt in it, turns on systemd, makes
 `/dev/kvm` usable by the daemon's user at each start, runs `install.sh`
 inside, and adds a per-user Run entry that keeps the distribution alive
@@ -89,7 +89,7 @@ prints the one command that adds it and stops. Setting
 
 Every Linux under WSL shares one `/dev`, and the group on a device is a
 number. Another distribution starting gives `/dev/kvm` the number of its own
-`kvm` group, which in the HiveWorker one is some other group, and the daemon
+`kvm` group, which in the Hive Runner one is some other group, and the daemon
 can no longer open it. So a small service in the distribution,
 `hive-devices`, looks every second and puts the group back. Until it has,
 the daemon declines jobs, and `hived status` and `hived doctor` say why. A PC
@@ -137,7 +137,7 @@ It says what is missing and how to get it (`sudo apt install qemu-system
 qemu-utils passt` on Debian, Ubuntu or Raspberry Pi OS). virtiofsd is the
 exception: Debian 12 and Raspberry Pi OS 12 package only the older one that
 came inside QEMU and must be root, so where the system has no virtiofsd that
-runs as an ordinary user the installer downloads HiveWorker's own static
+runs as an ordinary user the installer downloads Hive Runner's own static
 build of it (`release/virtiofsd.sh`) into `~/.config/HiveWorker/bin`, and the
 daemon looks there first. The user must be able to open
 `/dev/kvm`, which usually means being in the `kvm` group. A cloud VM has no

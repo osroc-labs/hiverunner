@@ -67,7 +67,7 @@ func uninstall(args []string) error {
 	agent, logs := servicePaths(home)
 	self, _ := os.Executable()
 
-	fmt.Println("This removes HiveWorker from " + thisMachine + ":")
+	fmt.Println("This removes Hive Runner from " + thisMachine + ":")
 	fmt.Println("  the background service, so it stops taking jobs")
 	fmt.Println("  " + data + " (the Linux image, your settings and " + thisMachine + "'s sign-in)")
 	if cacheDir != "" {

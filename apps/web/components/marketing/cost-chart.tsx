@@ -31,7 +31,7 @@ const SERIES = [
   },
   {
     key: "net",
-    label: "HiveWorker",
+    label: "Hive Runner",
     stroke: "stroke-primary",
     dot: "fill-primary",
     dashed: false,
@@ -245,7 +245,7 @@ export function CostChart({
         <p className="text-sm leading-6 text-muted-foreground">
           Monthly cost in USD on {vcpus} vCPU Linux arm64, at list prices and
           reference speed. The shaded band is the difference between
-          GitHub-hosted and HiveWorker on your own machines.
+          GitHub-hosted and Hive Runner on your own machines.
         </p>
       </figcaption>
     </figure>

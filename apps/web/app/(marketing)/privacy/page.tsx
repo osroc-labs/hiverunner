@@ -6,7 +6,7 @@ import product from "@/config/product.json"
 export const metadata = {
   title: "Privacy policy",
   description:
-    "What HiveWorker collects, what it does not, who it is shared with and how to ask for it.",
+    "What Hive Runner collects, what it does not, who it is shared with and how to ask for it.",
 }
 
 const COMPANY = "The Computer Plumbers"

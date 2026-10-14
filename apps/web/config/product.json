@@ -1,5 +1,5 @@
 {
-  "name": "HiveWorker",
+  "name": "Hive Runner",
   "slug": "hiveworker",
   "description": "GitHub Actions runners on your own developers' machines.",
   "supportEmail": "auth@thecomputerplumbers.com",

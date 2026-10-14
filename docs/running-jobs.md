@@ -95,7 +95,7 @@ runs-on:
   group: hive-4cpu # fails: Required runner group 'hive-4cpu' not found
 ```
 
-There is no runner group of that name, and none is needed. HiveWorker's
+There is no runner group of that name, and none is needed. Hive Runner's
 runners are in the organization's Default runner group, which is the only
 group an organization on GitHub Free has, so nothing here depends on the
 organization's plan.
@@ -289,4 +289,4 @@ Assigned, paused, busy (including in another pool), revoked and retired machines
 are excluded. Responses are not cached. No machine identities or credentials
 are returned. This endpoint reports availability; it does not reserve capacity.
 A machine can disconnect or take another job between probing and queuing. There
-is no automatic reroute after a job is queued on HiveWorker.
+is no automatic reroute after a job is queued on Hive Runner.

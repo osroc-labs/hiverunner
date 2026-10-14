@@ -15,7 +15,7 @@ export function IsolationDiagram({ className }: { className?: string }) {
     >
       <figcaption className="sr-only">
         A job runs in a throwaway VM on a developer's Mac. The VM talks to
-        GitHub directly. The daemon talks to the HiveWorker coordinator, which
+        GitHub directly. The daemon talks to the Hive Runner coordinator, which
         assigns jobs and never carries job data.
       </figcaption>
       <div className="flex flex-col gap-3 border border-border bg-card p-3 sm:p-4">
@@ -27,7 +27,7 @@ export function IsolationDiagram({ className }: { className?: string }) {
           </p>
         </div>
         <div className="flex min-h-16 flex-col justify-center border border-dashed border-border p-3">
-          <p className="font-medium">HiveWorker daemon</p>
+          <p className="font-medium">Hive Runner daemon</p>
           <p className="text-muted-foreground">
             Runs as your user, not root. No inbound ports.
           </p>
@@ -47,7 +47,7 @@ export function IsolationDiagram({ className }: { className?: string }) {
         <Link
           className="md:min-h-16"
           carries="Presence and job assignment. No job data"
-          to="HiveWorker coordinator"
+          to="Hive Runner coordinator"
         />
       </div>
     </figure>
