@@ -111,7 +111,7 @@ export default async function JobPage({
                     </tr>
                     <tr className="border-t border-border text-sm [&>td]:pt-2">
                       <td>
-                        {backToPool ? "left your balance" : "HiveWorker fee"}
+                        {backToPool ? "left your balance" : "Hive Runner fee"}
                       </td>
                       <td className="text-primary">
                         {formatMoney(
@@ -127,7 +127,7 @@ export default async function JobPage({
                 <div
                   className="flex h-2 gap-0.5"
                   role="img"
-                  aria-label={`${share.toFixed(0)}% of the charge went to the machine's owner and ${(100 - share).toFixed(0)}% was HiveWorker's fee`}
+                  aria-label={`${share.toFixed(0)}% of the charge went to the machine's owner and ${(100 - share).toFixed(0)}% was Hive Runner's fee`}
                 >
                   <span
                     className="bg-foreground/40"
@@ -137,7 +137,7 @@ export default async function JobPage({
                 </div>
                 <p className="flex justify-between font-mono text-xs text-muted-foreground">
                   <span>machine&apos;s owner {share.toFixed(0)}%</span>
-                  <span>HiveWorker fee {(100 - share).toFixed(0)}%</span>
+                  <span>Hive Runner fee {(100 - share).toFixed(0)}%</span>
                 </p>
               </div>
             </>
@@ -152,7 +152,7 @@ export default async function JobPage({
       {job.receipt && (
         <Panel title="signed receipt" bodyClassName="flex flex-col gap-3">
           <p className="max-w-3xl text-sm text-muted-foreground">
-            These are the exact bytes HiveWorker signed for this job. The
+            These are the exact bytes Hive Runner signed for this job. The
             signature is Ed25519, made with key <code>{job.receiptKeyId}</code>.
           </p>
           <Snippet>{job.receipt}</Snippet>

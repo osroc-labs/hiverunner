@@ -168,10 +168,10 @@ export function LabelsAndSizes() {
       group: hive-4cpu
 # Required runner group 'hive-4cpu' not found`}</CodeBlock>
       <p>
-        Write <Code>runs-on: hive-4cpu</Code> instead. HiveWorker&apos;s runners
-        are in your organization&apos;s Default runner group, the only group an
-        organization on GitHub Free has, so the labels work on every GitHub
-        plan.
+        Write <Code>runs-on: hive-4cpu</Code> instead. Hive Runner&apos;s
+        runners are in your organization&apos;s Default runner group, the only
+        group an organization on GitHub Free has, so the labels work on every
+        GitHub plan.
       </p>
 
       <h2 id="what-runs">What a job runs on</h2>

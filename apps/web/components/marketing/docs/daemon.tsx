@@ -101,7 +101,7 @@ export function Daemon() {
 
       <h2 id="network">Network</h2>
       <p>
-        The daemon makes one outbound connection to the HiveWorker coordinator
+        The daemon makes one outbound connection to the Hive Runner coordinator
         and opens no inbound ports. Jobs talk to GitHub from inside the VM. More
         on the <Link href="/security">security page</Link>.
       </p>

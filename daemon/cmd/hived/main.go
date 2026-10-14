@@ -1,4 +1,4 @@
-// hived is the HiveWorker daemon: it enrolls this machine in its
+// hived is the Hive Runner daemon: it enrolls this machine in its
 // organization's pool and holds the tunnel jobs arrive through.
 package main
 
@@ -35,7 +35,7 @@ var version = "0.0.0-dev"
 
 const defaultServer = "https://hiveworkr.thecomputerplumbers.com"
 
-const usage = `hived, the HiveWorker daemon
+const usage = `hived, the Hive Runner daemon
 
   hived login       Sign in with GitHub and enroll this machine
   hived link        Add this machine to another of your hives
@@ -54,7 +54,7 @@ const usage = `hived, the HiveWorker daemon
   hived pause       Stop taking jobs until you say otherwise
   hived resume      Take jobs again
   hived logout      Forget this machine's token
-  hived uninstall   Remove HiveWorker from this machine
+  hived uninstall   Remove Hive Runner from this machine
   hived selftest    Boot a throwaway VM and report what it finds
   hived benchmark   Measure this machine's speed score
   hived version
@@ -220,9 +220,9 @@ func login(ctx context.Context, args []string) error {
 	if errors.As(err, &refusal) && refusal.Code == "NO_HIVE" {
 		// Signed in fine, but in no hive. Retrying cannot help; say what can.
 		return fmt.Errorf("your GitHub account is not in a hive yet.\n\n"+
-			"A hive is a GitHub organization with HiveWorker installed on it. Three steps:\n\n"+
+			"A hive is a GitHub organization with Hive Runner installed on it. Three steps:\n\n"+
 			"  1. Have a GitHub organization. Creating one is free; a personal account cannot be a hive.\n"+
-			"  2. Install HiveWorker on it:  %s/install\n"+
+			"  2. Install Hive Runner on it:  %s/install\n"+
 			"     Choose the organization, not your personal account. If you are not an owner,\n"+
 			"     GitHub asks the owners to approve it.\n"+
 			"  3. Run \"hived login\" again and approve the new code.\n\n"+

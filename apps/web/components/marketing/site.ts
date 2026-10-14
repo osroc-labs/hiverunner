@@ -45,11 +45,11 @@ export const MCP_URL = `${PRODUCT_ORIGIN}/mcp`
  */
 export function mcpClients(url = MCP_URL) {
   return {
-    claudeCode: `claude mcp add --transport http --scope user hiveworker ${url}`,
-    claudeCodeLogin: "claude mcp login hiveworker",
-    cursor: JSON.stringify({ mcpServers: { hiveworker: { url } } }, null, 2),
-    codex: `codex mcp add hiveworker --url ${url}`,
-    codexLogin: "codex mcp login hiveworker",
+    claudeCode: `claude mcp add --transport http --scope user hiverunner ${url}`,
+    claudeCodeLogin: "claude mcp login hiverunner",
+    cursor: JSON.stringify({ mcpServers: { hiverunner: { url } } }, null, 2),
+    codex: `codex mcp add hiverunner --url ${url}`,
+    codexLogin: "codex mcp login hiverunner",
   }
 }
 

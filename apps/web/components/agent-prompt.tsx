@@ -40,7 +40,7 @@ export function AgentPrompt({
         )}
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
           Paste one prompt into Claude Code, Cursor or Codex. It connects to
-          HiveWorker, tells you the few things only you can do, and makes the
+          Hive Runner, tells you the few things only you can do, and makes the
           workflow change.
         </p>
       </div>

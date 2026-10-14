@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the HiveWorker daemon on this machine and adds it to your hive.
+# Installs the Hive Runner daemon on this machine and adds it to your hive.
 # It runs on Apple Silicon Macs and on Linux with KVM (arm64 or x86-64).
 #
 #   curl -fsSL https://get.hiveworkr.thecomputerplumbers.com/install.sh | sh
@@ -116,7 +116,7 @@ image_sha=$(field image.sha256)
 image_mb=$(field image.megabytes)
 [ -n "$version" ] && [ -n "$daemon_url" ] && [ -n "$daemon_sha" ] && [ -n "$image_url" ] && [ -n "$image_sha" ] ||
   fail "the release manifest is incomplete. Try again in a few minutes."
-say "HiveWorker $version"
+say "Hive Runner $version"
 
 step "Installing the daemon"
 fetch -sS -o "$work/hived.zip" "$daemon_url"
@@ -128,7 +128,7 @@ ditto -x -k "$work/hived.zip" "$work/daemon"
 codesign --verify --strict "$work/daemon/hived" 2>/dev/null || fail "the daemon's code signature is not valid."
 signer=$(codesign -dv "$work/daemon/hived" 2>&1 | sed -n 's/^TeamIdentifier=//p')
 if [ -n "$team" ]; then
-  [ "$signer" = "$team" ] || fail "the daemon is not signed by HiveWorker's developer ID."
+  [ "$signer" = "$team" ] || fail "the daemon is not signed by Hive Runner's developer ID."
 elif [ "${HIVE_DEV:-}" != "1" ]; then
   fail "this release is a development build and is not signed for distribution."
 fi
@@ -356,7 +356,7 @@ image_sha=$(field image_sha256)
 image_mb=$(field image_megabytes)
 [ -n "$version" ] && [ -n "$daemon_url" ] && [ -n "$daemon_sha" ] && [ -n "$image_url" ] && [ -n "$image_parts" ] && [ -n "$image_sha" ] ||
   fail "the release manifest is incomplete. Try again in a few minutes."
-say "HiveWorker $version"
+say "Hive Runner $version"
 
 step "Installing the daemon"
 fetch -sS -o "$work/hived.tar.gz" "$daemon_url"
@@ -378,7 +378,7 @@ install -m 0755 "$work/daemon/hived" "$BIN_DIR/hived"
 say "Installed $BIN_DIR/hived"
 
 if [ -z "$virtiofsd" ]; then
-  # This system packages no virtiofsd that runs without root. HiveWorker's
+  # This system packages no virtiofsd that runs without root. Hive Runner's
   # own build of it goes beside the image, where the daemon looks first.
   virtiofsd_url=$(field virtiofsd_url)
   virtiofsd_sha=$(field virtiofsd_sha256)
@@ -451,7 +451,7 @@ fi
 mkdir -p "$UNIT_DIR"
 cat >"$work/$UNIT" <<SERVICE
 [Unit]
-Description=HiveWorker daemon
+Description=Hive Runner daemon
 After=network-online.target
 Wants=network-online.target
 

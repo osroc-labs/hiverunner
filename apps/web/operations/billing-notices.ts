@@ -38,13 +38,13 @@ export function billingNoticeMail(notice: BillingNotice) {
     case "empty":
       return {
         subject: `${hive}: the balance has run out and jobs are waiting`,
-        message: `The HiveWorker balance for ${hive} has run out, so new jobs are waiting in GitHub's queue. Jobs already running will finish. Add funds to start the queue moving again.`,
+        message: `The Hive Runner balance for ${hive} has run out, so new jobs are waiting in GitHub's queue. Jobs already running will finish. Add funds to start the queue moving again.`,
         label: "Add funds",
       }
     case "low-balance":
       return {
         subject: `${hive}: the balance is down to ${money(notice.balance)}`,
-        message: `The HiveWorker balance for ${hive} is down to ${money(notice.balance)}. When it runs out, new jobs wait in GitHub's queue until funds are added. Automatic top-up is off; you can add funds, or turn it on so the balance refills itself.`,
+        message: `The Hive Runner balance for ${hive} is down to ${money(notice.balance)}. When it runs out, new jobs wait in GitHub's queue until funds are added. Automatic top-up is off; you can add funds, or turn it on so the balance refills itself.`,
         label: "Add funds",
       }
     case "auto-top-up-failed":
@@ -96,7 +96,7 @@ export async function sendBillingNotices(
           to,
           ...mail,
           url: `${origin}/wallet`,
-          footer: `You are getting this because you are an owner or admin of ${notice.organization} on HiveWorker.`,
+          footer: `You are getting this because you are an owner or admin of ${notice.organization} on Hive Runner.`,
         })
         reached++
       }

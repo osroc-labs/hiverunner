@@ -90,7 +90,7 @@ export function mcpAuthError(
         message:
           challenge.statusCode === 403
             ? "This connection lacks the permission this needs. Connect again and approve it; changing a hive needs an owner or admin."
-            : "Sign in required. Your MCP client opens a browser: sign in with GitHub and pick a hive. If you are not in a hive yet, that page says how to install HiveWorker on your organization.",
+            : "Sign in required. Your MCP client opens a browser: sign in with GitHub and pick a hive. If you are not in a hive yet, that page says how to install Hive Runner on your organization.",
         data: {
           docs: `${origin}/docs/agents`,
           llms: `${origin}/llms.txt`,

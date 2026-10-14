@@ -30,7 +30,7 @@ Put a component in the narrowest package that fits:
 - `@workspace/ui-data` — stat cards, tables, timelines, status, empty states, `Intl` formatting.
 - `@workspace/ui-forms` — fields and server-action form plumbing around one `FormState` shape.
 - `@workspace/auth` — Better Auth on D1. See its README before touching it.
-- `@workspace/db` — HiveWorker tables and the operations on them. Shared with the coordinator; no `@/` imports, so `tests/*.test.mjs` can run it against real migrations.
+- `@workspace/db` — Hive Runner tables and the operations on them. Shared with the coordinator; no `@/` imports, so `tests/*.test.mjs` can run it against real migrations.
 - `@workspace/github` — the GitHub App over `fetch`. No Octokit.
 - `@workspace/pricing` — every price, rate and grant. Pages and the meter both import from here; never write a price anywhere else.
 - `@workspace/mcp` — transport only; app tools delegate to `apps/web/operations`.

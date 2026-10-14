@@ -1,10 +1,10 @@
-# HiveWorker: Goals and Decisions
+# Hive Runner: Goals and Decisions
 
-As of October 3, 2026. Companion to the HiveWorker Architecture Spec.
+As of October 3, 2026. Companion to the Hive Runner Architecture Spec.
 
 ## What it is
 
-HiveWorker is GitHub Actions-compatible runner software that lets an organization run its CI on its own developers' machines. Each job is paid with an x402 micropayment in the HiveWorker token. A small daemon on each machine takes jobs, runs them in a throwaway VM, and earns tokens.
+Hive Runner is GitHub Actions-compatible runner software that lets an organization run its CI on its own developers' machines. Each job is paid with an x402 micropayment in the Hive Runner token. A small daemon on each machine takes jobs, runs them in a throwaway VM, and earns tokens.
 
 ## Goals
 
@@ -16,7 +16,7 @@ HiveWorker is GitHub Actions-compatible runner software that lets an organizatio
 
 ## Objectives for v1
 
-- A workflow switches to HiveWorker by changing `runs-on` to `hive`.
+- A workflow switches to Hive Runner by changing `runs-on` to `hive`.
 - Every job runs in a hardware-virtualized VM and never touches the host.
 - The developer stays in control: the daemon yields when the machine is needed.
 - Every job has a price, a payer, a payee, and a signed receipt.
@@ -41,7 +41,7 @@ Not in v1: replacing GitHub's orchestration, secret-bearing jobs on strangers' m
 
 | Decision             | Detail                                                                                                                         |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Org install          | One click: install the HiveWorker GitHub App and authorize                                                                     |
+| Org install          | One click: install the Hive Runner GitHub App and authorize                                                                    |
 | What install creates | The `hive` scale set, the private pool, and the org's wallet                                                                   |
 | Joining a pool       | Developer installs the daemon and signs in with GitHub. No invite codes                                                        |
 | Default restriction  | Only members of the GitHub org that installed the app can add machines to its pool. Admins can narrow to specific GitHub teams |
@@ -68,8 +68,8 @@ Not in v1: replacing GitHub's orchestration, secret-bearing jobs on strangers' m
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Protocol       | x402                                                                                                                           |
 | Chain          | Base                                                                                                                           |
-| Facilitator    | Coinbase's hosted facilitator. HiveWorker does not run its own                                                                 |
-| Currency       | The HiveWorker token only, as an ERC-20. No USDC layer                                                                         |
+| Facilitator    | Coinbase's hosted facilitator. Hive Runner does not run its own                                                                |
+| Currency       | The Hive Runner token only, as an ERC-20. No USDC layer                                                                        |
 | Display        | Token amounts with a USD estimate beside them for comparison                                                                   |
 | Scheme         | Batch settlement: the org deposits into escrow once, signs a cumulative voucher each minute, and the machine claims in batches |
 | Charging later | Acceptable. Usage is batched and settled after the fact                                                                        |
@@ -78,7 +78,7 @@ Not in v1: replacing GitHub's orchestration, secret-bearing jobs on strangers' m
 
 | Decision            | Detail                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------- |
-| Business model      | The token tax, paid to the HiveWorker treasury wallet, is the only revenue                        |
+| Business model      | The token tax, paid to the Hive Runner treasury wallet, is the only revenue                       |
 | Where the tax lives | Inside the token contract                                                                         |
 | Rates               | Two: a job rate on claims out of escrow, and a transfer rate on everything else, including trades |
 | Escrow handling     | Deposits into escrow and refunds out of it are untaxed                                            |
@@ -132,6 +132,6 @@ The 500,000-minute figure is an estimate for a mid-sized engineering org, not a 
 - Who must sign a batch claim, which decides whether the daemon can stay keyless.
 - Whether selling tokens for card payments needs a licensed on-ramp partner.
 - Legal review of the token before any sale or listing, and of paying developers in tokens.
-- What happens when both pools are empty: a HiveWorker cloud fleet, or fail over to GitHub-hosted runners.
+- What happens when both pools are empty: a Hive Runner cloud fleet, or fail over to GitHub-hosted runners.
 - Whether macOS jobs (iOS builds) make v1.
 - The token's name and symbol. HIVE is already taken by another blockchain.

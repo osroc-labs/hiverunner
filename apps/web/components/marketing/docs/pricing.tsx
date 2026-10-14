@@ -64,7 +64,7 @@ export function Pricing() {
 
       <h2 id="where-it-goes">Where the charge goes</h2>
       <p>
-        HiveWorker keeps {percent.format(JOB_TAX_RATE)} of each job's charge.
+        Hive Runner keeps {percent.format(JOB_TAX_RATE)} of each job's charge.
         The rest goes to the machine that ran the job. In your hive that machine
         belongs to your organization, so when the hive pays the organization's
         wallet, the price of a job is the {percent.format(JOB_TAX_RATE)}. That
@@ -79,8 +79,8 @@ export function Pricing() {
 
       <h2 id="payment">How jobs are paid for</h2>
       <p>
-        Jobs are paid for with the HiveWorker token. Amounts are shown with a US
-        dollar estimate beside them.
+        Jobs are paid for with the Hive Runner token. Amounts are shown with a
+        US dollar estimate beside them.
       </p>
 
       <h2 id="trial">Trial grant</h2>

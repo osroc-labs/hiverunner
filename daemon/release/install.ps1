@@ -1,4 +1,4 @@
-# Installs the HiveWorker daemon on this Windows PC and adds it to your hive.
+# Installs the Hive Runner daemon on this Windows PC and adds it to your hive.
 #
 #   irm https://get.hiveworkr.thecomputerplumbers.com/install.ps1 | iex
 #
@@ -36,7 +36,7 @@
   function Step([string]$Text) { Write-Host ''; Write-Host $Text -ForegroundColor White }
   function Fail([string]$Text) { throw "hiveworker: $Text" }
 
-  # Runs a command inside the HiveWorker Linux and returns whether it worked.
+  # Runs a command inside the Hive Runner Linux and returns whether it worked.
   # What it prints goes to the screen, not into the answer.
   function InLinux([string]$As, [string]$Command) {
     & wsl.exe -d $Distro -u $As -- sh -c $Command | Out-Host
@@ -100,7 +100,7 @@
 
   try {
     if ($env:HIVE_UNINSTALL -eq '1') {
-      Step 'Removing HiveWorker'
+      Step 'Removing Hive Runner'
       StopKeepAlive
       Remove-ItemProperty -Path $RunKey -Name 'HiveWorker' -ErrorAction SilentlyContinue
       if (Get-Command wsl.exe -ErrorAction SilentlyContinue) {
@@ -142,9 +142,9 @@
     New-Item -ItemType Directory -Force -Path $Root, $Bin | Out-Null
 
     if (HasDistro) {
-      Step 'Using the HiveWorker Linux already on this PC'
+      Step 'Using the Hive Runner Linux already on this PC'
     } else {
-      Step 'Creating a Linux for HiveWorker'
+      Step 'Creating a Linux for Hive Runner'
       $work = Join-Path $env:TEMP ("hiveworker-" + [Guid]::NewGuid().ToString('N'))
       New-Item -ItemType Directory -Force -Path $work | Out-Null
       try {
@@ -197,7 +197,7 @@ DEVICES
 chmod 0755 /usr/local/sbin/hive-devices
 cat > /etc/systemd/system/hive-devices.service <<'UNIT'
 [Unit]
-Description=Keep the HiveWorker daemon's VM devices its own
+Description=Keep the Hive Runner daemon's VM devices its own
 
 [Service]
 ExecStart=/usr/local/sbin/hive-devices keep

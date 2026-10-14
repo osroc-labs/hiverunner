@@ -1,5 +1,5 @@
 /**
- * The HiveWorker mark: one cell of comb carrying two lines of a diff, the
+ * The Hive Runner mark: one cell of comb carrying two lines of a diff, the
  * shorter one being the line that replaced the longer.
  */
 export function HiveMark({ className, ...props }: React.ComponentProps<"svg">) {

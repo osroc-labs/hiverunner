@@ -208,7 +208,7 @@ func Installed() bool {
 // Notify tells the owner on their desktop, where there is one. It is the
 // one prompt the daemon makes, and Watch makes it once per version.
 func Notify(version string) {
-	title := "HiveWorker " + version + " is available"
+	title := "Hive Runner " + version + " is available"
 	body := "Run: hived update"
 	switch runtime.GOOS {
 	case "darwin":
@@ -368,7 +368,7 @@ func tick(ctx context.Context, options Options) {
 		return
 	}
 	if state.Notified != latest.Version {
-		options.Log.Warn("a newer HiveWorker is available", "installed", options.Version, "available", latest.Version, "update", "hived update")
+		options.Log.Warn("a newer Hive Runner is available", "installed", options.Version, "available", latest.Version, "update", "hived update")
 		Notify(latest.Version)
 		state.Notified = latest.Version
 	}
@@ -407,7 +407,7 @@ func tick(ctx context.Context, options Options) {
 		case <-time.After(poll):
 		}
 	}
-	options.Log.Info("updating HiveWorker", "from", options.Version, "to", latest.Version)
+	options.Log.Info("updating Hive Runner", "from", options.Version, "to", latest.Version)
 	_ = SaveState(state)
 	if err := apply(ctx); err != nil {
 		options.Log.Error("the update did not take; carrying on with this version", "error", err)

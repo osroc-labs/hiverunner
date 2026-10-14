@@ -154,7 +154,7 @@ func Setup(ctx context.Context, options SetupOptions) error {
 		if _, err := rand.Read(password); err != nil {
 			return err
 		}
-		if err := sudo("/usr/sbin/sysadminctl", "-addUser", User, "-fullName", "HiveWorker jobs", "-shell", "/bin/zsh", "-home", Home, "-password", hex.EncodeToString(password)); err != nil {
+		if err := sudo("/usr/sbin/sysadminctl", "-addUser", User, "-fullName", "Hive Runner jobs", "-shell", "/bin/zsh", "-home", Home, "-password", hex.EncodeToString(password)); err != nil {
 			return err
 		}
 		if err := sudo("/usr/bin/dscl", ".", "-create", "/Users/"+User, "IsHidden", "1"); err != nil {

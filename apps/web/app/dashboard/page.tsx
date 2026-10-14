@@ -89,7 +89,7 @@ export default async function DashboardPage({
     <AccountPage title={installation.accountLogin} live={live}>
       {installed && (
         <Notice>
-          HiveWorker is installed on{" "}
+          Hive Runner is installed on{" "}
           <strong>{installation.accountLogin}</strong>, with ${TRIAL_GRANT_USD}{" "}
           of credit to start. The steps to your first job are below.
           {installedHere && installedHere.autoJoined.length > 0 && (
@@ -175,8 +175,8 @@ export default async function DashboardPage({
           >
             <p>
               {elsewhere.length === 1
-                ? "A machine of yours already runs HiveWorker for another hive."
-                : "Machines of yours already run HiveWorker for another hive."}{" "}
+                ? "A machine of yours already runs Hive Runner for another hive."
+                : "Machines of yours already run Hive Runner for another hive."}{" "}
               Nothing to install; each picks this hive up within a minute of
               being added.
             </p>
@@ -249,8 +249,8 @@ function FirstJob({
     {
       done: true,
       title: owner
-        ? `HiveWorker is installed on ${organization}, with $${TRIAL_GRANT_USD} of credit and no card needed`
-        : `HiveWorker is installed on ${organization}`,
+        ? `Hive Runner is installed on ${organization}, with $${TRIAL_GRANT_USD} of credit and no card needed`
+        : `Hive Runner is installed on ${organization}`,
       body: null,
     },
     {
@@ -276,8 +276,8 @@ function FirstJob({
               <>
                 <p>
                   {elsewhere.length === 1
-                    ? "A machine of yours already runs HiveWorker for another hive."
-                    : "Machines of yours already run HiveWorker for another hive."}{" "}
+                    ? "A machine of yours already runs Hive Runner for another hive."
+                    : "Machines of yours already run Hive Runner for another hive."}{" "}
                   Add one here with a click, or from its terminal with{" "}
                   <code>hived link {organization}</code>. Nothing to install; it
                   picks this hive up within a minute.

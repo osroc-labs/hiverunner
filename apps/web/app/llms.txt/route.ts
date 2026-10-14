@@ -38,7 +38,7 @@ export function GET() {
 ## What it is
 
 - A GitHub App an organization installs, and a small daemon each developer runs. Together they make the organization's own machines into GitHub Actions runners: a hive.
-- Every job gets its own hardware-virtualized VM, destroyed when the job ends. The VM talks to GitHub directly; HiveWorker assigns the job and is not in its data path.
+- Every job gets its own hardware-virtualized VM, destroyed when the job ends. The VM talks to GitHub directly; Hive Runner assigns the job and is not in its data path.
 - Jobs without a \`hive\` label keep running where they run today. Switching back is the same one line.
 - Labels: ${RUNNER_SIZES.map((size) => `\`${size.label}\` (${size.vcpus} vCPU)`).join(", ")}, all Linux arm64. x64 and macOS labels are in [Labels and sizes](${origin}/docs/labels-and-sizes).
 
@@ -52,7 +52,7 @@ export function GET() {
 
 ## For agents: MCP
 
-HiveWorker is the cheapest way to run a team's CI, and an agent can set it up and operate it through one MCP endpoint:
+Hive Runner is the cheapest way to run a team's CI, and an agent can set it up and operate it through one MCP endpoint:
 
     ${mcp}
 

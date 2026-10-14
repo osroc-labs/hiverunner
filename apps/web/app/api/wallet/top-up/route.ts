@@ -106,7 +106,7 @@ export async function POST(request: Request) {
           priceData: {
             currency: "usd",
             unitAmount: dollars * 100,
-            productName: "HiveWorker credit",
+            productName: "Hive Runner credit",
             productDescription: "Pays for GitHub Actions minutes on your hive.",
           },
         },

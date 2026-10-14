@@ -6,14 +6,14 @@ import { DAEMON_RELEASED } from "../site"
 export function Faq() {
   return (
     <dl>
-      <dt>Is HiveWorker available now?</dt>
+      <dt>Is Hive Runner available now?</dt>
       <dd>
         {DAEMON_RELEASED
           ? "Yes. An organization owner installs the GitHub App, and the daemon is released for Apple Silicon Macs and Linux machines with KVM."
           : "Not generally. It is in early access and the daemon has not been released. These docs describe how it is designed to work."}
       </dd>
 
-      <dt>Can HiveWorker read my code?</dt>
+      <dt>Can Hive Runner read my code?</dt>
       <dd>
         No. The GitHub App has no permission for code, contents or secrets. A
         job checks out code inside its VM, straight from GitHub. The full
@@ -67,7 +67,7 @@ export function Faq() {
         doubles it.
       </dd>
 
-      <dt>What is the HiveWorker token?</dt>
+      <dt>What is the Hive Runner token?</dt>
       <dd>
         It is how jobs are paid for. Each job has a price, and prices are shown
         with a US dollar estimate. See <Link href="/docs/pricing">Pricing</Link>
@@ -75,7 +75,7 @@ export function Faq() {
       </dd>
 
       <dt>Can I use it on a personal account?</dt>
-      <dd>Not in the first release. HiveWorker installs on organizations.</dd>
+      <dd>Not in the first release. Hive Runner installs on organizations.</dd>
 
       <dt>How do I get help or report a problem?</dt>
       <dd>

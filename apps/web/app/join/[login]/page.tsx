@@ -51,7 +51,7 @@ export default async function JoinPage({
         <div className="mx-auto flex h-12 w-full max-w-5xl items-center justify-between px-4 font-mono text-sm sm:px-6">
           <span className="flex items-center gap-2 font-medium">
             <HiveMark className="size-5" />
-            HiveWorker
+            Hive Runner
           </span>
           <span className="truncate text-xs text-muted-foreground">
             {session.user.name}
@@ -73,8 +73,8 @@ export default async function JoinPage({
             <p className="text-muted-foreground">
               This link is for members of {login} on GitHub. If you joined it
               recently, or your membership is private and you have not approved
-              HiveWorker for it yet, check again. Otherwise ask whoever sent the
-              link.
+              Hive Runner for it yet, check again. Otherwise ask whoever sent
+              the link.
             </p>
             <div>
               <Button
@@ -113,7 +113,7 @@ async function Joining({
         login={login}
         userId={userId}
         command={INSTALL_COMMAND}
-        // Macs of theirs that already run HiveWorker for someone else.
+        // Macs of theirs that already run Hive Runner for someone else.
         elsewhere={own.filter(
           (mine) => !live.machines.some((machine) => machine.id === mine.id)
         )}

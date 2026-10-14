@@ -268,7 +268,7 @@ assert.ok((await page(outsider, "/dashboard")).includes("No hive yet"))
 // Money is dollars, and with no card processor configured nobody is offered
 // a payment that could not be taken.
 const billing = await page(owner, "/wallet")
-assert.ok(billing.includes("$5.00") && !billing.includes("HiveWorker tokens"))
+assert.ok(billing.includes("$5.00") && !billing.includes("Hive Runner tokens"))
 assert.ok(billing.includes("Card payments are not open yet"))
 assert.equal((await owner("/api/wallet/top-up", { amount: 25 })).status, 503)
 await redirectsTo(await outsider("/wallet"), "/dashboard", 307)
@@ -1020,7 +1020,7 @@ const llms = await fetch(`${origin}/llms.txt`)
 assert.equal(llms.status, 200)
 assert.match(llms.headers.get("content-type"), /^text\/plain/)
 const llmsText = await llms.text()
-assert.ok(llmsText.startsWith("# HiveWorker\n"))
+assert.ok(llmsText.startsWith("# Hive Runner\n"))
 for (const part of [
   `${origin}/mcp`,
   "runs-on",

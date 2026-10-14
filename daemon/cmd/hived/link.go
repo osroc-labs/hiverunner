@@ -98,7 +98,7 @@ func link(ctx context.Context, args []string) error {
 		fmt.Println("\nThis machine serves those already.")
 	default:
 		fmt.Println("\nThis machine already serves every hive you belong to.")
-		fmt.Printf("A hive is a GitHub organization with HiveWorker installed: %s/install\n", client.Server)
+		fmt.Printf("A hive is a GitHub organization with Hive Runner installed: %s/install\n", client.Server)
 	}
 	fmt.Println(describe(linked.Pools))
 	return nil

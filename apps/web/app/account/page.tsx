@@ -28,7 +28,7 @@ export default async function Page() {
           <p className="border-b border-border p-4 text-sm text-muted-foreground sm:px-6">
             These are yours, whichever hive you are looking at. With auto-join
             on, a machine joins each new hive you are an owner of, as that
-            organization installs HiveWorker, without you adding it. It never
+            organization installs Hive Runner, without you adding it. It never
             joins a hive you are only a member of, and turning it on adds the
             machine to nothing you are in already. A machine you take out of a
             hive stays out.

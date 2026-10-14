@@ -14,7 +14,7 @@ import { APP_EVENTS, APP_PERMISSIONS } from "@/components/marketing/site"
 export const metadata = {
   title: "Security",
   description:
-    "How HiveWorker isolates jobs, what its GitHub App can access, who can add machines to a hive, and what the coordinator does not see.",
+    "How Hive Runner isolates jobs, what its GitHub App can access, who can add machines to a hive, and what the coordinator does not see.",
 }
 
 export default function SecurityPage() {
@@ -22,7 +22,7 @@ export default function SecurityPage() {
     <>
       <PageIntro title="Your code runs on your machines and goes nowhere else.">
         A job runs in a throwaway VM on a Mac that belongs to someone in your
-        organization, and talks to GitHub directly. HiveWorker decides which
+        organization, and talks to GitHub directly. Hive Runner decides which
         machine takes the job. It does not handle the job's code, logs or
         secrets.
       </PageIntro>
@@ -149,7 +149,7 @@ export default function SecurityPage() {
 
       <Band title="What the coordinator does not see">
         <p className="leading-7">
-          The coordinator is the HiveWorker service that matches queued jobs to
+          The coordinator is the Hive Runner service that matches queued jobs to
           free machines. It is not in a job's data path. The runner inside the
           VM talks to GitHub directly for the job, its logs and its artifacts.
         </p>
@@ -165,7 +165,7 @@ export default function SecurityPage() {
           </Fact>
         </Facts>
         <p className="text-sm leading-7 text-muted-foreground">
-          HiveWorker has not had an external security audit. To report a
+          Hive Runner has not had an external security audit. To report a
           problem, text{" "}
           <a href={`sms:${product.supportSms}`} className={textLink}>
             {product.supportSmsDisplay}

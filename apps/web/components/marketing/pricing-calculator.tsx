@@ -40,7 +40,7 @@ export function PricingCalculator() {
       usd: month.blacksmith,
       ours: false,
     },
-    { label: "HiveWorker", usd: month.net, ours: true },
+    { label: "Hive Runner", usd: month.net, ours: true },
   ]
   const widest = Math.max(...rows.map((row) => row.usd))
 

@@ -4,7 +4,7 @@ import { DOCS } from "@/components/marketing/docs"
 export const metadata = {
   title: "Docs",
   description:
-    "How to set up HiveWorker and how it works: quickstart, labels and sizes, the daemon, hives, pricing and FAQ.",
+    "How to set up Hive Runner and how it works: quickstart, labels and sizes, the daemon, hives, pricing and FAQ.",
 }
 
 export default function DocsIndexPage() {
@@ -14,7 +14,7 @@ export default function DocsIndexPage() {
         Docs
       </h1>
       <p className="mt-4 max-w-2xl text-lg leading-8 text-muted-foreground">
-        How to set HiveWorker up and how each part behaves.
+        How to set Hive Runner up and how each part behaves.
       </p>
       <ul className="mt-8 max-w-2xl border-b border-border">
         {DOCS.map((doc) => (

@@ -9,7 +9,7 @@ import (
 
 // ErrUnsupported is returned everywhere but macOS and Linux. The package
 // still builds elsewhere so the rest of the daemon does.
-var ErrUnsupported = errors.New("HiveWorker runs on macOS and Linux (this is " + runtime.GOOS + "/" + runtime.GOARCH + ")")
+var ErrUnsupported = errors.New("Hive Runner runs on macOS and Linux (this is " + runtime.GOOS + "/" + runtime.GOARCH + ")")
 
 func ReadFacts() (Facts, error) { return Facts{}, ErrUnsupported }
 

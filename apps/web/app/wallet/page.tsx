@@ -44,7 +44,7 @@ const kinds: Record<string, string> = {
   gift: "Gift with a top-up",
   charge: "Job",
   earning: "Earned back by your machines",
-  tax: "HiveWorker fee",
+  tax: "Hive Runner fee",
 }
 
 export default async function WalletPage({

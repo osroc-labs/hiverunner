@@ -77,7 +77,7 @@ export function DeviceForm({
   return (
     <div className="flex flex-col gap-5">
       <p className="text-muted-foreground">
-        A HiveWorker daemon is asking to add this machine
+        A Hive Runner daemon is asking to add this machine
         {only ? (
           <>
             {" "}

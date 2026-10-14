@@ -41,8 +41,8 @@ export function JoinPool({
     <div className="flex flex-col gap-3 border-t border-border pt-4">
       <p className="text-sm text-muted-foreground">
         {joined
-          ? `Other machines of yours run HiveWorker and do not serve ${login} yet. Nothing to install:`
-          : "Already running HiveWorker for another organization? Nothing to install:"}
+          ? `Other machines of yours run Hive Runner and do not serve ${login} yet. Nothing to install:`
+          : "Already running Hive Runner for another organization? Nothing to install:"}
       </p>
       <AddAllButton
         machines={elsewhere}

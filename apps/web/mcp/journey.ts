@@ -26,7 +26,7 @@ export function journey(origin: string) {
     {
       state: "Not in a hive",
       who: "person",
-      action: `Install HiveWorker on a GitHub organization you own, at ${origin}/install. Someone who is not an owner requests it and waits for an owner; a personal account cannot be a hive. The consent page continues when you come back.`,
+      action: `Install Hive Runner on a GitHub organization you own, at ${origin}/install. Someone who is not an owner requests it and waits for an owner; a personal account cannot be a hive. The consent page continues when you come back.`,
       signal: "the consent page says so; the connection fails until then",
     },
     {
@@ -74,7 +74,7 @@ export function journeySteps(origin: string) {
   return [
     `Connect: add ${origin}/mcp to your MCP client; it opens a browser.`,
     "Person: sign in with GitHub.",
-    `Person, if in no hive: install HiveWorker on a GitHub organization they own (${origin}/install). The consent page says how, and continues once they are back.`,
+    `Person, if in no hive: install Hive Runner on a GitHub organization they own (${origin}/install). The consent page says how, and continues once they are back.`,
     "Person: pick the hive and allow the permissions.",
     "Agent: call get_hive and act on nextSteps.",
     `Person: add a machine with \`${INSTALL_COMMAND}\`, and keep it running.`,
@@ -91,19 +91,19 @@ export function journeySteps(origin: string) {
 export function setupPrompt(origin: string) {
   const clients = mcpClients(`${origin}/mcp`)
   const label = RUNNER_SIZES[0].label
-  return `Set up HiveWorker for this repository and guide me through it.
+  return `Set up Hive Runner for this repository and guide me through it.
 
-HiveWorker runs GitHub Actions jobs on Macs and Linux machines my team already owns. The workflows stay on GitHub Actions; only \`runs-on\` changes, and the minutes cost far less than on a GitHub-hosted runner.
+Hive Runner runs GitHub Actions jobs on Macs and Linux machines my team already owns. The workflows stay on GitHub Actions; only \`runs-on\` changes, and the minutes cost far less than on a GitHub-hosted runner.
 
 Start by reading ${origin}/llms.txt. It is the current reference for everything below.
 
 Work through these steps in order. Do what you can yourself. When a step needs me, tell me exactly what to do, then wait and check that it worked before moving on.
 
-1. Connect to HiveWorker's MCP server at ${origin}/mcp.
+1. Connect to Hive Runner's MCP server at ${origin}/mcp.
    - Claude Code: \`${clients.claudeCode}\`, then I sign in with \`/mcp\`.
    - Codex: \`${clients.codex}\`, then \`${clients.codexLogin}\`.
    - Cursor or another client: add the URL as an MCP server.
-   A browser opens. I sign in with GitHub, pick a hive and approve the permissions. If I am not in a hive yet, the page tells me to install HiveWorker on a GitHub organization I own (${origin}/install).
+   A browser opens. I sign in with GitHub, pick a hive and approve the permissions. If I am not in a hive yet, the page tells me to install Hive Runner on a GitHub organization I own (${origin}/install).
 2. Call \`get_hive\` and follow its \`nextSteps\` until nothing blocks a job.
 3. If the hive has no machine connected, have me run this on an Apple Silicon Mac or a Linux machine with KVM and sign in when the browser opens:
    \`${INSTALL_COMMAND}\`
@@ -112,7 +112,7 @@ Work through these steps in order. Do what you can yourself. When a step needs m
 5. After the push, watch the run with \`list_jobs\` and \`get_job\`. Then tell me what it cost and what the same minutes cost on a GitHub-hosted runner (\`get_usage\`).
 
 Rules:
-- Only I can sign in, install the GitHub App, run the install command and add funds. Never ask me for a password, token or API key; HiveWorker has none to give you.
+- Only I can sign in, install the GitHub App, run the install command and add funds. Never ask me for a password, token or API key; Hive Runner has none to give you.
 - If you cannot use MCP here, follow ${origin}/docs/quickstart instead and tell me each step.
 - Keep me informed in a sentence or two per step, and stop if something looks wrong.`
 }
