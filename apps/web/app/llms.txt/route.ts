@@ -93,13 +93,13 @@ A job needs a machine online in the hive and a positive balance. To fall back to
 ## Docs
 
 - [Quickstart](${origin}/docs/quickstart): install the App, add a machine, route a workflow
-- [Routing and fallback](${origin}/docs/routing): the routed workflow, hive-route's inputs, and what it checks
+- [Routing and fallback](${origin}/docs/routing): the routed workflow, the route action's inputs, and what it checks
 - [Agents and MCP](${origin}/docs/agents): connecting a client, the tools and their permissions
 - [Labels and sizes](${origin}/docs/labels-and-sizes): every \`runs-on\` label and what it runs on
 - [Pricing, explained](${origin}/docs/pricing): the compute unit, the job price formula and receipts
 - [Pricing](${origin}/pricing): a calculator for your month
 - [Security](${origin}/security): isolation, what the GitHub App can read, and what it cannot
-- [hive-route](https://github.com/thecomputerplumbers/hive-route): the action that checks for a free machine and falls back
+- [route](https://github.com/thecomputerplumbers/hiverunner/tree/main/route): the action that checks for a free machine and falls back
 `
   return new Response(body, {
     headers: {

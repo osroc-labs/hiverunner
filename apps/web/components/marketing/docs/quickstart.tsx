@@ -61,7 +61,7 @@ export function Quickstart() {
         <Code>fallback</Code> to your current runner. Add{" "}
         <Code>needs: route</Code> and the <Code>runs-on</Code> line to each job
         you want routed. The step is{" "}
-        <a href="https://github.com/thecomputerplumbers/hive-route">
+        <a href="https://github.com/thecomputerplumbers/hiverunner/tree/main/route">
           one short file you can read
         </a>
         : it asks whether a machine is free, waits up to fifteen seconds for

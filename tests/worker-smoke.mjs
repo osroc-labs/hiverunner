@@ -905,7 +905,7 @@ assert.ok(pricing.month.cheaperThanBlacksmithBy > 0)
 
 const workflow = await tool(tokens, "get_workflow", { label: "hive-4cpu" })
 assert.ok(workflow.yaml.includes("label: hive-4cpu"))
-assert.ok(workflow.yaml.includes("thecomputerplumbers/hive-route@v1"))
+assert.ok(workflow.yaml.includes("thecomputerplumbers/hiverunner/route@v1"))
 assert.ok(
   (
     await tool(tokens, "get_workflow", { label: "hive", routed: false })

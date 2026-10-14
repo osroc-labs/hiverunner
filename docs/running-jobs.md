@@ -264,8 +264,8 @@ zero. This experiment used isolated local accounting data, with no deployment.
 ## Capacity routing with GitHub-hosted fallback
 
 Workflows do this with one step, the public action
-[`thecomputerplumbers/hive-route`](https://github.com/thecomputerplumbers/hive-route)
-(`uses: thecomputerplumbers/hive-route@v1`, inputs `label`, `fallback` and
+[`route`](../route)
+(`uses: thecomputerplumbers/hiverunner/route@v1`, inputs `label`, `fallback` and
 `wait`). Its source lives in that repository, not this one. What it does is
 what this section describes.
 

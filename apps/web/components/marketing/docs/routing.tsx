@@ -4,7 +4,8 @@ import { Code, CodeBlock } from "../code"
 import { RouteDiagram } from "../route-diagram"
 import { ROUTED_WORKFLOW, plainWorkflow } from "@/lib/workflow"
 
-const HIVE_ROUTE = "https://github.com/thecomputerplumbers/hive-route"
+const HIVE_ROUTE =
+  "https://github.com/thecomputerplumbers/hiverunner/tree/main/route"
 
 export function Routing() {
   return (
@@ -22,7 +23,7 @@ export function Routing() {
       <p>
         The <Code>route</Code> job runs{" "}
         <a href={HIVE_ROUTE}>
-          <Code>thecomputerplumbers/hive-route</Code>
+          <Code>thecomputerplumbers/hiverunner/route</Code>
         </a>
         , which asks Hive Runner whether a machine in your hive is free and
         writes the answer to an output. Every job you want routed takes{" "}
