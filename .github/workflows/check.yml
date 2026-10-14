@@ -10,15 +10,18 @@ concurrency:
   cancel-in-progress: true
 jobs:
   # Where the jobs below run: this organization's own hive when one of its
-  # machines is free, GitHub's runner when none is.
+  # machines is free, GitHub's runner when none is. A pull request from a
+  # fork is somebody else's code and never goes to the hive: it is not asked
+  # about, and runs on GitHub's runner with no secrets.
   route:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     outputs:
-      runner: ${{ steps.hive.outputs.runner }}
+      runner: ${{ steps.hive.outputs.runner || 'ubuntu-latest' }}
     steps:
       - id: hive
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: thecomputerplumbers/hive-route@v1
         with:
           label: hive
@@ -32,7 +35,7 @@ jobs:
       - name: Give the hive's image what Node needs on arm64
         if: runner.environment == 'self-hosted'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libatomic1
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
       - run: pnpm install --frozen-lockfile
       - run: mise run check
       - name: Test the built Worker with isolated local data and simulated mail
@@ -53,7 +56,7 @@ jobs:
       - name: Give the hive's image what Node needs on arm64
         if: runner.environment == 'self-hosted'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libatomic1
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./...
@@ -67,8 +70,28 @@ jobs:
         working-directory: daemon
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
       - name: Reference speed on a GitHub standard hosted runner
         # The speed score is relative to this hardware. Copy the median into
         # ReferenceUnitsPerSecond in daemon/internal/bench when it moves.
         run: for i in 1 2 3; do go run ./cmd/hived benchmark --raw; done
+  # Every commit the push or pull request adds, and all of history on main,
+  # read for anything that looks like a credential. Always GitHub's runner.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan the history for secrets
+        env:
+          VERSION: 8.30.1
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v$VERSION/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-opts="--all" .

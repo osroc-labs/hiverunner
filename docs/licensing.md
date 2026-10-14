@@ -54,8 +54,14 @@ Check each when it is added.
 ## Before going public
 
 - Scan the full git history for secrets and for the Cloudflare account ID.
+  Done on 2026-10-13 with gitleaks over every branch: no secrets. The `secrets`
+  job in the Check workflow repeats it on every push and pull request. The
+  Cloudflare account ID is in both `wrangler.jsonc` files and in history. It
+  identifies the account and grants nothing without an API token, so it stays.
 - Confirm no code was pasted in from a repository under a different license.
 - Decide whether outside contributions need a sign-off (DCO) or a contributor
-  agreement. Only an agreement keeps the option to relicense.
+  agreement. Only an agreement keeps the option to relicense. `CONTRIBUTING.md`
+  asks for a DCO sign-off for now; change it before merging the first outside
+  pull request if the option to relicense is wanted.
 - Check the Go modules the daemon links: AGPL-3.0 cannot absorb GPL-2.0-only code.
 - Trademark: the name and symbol are still open in the goals doc.
