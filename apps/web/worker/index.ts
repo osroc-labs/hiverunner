@@ -19,9 +19,31 @@ const ORGANIZATION_ENDPOINTS = new Set([
   "get-active-member",
 ])
 
+/**
+ * A page asked for on any host but the app's own (the old domain, www) is
+ * sent there. What machines and services call is answered where it is asked:
+ * a redirect would drop a daemon's bearer token, and a webhook does not
+ * follow one.
+ */
+function elsewhere(request: Request, appUrl: string | undefined) {
+  if (!appUrl || !["GET", "HEAD"].includes(request.method)) return null
+  const url = new URL(request.url)
+  const app = new URL(appUrl)
+  if (url.host === app.host) return null
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/.well-known/") ||
+    url.pathname === "/mcp"
+  )
+    return null
+  return Response.redirect(`${app.origin}${url.pathname}${url.search}`, 301)
+}
+
 export default {
   async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
     return observeRequest(request, async () => {
+      const moved = elsewhere(request, env.APP_URL)
+      if (moved) return moved
       const path = new URL(request.url).pathname
       if (
         (!product.features.mcp &&
