@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { verifyActionsIdentity } from "../apps/coordinator/src/oidc.ts"
 import { actionsToken, oidcPublicKey } from "./oidc-fixture.mjs"
 
-const audience = "https://connect.hiveworkr.thecomputerplumbers.com"
+const audience = "https://connect.hiverunner.dev"
 const verify = (token) =>
   verifyActionsIdentity(token, audience, async () => oidcPublicKey)
 test("verified immutable GitHub owner binds the pool, with customizable subjects", async () => {

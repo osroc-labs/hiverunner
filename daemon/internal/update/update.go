@@ -30,7 +30,7 @@ import (
 )
 
 // DefaultBase is where releases are published; the installer reads the same.
-const DefaultBase = "https://get.hiveworkr.thecomputerplumbers.com"
+const DefaultBase = "https://get.hiverunner.dev"
 
 // Base is the releases origin, or HIVE_RELEASES for a test server.
 func Base() string {

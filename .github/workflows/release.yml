@@ -30,7 +30,7 @@ concurrency:
   group: release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
-  RELEASES: https://get.hiveworkr.thecomputerplumbers.com
+  RELEASES: https://get.hiverunner.dev
 jobs:
   # Where plan runs: the hive when one of its machines is free, GitHub's
   # runner when none is. Each job below that can run on the hive is routed

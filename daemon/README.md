@@ -48,7 +48,7 @@ Developers install with one command, which is `release/install.sh` served
 from the releases bucket:
 
 ```sh
-curl -fsSL https://get.hiveworkr.thecomputerplumbers.com/install.sh | sh
+curl -fsSL https://get.hiverunner.dev/install.sh | sh
 ```
 
 It checks the machine, downloads the daemon and the guest image and verifies
@@ -74,7 +74,7 @@ Linux of its own under WSL 2, which on Windows 11 passes hardware
 virtualization through. `release/install.ps1` does the setup:
 
 ```powershell
-irm https://get.hiveworkr.thecomputerplumbers.com/install.ps1 | iex
+irm https://get.hiverunner.dev/install.ps1 | iex
 ```
 
 It imports Ubuntu 24.04 as a distribution named `Hive Runner`, separate from
@@ -105,7 +105,7 @@ line for a downloader and refuses to start it. There, download the script and
 run the file:
 
 ```powershell
-curl.exe -fsSLo install.ps1 https://get.hiveworkr.thecomputerplumbers.com/install.ps1
+curl.exe -fsSLo install.ps1 https://get.hiverunner.dev/install.ps1
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 

@@ -69,7 +69,7 @@ for setup and current limits. The web app and tunnel coordinator are deployed;
 the new execution path still requires release and coordinator secrets.
 
 The daemon is released for Apple Silicon Macs: `curl -fsSL
-https://get.hiveworkr.thecomputerplumbers.com/install.sh | sh`. Building and
+https://get.hiverunner.dev/install.sh | sh`. Building and
 publishing a release is in [deployment](docs/deployment.md).
 
 ### Agents

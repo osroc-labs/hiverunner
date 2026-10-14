@@ -2,11 +2,11 @@
 
 **Live:** production only, in The Computer Plumbers Cloudflare account.
 
-| What        | Where                                           |
-| ----------- | ----------------------------------------------- |
-| Web         | https://hiverunner.dev                          |
-| Coordinator | wss://connect.hiveworkr.thecomputerplumbers.com |
-| Database    | D1 `hiveworker`, shared by both Workers         |
+| What        | Where                                   |
+| ----------- | --------------------------------------- |
+| Web         | https://hiverunner.dev                  |
+| Coordinator | wss://connect.hiverunner.dev            |
+| Database    | D1 `hiveworker`, shared by both Workers |
 
 There is no staging environment. The sections below still describe how to add
 one; until then `pnpm release production` is the only release, and it deploys
@@ -88,7 +88,7 @@ and [GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-ci
 ## Releasing the daemon
 
 The daemon and the Linux image jobs run in are published to the R2 bucket
-`hiveworker-releases`, served at `https://get.hiveworkr.thecomputerplumbers.com`.
+`hiveworker-releases`, served at `https://get.hiverunner.dev`.
 `curl -fsSL …/install.sh | sh` is the whole of installing on a developer's
 Mac or Linux box.
 
