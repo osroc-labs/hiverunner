@@ -40,6 +40,7 @@ export const metadata = {
   },
   description:
     "Change runs-on to hive and the job runs in a throwaway VM on a Mac your team already owns. Same workflows, same logs, same checks on the pull request.",
+  alternates: { canonical: "/" },
 }
 
 const base = RUNNER_SIZES[0]

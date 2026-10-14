@@ -4,7 +4,7 @@
 
 | What        | Where                                           |
 | ----------- | ----------------------------------------------- |
-| Web         | https://hiveworkr.thecomputerplumbers.com       |
+| Web         | https://hiverunner.dev                          |
 | Coordinator | wss://connect.hiveworkr.thecomputerplumbers.com |
 | Database    | D1 `hiveworker`, shared by both Workers         |
 

@@ -33,7 +33,7 @@ export const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | sh`
 export const WINDOWS_INSTALL_COMMAND = `irm ${RELEASES_ORIGIN}/install.ps1 | iex`
 
 /** Where the product itself is served: the site, the console and `/mcp`. */
-export const PRODUCT_ORIGIN = "https://hiveworkr.thecomputerplumbers.com"
+export const PRODUCT_ORIGIN = "https://hiverunner.dev"
 
 /** The one URL an agent is given. Sign-in is OAuth; there is no key. */
 export const MCP_URL = `${PRODUCT_ORIGIN}/mcp`

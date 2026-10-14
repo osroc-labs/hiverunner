@@ -1,16 +1,14 @@
 {
   "name": "Hive Runner",
-  "url": "https://hiveworkr.thecomputerplumbers.com",
+  "url": "https://hiverunner.dev",
   "description": "Run GitHub Actions on your own developers' machines.",
   "public": true,
   "hook_attributes": {
-    "url": "https://hiveworkr.thecomputerplumbers.com/api/github/webhook",
+    "url": "https://hiverunner.dev/api/github/webhook",
     "active": true
   },
-  "callback_urls": [
-    "https://hiveworkr.thecomputerplumbers.com/api/auth/callback/github"
-  ],
-  "setup_url": "https://hiveworkr.thecomputerplumbers.com/github/setup",
+  "callback_urls": ["https://hiverunner.dev/api/auth/callback/github"],
+  "setup_url": "https://hiverunner.dev/github/setup",
   "setup_on_update": false,
   "request_oauth_on_install": false,
   "default_permissions": {
