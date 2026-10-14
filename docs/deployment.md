@@ -114,8 +114,8 @@ from, so a change that ships nothing releases nothing. It then:
 2. Builds the guest images and virtiofsd on GitHub's Linux runners, only when
    the published ones are not the ones the commit describes. The script names
    the published files again otherwise, so most releases need no Docker.
-3. Signs, notarizes and publishes on a Mac: one in the hive that takes macOS
-   jobs when one is free, GitHub's `macos-latest` when none is.
+3. Signs, notarizes and publishes on GitHub's `macos-latest`. Never on a hive
+   Mac: a macOS job runs on the Mac itself, and this repository is public.
 
 Machines with `auto-update on` then install it when they are idle, so every
 such merge reaches every machine. It is off until the repository variable

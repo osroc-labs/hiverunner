@@ -161,32 +161,12 @@ jobs:
           path: ${{ runner.temp }}/built-${{ matrix.arch }}.tar
           retention-days: 1
 
-  # Signing needs macOS: a Mac in the hive that takes macOS jobs when one is
-  # free, GitHub's when none is.
-  route:
-    needs: plan
-    if: needs.plan.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    outputs:
-      runner: ${{ steps.hive.outputs.runner }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: route
-          persist-credentials: false
-      - id: hive
-        uses: ./route
-        with:
-          label: hive-macos
-          fallback: macos-latest
-
+  # Signing needs macOS. It runs on GitHub's Mac, never a hive Mac: a macOS
+  # job runs on the Mac itself, not in a VM, and this repository is public.
   publish:
-    needs: [plan, images, route]
-    if: ${{ !cancelled() && needs.route.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped') }}
-    runs-on: ${{ needs.route.outputs.runner }}
+    needs: [plan, images]
+    if: ${{ !cancelled() && needs.plan.outputs.release == 'true' && (needs.images.result == 'success' || needs.images.result == 'skipped') }}
+    runs-on: macos-latest
     timeout-minutes: 45
     environment: production
     env:
@@ -251,37 +231,13 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/certificate.p12"
 
-  # Where the rehearsal runs, asked once the images are built. A pull request
-  # from a fork is never sent to the hive, where a macOS job runs on a
-  # person's Mac itself: it rehearses on GitHub's runner.
-  route-rehearse:
+  # On a pull request: everything a release does short of signing and sending.
+  # On GitHub's Mac, for the same reason as publish.
+  rehearse:
     needs: images
     # Said in full because plan, which images waits for, is skipped here.
     if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.images.result == 'success' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    outputs:
-      runner: ${{ steps.hive.outputs.runner || 'macos-latest' }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: route
-          persist-credentials: false
-        if: github.event.pull_request.head.repo.full_name == github.repository
-      - id: hive
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: ./route
-        with:
-          label: hive-macos
-          fallback: macos-latest
-
-  # On a pull request: everything a release does short of signing and sending.
-  rehearse:
-    needs: [images, route-rehearse]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.images.result == 'success' && needs.route-rehearse.result == 'success' }}
-    runs-on: ${{ needs.route-rehearse.outputs.runner }}
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
