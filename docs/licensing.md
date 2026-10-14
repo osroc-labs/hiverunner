@@ -11,8 +11,10 @@ host Hive Runner, but a modified version offered over a network must publish
 its source. The token tax is enforced by the contract, not by keeping code
 closed.
 
-This covers everything in this repository, including the daemon when it lands
-under `daemon/`. The token contracts live in a separate repository and their
+This covers everything in this repository, including the daemon under
+`daemon/`, with one exception: the GitHub Action in `route/` is MIT, as it was
+in its own repository. It runs inside other people's workflows, and a
+permissive license keeps it from being a question for them. The token contracts live in a separate repository and their
 license is a separate decision.
 
 The starter this was copied from is our own code with no license of its own,

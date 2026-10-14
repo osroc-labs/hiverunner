@@ -122,13 +122,12 @@ export default function HomePage() {
         <Container className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
           <SectionHeading title="When no Mac is free, the job runs where it does today">
             <p>
-              Laptops close. Put one step from the public{" "}
-              <Code>hive-route</Code> action in front of a job and it asks
-              whether a machine in your hive is free, waits up to fifteen
-              seconds, and sets <Code>runs-on</Code> to <Code>hive</Code> or to
-              the runner you use now. It never fails the workflow. A small hive
-              cuts the bill for the jobs it can take and changes nothing for the
-              rest.
+              Laptops close. Put one step from the public <Code>route</Code>{" "}
+              action in front of a job and it asks whether a machine in your
+              hive is free, waits up to fifteen seconds, and sets{" "}
+              <Code>runs-on</Code> to <Code>hive</Code> or to the runner you use
+              now. It never fails the workflow. A small hive cuts the bill for
+              the jobs it can take and changes nothing for the rest.
             </p>
             <p>
               A job sent straight to a <Code>hive</Code> label waits in GitHub's

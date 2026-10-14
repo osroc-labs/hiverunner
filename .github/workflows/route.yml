@@ -1,0 +1,24 @@
+name: Route action
+# `uses: thecomputerplumbers/hiverunner/route@v1` reads the v1 tag. It follows
+# route/ on main: when that folder changes there, v1 moves to the commit. A
+# change that would break a workflow written for v1 is released as v2.
+on:
+  push:
+    branches: [main]
+    paths: ["route/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: route-tag
+  cancel-in-progress: false
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Move v1 to this commit
+        run: |
+          git tag --force v1 "$GITHUB_SHA"
+          git push --force origin v1

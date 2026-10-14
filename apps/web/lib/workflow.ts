@@ -16,7 +16,7 @@ export function routedWorkflow({
       runner: \${{ steps.hive.outputs.runner }}
     steps:
       - id: hive
-        uses: thecomputerplumbers/hive-route@v1
+        uses: thecomputerplumbers/hiverunner/route@v1
         with:
           label: ${label}
           fallback: ${fallback}

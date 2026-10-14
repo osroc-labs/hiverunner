@@ -1,0 +1,28 @@
+name: Hive Runner route
+description: >-
+  Picks where a job runs: your hive when one of its machines is free, a
+  fallback runner when none is.
+author: The Computer Plumbers
+inputs:
+  label:
+    description: The hive label to run on when a machine is free.
+    default: hive
+  fallback:
+    description: The runner to use when no machine in your hive is free.
+    default: ubuntu-latest
+  wait:
+    description: >-
+      Seconds to keep asking before falling back. A machine finishing another
+      job often frees up within a few.
+    default: "15"
+  coordinator:
+    description: The Hive Runner coordinator to ask. Leave this alone.
+    default: https://connect.hiveworkr.thecomputerplumbers.com
+outputs:
+  runner:
+    description: The label to give runs-on.
+  routed:
+    description: "true when the job goes to your hive, false when it falls back."
+runs:
+  using: node24
+  main: index.js

@@ -29,12 +29,17 @@ jobs:
       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
     outputs:
       runner: ${{ steps.hive.outputs.runner }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: route
+          persist-credentials: false
       - id: hive
-        uses: thecomputerplumbers/hive-route@v1
+        uses: ./route
         with:
           label: hive
           fallback: ubuntu-latest
