@@ -18,6 +18,7 @@ It runs on Apple Silicon Macs and on Linux with KVM, arm64 or x86-64.
 ./hived config      # the owner's settings, below
 ./hived pause       # stop taking jobs; ./hived resume to undo
 ./hived update      # move to the current release; the daemon does this itself when idle
+./hived logout      # forget the token; --revoke retires it on the server too
 ./hived benchmark
 ```
 
@@ -61,6 +62,11 @@ replaced and restarted. `hived update` does the same. `hived update --now`,
 or `HIVE_NOW=1` with the installer, does not wait and cancels what is
 running. The daemon's own update, when `auto-update` is on, has always
 waited for the machine to be idle.
+`hived logout --revoke` retires the machine on the server, with its own token,
+before forgetting it, so a copy of the token left in a backup or on a disk
+handed on works nowhere; plain `hived logout` only forgets it here. An owner
+does the same from the dashboard, or an agent with the MCP tool
+`retire_machine`.
 `hived uninstall` removes
 the service, the image, the Actions cache, the settings, the sign-in and the
 binary, after asking.

@@ -110,6 +110,14 @@ export const HIVE_TOOLS = [
       "Stop a machine serving this hive. It keeps serving its other hives, and its owner can add it back with `hived link`. Ids come from list_machines.",
   },
   {
+    name: "retire_machine",
+    title: "Retire a machine",
+    scope: "hive:write",
+    role: "Machine owner",
+    description:
+      "Retire one of your own machines outright: it stops serving every hive and its token stops working, as `hived logout --revoke` does on the machine. Adding it back means enrolling again. To take a machine out of this hive only, use remove_machine.",
+  },
+  {
     name: "create_enroll_key",
     title: "Mint an enroll key",
     scope: "hive:write",

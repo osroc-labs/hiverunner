@@ -1016,6 +1016,28 @@ await refusedTool(
       )
     ).enrollKeys.some((key) => key.id === browserKey.enrollKey.id)
   )
+  // hived logout --revoke: a machine retires itself with its own token, and
+  // that token works nowhere after.
+  const wiped = await json(
+    await keyed(browserKey.key, {
+      ...mac,
+      name: "Wiped box",
+      model: "PowerEdge R760",
+    }),
+    201
+  )
+  const retire = (token) =>
+    fetch(`${origin}/api/machines/retire`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  assert.equal((await retire("hwm_nope")).status, 401)
+  assert.equal(
+    (await json(await retire(wiped.token))).machineId,
+    wiped.machineId
+  )
+  assert.equal((await me(wiped.token)).status, 401)
+  assert.equal((await retire(wiped.token)).status, 401)
   await json(
     await owner("/api/enroll-keys/revoke", {
       organizationId,
@@ -1030,11 +1052,26 @@ await refusedTool(
     { id: browserKey.enrollKey.id },
     "NOT_FOUND"
   )
-  // The machine it enrolled is the owner's, to retire like any of theirs.
-  await json(
-    await owner("/api/machines/revoke", { machineId: joined.machineId })
+  // Someone else's machine is not a hive owner's to retire.
+  await refusedTool(
+    tokens,
+    "retire_machine",
+    { machineId: memberMachine.machineId },
+    "FORBIDDEN"
   )
+  // The machine it enrolled is the owner's, to retire like any of theirs:
+  // from MCP, everywhere at once.
+  const retired = await tool(tokens, "retire_machine", {
+    machineId: joined.machineId,
+  })
+  assert.equal(retired.retired, true)
   assert.equal((await me(joined.token)).status, 401)
+  await refusedTool(
+    tokens,
+    "retire_machine",
+    { machineId: joined.machineId },
+    "NOT_FOUND"
+  )
 }
 console.log("OAuth discovery, PKCE, hive-bound consent and owner tools passed.")
 
@@ -1062,6 +1099,13 @@ await refusedTool(memberTokens, "set_budget", { monthlyUsd: 1 }, "FORBIDDEN")
 await refusedTool(memberTokens, "create_enroll_key", {}, "FORBIDDEN")
 await refusedTool(memberTokens, "list_enroll_keys", {}, "FORBIDDEN")
 assert.equal((await member("/api/enroll-keys", { organizationId })).status, 403)
+// Nor retires one.
+await refusedTool(
+  memberTokens,
+  "retire_machine",
+  { machineId: memberMachine.machineId },
+  "FORBIDDEN"
+)
 // A read-only connection removes nothing, not even its own person's machine.
 for (const machineId of [enrolled.machineId, memberMachine.machineId])
   await refusedTool(memberTokens, "remove_machine", { machineId }, "FORBIDDEN")

@@ -25,7 +25,12 @@ import {
   type LiveMachine,
   type LiveSnapshot,
 } from "@workspace/db/live"
-import { getMachine, removeMachineFromPool } from "@workspace/db/machines"
+import {
+  getMachine,
+  listMachinePools,
+  removeMachineFromPool,
+  revokeMachine,
+} from "@workspace/db/machines"
 import {
   getPoolSettings,
   updatePoolSettings,
@@ -904,4 +909,33 @@ export async function removeMachine(
   )
     throw new AppError("NOT_FOUND", "No such machine")
   return { removed: true, machineId: machine.id, name: machine.name }
+}
+
+/**
+ * Retires one of the caller's own machines outright: it stops serving every
+ * hive and its token stops working, as `hived logout --revoke` does from the
+ * machine. Only its owner may, and only for a machine serving this hive,
+ * the one this connection was approved for.
+ */
+export async function retireMachine(
+  context: OperationContext,
+  input: { machineId: string }
+) {
+  await authorize(context, "hive:write")
+  const machine = await getMachine(context.db, input.machineId)
+  const here =
+    machine &&
+    (await listMachinePools(context.db, machine.id)).some(
+      (pool) => pool.id === context.actor.organizationId
+    )
+  // The same answer whether it does not exist or is not in this hive.
+  if (!machine || machine.status !== "active" || !here)
+    throw new AppError("NOT_FOUND", "No such machine in this hive")
+  if (machine.userId !== context.actor.userId)
+    throw new AppError(
+      "FORBIDDEN",
+      "Only the machine's owner can retire it. A hive owner can take it out of this hive with remove_machine."
+    )
+  await revokeMachine(context.db, machine.id)
+  return { retired: true, machineId: machine.id, name: machine.name }
 }
