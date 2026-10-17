@@ -53,7 +53,8 @@ const usage = `hived, the Hive Runner daemon
                     the jobs it is running have finished; --now to not wait
   hived pause       Stop taking jobs until you say otherwise
   hived resume      Take jobs again
-  hived logout      Forget this machine's token
+  hived logout      Forget this machine's token; --revoke to end it on the
+                    server too, so it works nowhere
   hived uninstall   Remove Hive Runner from this machine
   hived selftest    Boot a throwaway VM and report what it finds
   hived benchmark   Measure this machine's speed score
@@ -114,7 +115,7 @@ func main() {
 	case "resume":
 		err = pause(false)
 	case "logout":
-		err = config.Remove()
+		err = logout(ctx, os.Args[2:])
 	case "uninstall":
 		err = uninstall(os.Args[2:])
 	case "selftest":

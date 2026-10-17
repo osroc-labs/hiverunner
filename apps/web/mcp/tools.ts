@@ -30,6 +30,7 @@ import {
   listJobs,
   listMachines,
   removeMachine,
+  retireMachine,
   setAutoTopUp,
   setBudget,
   updateSettings,
@@ -299,6 +300,15 @@ export function registerHiveTools(
       annotations: write,
     },
     async (input) => execute(() => setAutoTopUp(context, input))
+  )
+  server.registerTool(
+    "retire_machine",
+    {
+      ...described("retire_machine"),
+      inputSchema: z.object({ machineId: z.string().min(1).max(100) }),
+      annotations: { ...write, destructiveHint: true },
+    },
+    async (input) => execute(() => retireMachine(context, input))
   )
   server.registerTool(
     "create_enroll_key",

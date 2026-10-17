@@ -146,6 +146,44 @@ func unlink(ctx context.Context, args []string) error {
 	return fmt.Errorf("this machine does not serve a hive called %q. %s", args[0], describe(assignment.Pools))
 }
 
+// logout forgets this machine's token. With --revoke the server is told to
+// retire it first, so a copy of the token left anywhere, in a backup or on
+// a disk handed on, is good for nothing. A token the server could not be
+// told about is kept, so that the command can be run again.
+func logout(ctx context.Context, args []string) error {
+	revoke := false
+	for _, arg := range args {
+		switch arg {
+		case "--revoke":
+			revoke = true
+		default:
+			return errors.New("usage: hived logout [--revoke]")
+		}
+	}
+	if !revoke {
+		return config.Remove()
+	}
+	machine, err := config.Load()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	switch err := api.New(machine.Server).Retire(ctx, machine.Token); {
+	case errors.Is(err, api.ErrUnknownMachine):
+		fmt.Println("The server had retired this machine already.")
+	case err != nil:
+		return fmt.Errorf("the server could not be told to retire this machine, so its token is kept here: %w\nRun this again, or retire it from %s/machines", err, machine.Server)
+	default:
+		fmt.Println("Retired. This machine's token works nowhere now, and it serves no hive.")
+	}
+	if err := config.Remove(); err != nil {
+		return err
+	}
+	fmt.Println("To add it back, sign in again: hived login. To remove Hive Runner from it: hived uninstall")
+	return nil
+}
+
 // hives prints the hives this machine serves, one to a line, for scripts;
 // with --json, each one's name and id.
 func hives(ctx context.Context, args []string) error {

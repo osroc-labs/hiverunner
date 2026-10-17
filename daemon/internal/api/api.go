@@ -333,6 +333,23 @@ func (c *Client) Unlink(ctx context.Context, machineToken, organizationID string
 	return left.Pools, nil
 }
 
+// Retire ends this machine's token on the server: it serves no hive and the
+// token is good for nothing after. One the server no longer knows is
+// retired already, which is ErrUnknownMachine.
+func (c *Client) Retire(ctx context.Context, machineToken string) error {
+	status, raw, err := c.post(ctx, "/api/machines/retire", machineToken, map[string]string{}, nil)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusUnauthorized {
+		return ErrUnknownMachine
+	}
+	if status >= 300 {
+		return serverError(status, raw)
+	}
+	return nil
+}
+
 func serverError(status int, raw []byte) error {
 	var body struct {
 		Error   string            `json:"error"`
