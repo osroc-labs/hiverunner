@@ -69,7 +69,7 @@ ${HIVE_TOOLS.map((tool) => `- \`${tool.name}\` (${tool.scope}): ${tool.descripti
 
 ## From nothing to a first job
 
-Each state, who acts, what they do, and how an agent can tell it is there. Only a person can install the GitHub App, run the install command on a machine, add funds and approve the connection; an agent can do the rest.
+Each state, who acts, what they do, and how an agent can tell it is there. Only a person can install the GitHub App, add funds and approve the connection. A machine joins when the install command runs on it: a person runs it and approves the sign-in it prints, or an agent with a shell there runs it with a key from \`create_enroll_key\`. An agent can do the rest.
 
 ${journey(origin)
   .map(

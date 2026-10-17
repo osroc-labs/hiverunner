@@ -259,6 +259,8 @@ func (c *Client) AwaitToken(ctx context.Context, code DeviceCode) (string, error
 
 // Enroll trades the sign-in token for a machine token. The server ends the
 // sign-in session as it answers, so the token is good for exactly this call.
+// An enroll key from the hive's owner can be the token instead; it stays good
+// for as long and as many machines as its owner said.
 func (c *Client) Enroll(ctx context.Context, token string, machine Machine) (Enrollment, error) {
 	var enrollment Enrollment
 	status, raw, err := c.post(ctx, "/api/machines", token, machine, &enrollment)

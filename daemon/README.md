@@ -84,6 +84,20 @@ everything, sets the service up without starting it, and ends by printing
 the one command left; that `hived login` starts the service itself.
 `hived hives --json` lists what a machine serves, with each hive's id.
 
+An enroll key takes the browser out altogether, for a fleet or an agent with
+a shell on the machines. A hive owner or admin mints one with the MCP tool
+`create_enroll_key` (or `POST /api/enroll-keys`): it is for one hive, expires
+(24 hours unless they say, 90 days at most), can be limited to a number of
+machines, and is shown once; only its hash is kept, and `revoke_enroll_key`
+ends it. Every machine it enrolls is the minter's, as if they had signed in
+on it, and is authorized as theirs would be, so one who has left the hive
+enrolls nothing. The usual limit of machines per person in a hive applies.
+
+```sh
+curl -fsSL https://get.hiverunner.dev/install.sh | HIVE_ENROLL_KEY=hwe_... sh -s -- --hive acme
+HIVE_ENROLL_KEY=hwe_... hived login --hive acme    # or --enroll-key, which ps can see
+```
+
 The installer never asks for a password, so what needs root it prints for
 you to run, and `hived doctor` and `hived status` say it too:
 

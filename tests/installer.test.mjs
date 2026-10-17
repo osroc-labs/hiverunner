@@ -79,6 +79,7 @@ echo "hived $*" >> "${join(root, "asked.log")}"
 [ "$1" = status ] && [ -e "${join(root, "signed-out")}" ] && exit 1
 if [ "$1" = login ]; then
   [ -t 0 ] && echo "login read a terminal" >> "${join(root, "asked.log")}"
+  [ -n "\${HIVE_ENROLL_KEY:-}" ] && echo "login had key \${HIVE_ENROLL_KEY}" >> "${join(root, "asked.log")}"
   [ -e "${join(root, "refuse")}" ] && exit 1
   rm -f "${join(root, "signed-out")}"
 fi
@@ -356,6 +357,24 @@ test(
     assert.ok(asked().includes("hived login --hive globex\n"), asked())
     assert.equal(service.restarts(), 1, added)
     assert.ok(existsSync(service.running))
+
+    // An enroll key reaches hived in its environment, never on its command
+    // line, and is not repeated in what the installer says.
+    writeFileSync(join(root, "signed-out"), "")
+    writeFileSync(join(root, "refuse"), "")
+    const keyed = await install({}, 1, [
+      "--enroll-key",
+      "hwe_secret",
+      "--hive",
+      "acme",
+    ])
+    assert.ok(asked().includes("login had key hwe_secret\n"), asked())
+    assert.ok(
+      !asked().includes("--enroll-key"),
+      "the key was on hived's command line"
+    )
+    assert.ok(!keyed.includes("hwe_secret"), keyed)
+    assert.match(keyed, /HIVE_ENROLL_KEY=<the key> .*hived login --hive acme/)
 
     // Anything else on the command line is refused before anything is done.
     assert.match(await install({}, 2, ["--hives", "acme"]), /--hive <name>/)

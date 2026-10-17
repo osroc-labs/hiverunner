@@ -11,6 +11,9 @@
 #
 # (or HIVE=acme; "all" for every hive you are in). The sign-in link is
 # printed for someone to approve anywhere; nothing waits on a question.
+# With an enroll key from a hive owner or admin there is no sign-in at all:
+#
+#   curl -fsSL https://get.hiverunner.dev/install.sh | HIVE_ENROLL_KEY=hwe_... sh -s -- --hive acme
 #
 # It downloads the daemon and the Linux image jobs run in, checks both
 # against the checksums published with them, installs them under your home
@@ -38,8 +41,21 @@ while [ $# -gt 0 ]; do
       HIVE=${1#--hive=}
       shift
       ;;
+    # hived reads the key from its environment, which keeps it out of the
+    # process list; it is never printed.
+    --enroll-key)
+      [ $# -ge 2 ] || { printf 'hiveworker: --enroll-key needs a key\n' >&2; exit 2; }
+      HIVE_ENROLL_KEY=$2
+      export HIVE_ENROLL_KEY
+      shift 2
+      ;;
+    --enroll-key=*)
+      HIVE_ENROLL_KEY=${1#--enroll-key=}
+      export HIVE_ENROLL_KEY
+      shift
+      ;;
     *)
-      printf 'hiveworker: %s is not something this installer takes. It takes --hive <name>.\n' "$1" >&2
+      printf 'hiveworker: %s is not something this installer takes. It takes --hive <name> and --enroll-key <key>.\n' "$1" >&2
       exit 2
       ;;
   esac
@@ -98,7 +114,7 @@ not_enrolled() { # what this machine is called
   say ""
   say "Installed, but $1 is not in a hive yet, so the daemon was not started."
   say "See what hived said above. One command is left, and it starts the daemon:"
-  say "  $BIN_DIR/hived login${HIVE:+ --hive $HIVE}"
+  say "  ${HIVE_ENROLL_KEY:+HIVE_ENROLL_KEY=<the key> }$BIN_DIR/hived login${HIVE:+ --hive $HIVE}"
   exit 1
 }
 
