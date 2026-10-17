@@ -1,5 +1,5 @@
 {
-  "name": "Hive Runner",
+  "name": "HiveWorker CI",
   "url": "https://hiverunner.dev",
   "description": "Run GitHub Actions on your own developers' machines.",
   "public": true,

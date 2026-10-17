@@ -18,6 +18,7 @@
     "test:daemon": "pnpm build && node tests/run-daemon-e2e.mjs",
     "project:init": "node scripts/init-project.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "github-app": "node scripts/github-app.mjs",
     "licenses:check": "node scripts/check-licenses.mjs",
     "db:seed": "node scripts/local-data.mjs seed",
     "db:reset": "node scripts/local-data.mjs reset",
