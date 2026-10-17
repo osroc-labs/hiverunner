@@ -77,3 +77,19 @@ func TestQuietSaysTheFirstThenOneEveryWhile(t *testing.T) {
 		t.Error("the first failure after it worked again was not said")
 	}
 }
+
+func TestWhyTheDaemonCannotRunAVMIsWrittenWhenItChanges(t *testing.T) {
+	var writes []State
+	r := NewRecorder()
+	r.Save = func(state State) error { writes = append(writes, state); return nil }
+	r.Set("acme", true, nil)
+	r.Unusable("cannot open /dev/kvm")
+	r.Unusable("cannot open /dev/kvm")
+	if len(writes) != 2 || writes[1].Unusable != "cannot open /dev/kvm" || len(writes[1].Hives) != 1 {
+		t.Fatalf("wrote %+v", writes)
+	}
+	r.Unusable("")
+	if len(writes) != 3 || writes[2].Unusable != "" {
+		t.Fatalf("putting it right wrote %+v", writes)
+	}
+}

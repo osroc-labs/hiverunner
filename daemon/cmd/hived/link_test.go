@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
 )
@@ -61,10 +65,64 @@ func TestEnrollingAfterChoosingHivesReturnsWhatTheSecondAttemptSaid(t *testing.T
 
 func TestAQuestionNobodyAnswersSaysTheCommandForEachHive(t *testing.T) {
 	pools := []api.Pool{{ID: "gh-1", Name: "acme"}, {ID: "gh-2", Name: "globex"}}
-	err := unanswered(pools, func(pool api.Pool) string { return "hived login --hive " + pool.ID })
-	for _, want := range []string{"hived login --hive gh-1", "hived login --hive gh-2"} {
+	err := unanswered(pools, func(pool api.Pool) string { return "hived login --hive " + pool.Name }, "hived login --hive all")
+	for _, want := range []string{"hived login --hive acme", "hived login --hive globex", "hived login --hive all"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q does not say %q", err, want)
 		}
+	}
+}
+
+func TestNobodyIsAskedWithoutATerminal(t *testing.T) {
+	// A pipe left open, as ssh leaves one: reading it would wait for ever.
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	if interactive(reader) {
+		t.Fatal("a pipe was taken for a terminal")
+	}
+	stdin := os.Stdin
+	os.Stdin = reader
+	defer func() { os.Stdin = stdin }()
+	pools := []api.Pool{{ID: "gh-1", Name: "acme"}, {ID: "gh-2", Name: "globex"}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := askPools("Which?", pools, func(pool api.Pool) string { return "hived link " + pool.Name }, "hived link --all")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "hived link --all") {
+			t.Fatalf("askPools said %v; want the commands to run", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("askPools waited for an answer with no terminal to give one")
+	}
+}
+
+func TestHivesAsJSONNameEachOneAndItsID(t *testing.T) {
+	var out bytes.Buffer
+	if err := writeHives(&out, api.Assignment{MachineID: "m-1", Pools: []api.Pool{{ID: "gh-1", Name: "acme"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		MachineID string `json:"machineId"`
+		Hives     []struct{ ID, Name string }
+	}
+	if err := json.Unmarshal(out.Bytes(), &listed); err != nil || listed.MachineID != "m-1" || len(listed.Hives) != 1 || listed.Hives[0].ID != "gh-1" || listed.Hives[0].Name != "acme" {
+		t.Fatalf("%s decoded as %+v, %v", out.String(), listed, err)
+	}
+	out.Reset()
+	if err := writeHives(&out, api.Assignment{MachineID: "m-1"}); err != nil || !strings.Contains(out.String(), `"hives": []`) {
+		t.Fatalf("a machine in no hive said %s, %v; want an empty list, not null", out.String(), err)
+	}
+}
+
+func TestAHiveFlagIsSplitOnCommas(t *testing.T) {
+	if got := strings.Join(splitHives("acme, Globex,,gh-3 "), "|"); got != "acme|Globex|gh-3" {
+		t.Fatalf("got %q", got)
 	}
 }

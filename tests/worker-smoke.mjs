@@ -442,8 +442,27 @@ assert.equal(
   ).status,
   400
 )
+// A hive is named as GitHub names it, or by id. One the person is not in is
+// refused, with the ones they are in, and the sign-in is not spent on it.
+{
+  const refused = await json(
+    await ownerDaemon.daemon(
+      "/api/machines",
+      { ...mac, organizationIds: ["Versallegalrepo"] },
+      ownerToken
+    ),
+    404
+  )
+  assert.equal(refused.code, "NOT_FOUND")
+  assert.match(refused.error, /not in a hive called "Versallegalrepo"/)
+  assert.match(refused.error, /Your hives: acme/)
+}
 const enrolled = await json(
-  await ownerDaemon.daemon("/api/machines", mac, ownerToken),
+  await ownerDaemon.daemon(
+    "/api/machines",
+    { ...mac, organizationIds: ["ACME"] },
+    ownerToken
+  ),
   201
 )
 assert.ok(enrolled.token.startsWith("hwm_"))
@@ -558,10 +577,14 @@ assert.equal(
   ).status,
   404
 )
-assert.equal(
-  (await memberDaemon.daemon("/api/machines", mac, memberToken)).status,
-  403
-)
+{
+  // Said as what it is: the hive limits machines to teams.
+  const refused = await json(
+    await memberDaemon.daemon("/api/machines", mac, memberToken),
+    403
+  )
+  assert.match(refused.error, /acme limits machines to certain teams/)
+}
 await tellGitHub({ teams: { "acme/ci": ["member"] } })
 let memberMachine = await json(
   await memberDaemon.daemon(

@@ -49,6 +49,10 @@ type Runner struct {
 	// Guest, if set, is a service of the host's that each VM can reach over
 	// a private socket: the Actions cache.
 	Guest *GuestService
+	// OnUnusable, if set, is told when why this machine cannot run a VM
+	// changes, with "" once it can again: hived doctor reads it from there,
+	// since what the service may open is not what the owner's shell may.
+	OnUnusable func(reason string)
 
 	mu      sync.Mutex
 	warm    *instance
@@ -88,10 +92,13 @@ func (r *Runner) Unusable() string {
 	if err := look(); err != nil {
 		reason = "this machine cannot run a VM: " + err.Error()
 	}
-	if before, _ := r.unable.Swap(reason).(string); before != reason && r.Log != nil {
-		if reason != "" {
+	if before, _ := r.unable.Swap(reason).(string); before != reason {
+		if r.OnUnusable != nil {
+			r.OnUnusable(reason)
+		}
+		if r.Log != nil && reason != "" {
 			r.Log.Error("declining jobs until this is put right", "reason", reason)
-		} else {
+		} else if r.Log != nil {
 			r.Log.Info("this machine can run VMs again")
 		}
 	}

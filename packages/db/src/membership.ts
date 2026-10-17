@@ -208,12 +208,25 @@ export async function canAddMachines(
   github: Pick<GitHubApp, "isTeamMember" | "getOrgRole" | "getLogin">,
   input: { organizationId: string; userId: string }
 ) {
+  return (await whyNoMachines(db, github, input)) === null
+}
+
+/**
+ * Why this person may not add a machine to the pool, or null if they may.
+ * The reasons are different things to do: an installation to restore, a
+ * GitHub membership to get, a team to join.
+ */
+export async function whyNoMachines(
+  db: AuthDb,
+  github: Pick<GitHubApp, "isTeamMember" | "getOrgRole" | "getLogin">,
+  input: { organizationId: string; userId: string }
+): Promise<"inactive" | "not-member" | "teams" | null> {
   const [installation] = await db
     .select()
     .from(githubInstallation)
     .where(eq(githubInstallation.organizationId, input.organizationId))
     .limit(1)
-  if (!installation || installation.status !== "active") return false
+  if (!installation || installation.status !== "active") return "inactive"
   const [linked] = await db
     .select({ accountId: account.accountId })
     .from(account)
@@ -221,27 +234,27 @@ export async function canAddMachines(
       and(eq(account.userId, input.userId), eq(account.providerId, "github"))
     )
     .limit(1)
-  if (!linked) return false
+  if (!linked) return "not-member"
   const login = await github.getLogin(
     installation.installationId,
     linked.accountId
   )
-  if (!login) return false
+  if (!login) return "not-member"
   // Asked fresh every time: enrolling a machine is the moment that matters.
   const role = await github.getOrgRole(
     installation.installationId,
     installation.accountLogin,
     login
   )
-  if (!role) return false
-  if (role === "admin") return true
+  if (!role) return "not-member"
+  if (role === "admin") return null
   const [settings] = await db
     .select({ allowedTeams: poolSettings.allowedTeams })
     .from(poolSettings)
     .where(eq(poolSettings.organizationId, input.organizationId))
     .limit(1)
   const teams = settings?.allowedTeams ?? []
-  if (!teams.length) return true
+  if (!teams.length) return null
   for (const team of teams)
     if (
       await github.isTeamMember(
@@ -251,6 +264,6 @@ export async function canAddMachines(
         login
       )
     )
-      return true
-  return false
+      return null
+  return "teams"
 }

@@ -440,7 +440,9 @@ test("machines enroll once, authenticate by token, and stop when revoked", async
   }
 
   // Not a member yet: nothing to enroll into.
-  assert.equal((await enrollMachine(db, inAcme(), input)).code, "FORBIDDEN")
+  const outside = await enrollMachine(db, inAcme(), input)
+  assert.equal(outside.code, "NOT_FOUND")
+  assert.match(outside.message, /not a member of this hive/)
   assert.equal(sqlite.prepare("select count(*) n from machine").get().n, 0)
   await syncMemberships(db, inAcme(), sync)
 
@@ -564,7 +566,7 @@ test("one machine serves several organizations, each authorized separately", asy
     machineId: enrolled.machineId,
     organizationId: globexId,
   }
-  assert.equal((await addMachineToPool(db, inAcme(), add)).code, "FORBIDDEN")
+  assert.equal((await addMachineToPool(db, inAcme(), add)).code, "NOT_FOUND")
   await syncMemberships(db, inBoth(), sync)
   assert.equal(await addMachineToPool(db, inBoth(), add), null)
   assert.equal(
@@ -659,6 +661,30 @@ test("a person cannot fill a pool with machines", async (t) => {
   for (let i = 0; i < MAX_MACHINES_PER_PERSON; i++)
     assert.equal((await enrollMachine(db, inAcme(), input)).ok, true)
   assert.equal((await enrollMachine(db, inAcme(), input)).code, "CONFLICT")
+})
+
+test("a refused machine is told which thing stands in its way", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  person(sqlite, "ada", 1)
+  await syncMemberships(db, inAcme(), sync)
+  const input = { userId: "ada", organizationIds: [orgId], facts: mac }
+  await updatePoolSettings(db, orgId, {
+    allowedTeams: ["ci"],
+    earningsDestination: "developer",
+    macosJobs: false,
+    routing: "fastest",
+    version: 1,
+  })
+  const teams = await enrollMachine(db, inAcme(), input)
+  assert.equal(teams.code, "FORBIDDEN")
+  assert.match(teams.message, /acme limits machines to certain teams/)
+  // Still a member here, but GitHub no longer says so.
+  const gone = await enrollMachine(db, github({ viewer }), input)
+  assert.match(gone.message, /GitHub does not list you as a member of acme/)
+  await provisionInstallation(db, { ...acme, suspended: true })
+  const paused = await enrollMachine(db, inAcme(), input)
+  assert.match(paused.message, /acme is not taking machines/)
 })
 
 const ownsBoth = () =>
