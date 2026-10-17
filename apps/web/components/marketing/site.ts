@@ -73,6 +73,8 @@ export const DAEMON_MIN_MACOS = 13
 export const DAEMON_SIGNER = "Layups AI LLC"
 
 export const MARKETING_NAV = [
+  { href: "/orgs", label: "Organizations" },
+  { href: "/developers", label: "Developers" },
   { href: "/pricing", label: "Pricing" },
   { href: "/security", label: "Security" },
   { href: "/docs", label: "Docs" },

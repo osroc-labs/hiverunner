@@ -1,5 +1,7 @@
+import Link from "next/link"
 import { cn } from "@workspace/ui/lib/utils"
 import { Container } from "@workspace/ui-shell/components/page-header"
+import { HexMark } from "@/components/hex-mark"
 
 /** The top of an inner page: what the page is, in a title and a sentence. */
 export function PageIntro({
@@ -92,3 +94,76 @@ export function Fact({
 /** The link style for text outside `Prose`. */
 export const textLink =
   "underline decoration-primary decoration-2 underline-offset-4 hover:decoration-foreground"
+
+/**
+ * A section's title behind a honey rule, with its paragraphs under it. The
+ * children are `p` elements, and a `SectionLink` when the section has one.
+ */
+export function SectionHeading({
+  title,
+  children,
+}: {
+  title: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="max-w-2xl">
+      <h2 className="border-l-2 border-primary pl-4 font-heading text-2xl leading-snug font-medium tracking-tight text-balance sm:text-3xl">
+        {title}
+      </h2>
+      {children ? (
+        <div className="mt-5 flex flex-col gap-4 text-lg leading-8 text-pretty text-muted-foreground">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** Where a section's paragraphs lead, on a line of its own. */
+export function SectionLink({
+  href,
+  children,
+}: {
+  href: string
+  children: React.ReactNode
+}) {
+  return (
+    <p className="text-base text-foreground">
+      <Link href={href} className={textLink}>
+        {children}
+      </Link>
+    </p>
+  )
+}
+
+/**
+ * One step of a sequence, in a grid of them. Wrap them in an `ol` with
+ * `border-t border-l border-border`, so the cells share their rules.
+ */
+export function Step({
+  number,
+  title,
+  next = number === 1,
+  children,
+}: {
+  number: number
+  title: string
+  /** Whether this is the step to do first. */
+  next?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <li className="flex min-w-0 flex-col gap-4 border-r border-b border-border p-6 sm:p-8">
+      <div className="flex items-center gap-3">
+        <HexMark n={number} state={next ? "next" : "todo"} />
+        <h3 className="font-heading text-base font-normal tracking-tight">
+          {title}
+        </h3>
+      </div>
+      <div className="flex flex-col gap-4 leading-7 text-muted-foreground">
+        {children}
+      </div>
+    </li>
+  )
+}
