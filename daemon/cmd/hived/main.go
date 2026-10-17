@@ -167,7 +167,14 @@ func login(ctx context.Context, args []string) error {
 	// The name this flag had before a pool was called a hive.
 	flags.StringVar(hive, "pool", "", "the same as --hive")
 	noBrowser := flags.Bool("no-browser", false, "print the sign-in link instead of opening it")
+	enrollKey := flags.String("enroll-key", "", "an enroll key from a hive owner or admin, in place of signing in at a browser; HIVE_ENROLL_KEY says the same and keeps it out of the process list")
 	_ = flags.Parse(args)
+	if *enrollKey == "" {
+		*enrollKey = os.Getenv("HIVE_ENROLL_KEY")
+	}
+	if *enrollKey != "" && !strings.HasPrefix(*enrollKey, "hwe_") {
+		return errors.New("that is not an enroll key: one starts with hwe_")
+	}
 
 	// Signing in again would enroll this computer a second time, as a new
 	// machine with a new token. Someone here for another hive wants link.
@@ -191,9 +198,13 @@ func login(ctx context.Context, args []string) error {
 	score := bench.Score(bench.Run(3 * time.Second))
 
 	client := api.New(server())
-	token, err := signIn(ctx, client, *noBrowser)
-	if err != nil {
-		return err
+	// A key stands in for the person: no code to approve, and the machine
+	// is whoever minted the key's.
+	token := *enrollKey
+	if token == "" {
+		if token, err = signIn(ctx, client, *noBrowser); err != nil {
+			return err
+		}
 	}
 
 	machine := api.Machine{

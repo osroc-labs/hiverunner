@@ -968,6 +968,74 @@ await refusedTool(
   { machineId: crypto.randomUUID() },
   "NOT_FOUND"
 )
+// Enroll keys: an owner mints one, and a machine joins with it and no browser.
+{
+  const minted = await tool(tokens, "create_enroll_key", {
+    description: "smoke",
+    maxUses: 1,
+  })
+  assert.match(minted.key, /^hwe_/)
+  assert.equal(minted.enrollKey.state, "live")
+  assert.ok(minted.commands.install.includes(`HIVE_ENROLL_KEY=${minted.key}`))
+  assert.ok(minted.commands.install.includes("--hive acme"))
+  const keyed = (key, body = mac) =>
+    fetch(`${origin}/api/machines`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+    })
+  const joined = await json(
+    await keyed(minted.key, {
+      ...mac,
+      name: "Fleet box",
+      model: "PowerEdge R660",
+      organizationIds: ["acme"],
+    }),
+    201
+  )
+  assert.deepEqual(joined.pools, [{ id: organizationId, name: "acme" }])
+  assert.equal((await json(await me(joined.token))).pools[0].id, organizationId)
+  // Its one use is spent, and a key is never shown again.
+  assert.equal((await keyed(minted.key)).status, 401)
+  const { enrollKeys } = await tool(tokens, "list_enroll_keys")
+  assert.equal(enrollKeys[0].state, "used")
+  assert.equal(enrollKeys[0].uses, 1)
+  assert.ok(!JSON.stringify(enrollKeys).includes(minted.key))
+  // The same from a browser, and revoked from there.
+  const browserKey = await json(
+    await owner("/api/enroll-keys", { organizationId, expiresInHours: 1 }),
+    201
+  )
+  assert.ok(
+    (
+      await json(
+        await owner(`/api/enroll-keys?organizationId=${organizationId}`)
+      )
+    ).enrollKeys.some((key) => key.id === browserKey.enrollKey.id)
+  )
+  await json(
+    await owner("/api/enroll-keys/revoke", {
+      organizationId,
+      id: browserKey.enrollKey.id,
+    })
+  )
+  const revoked = await json(await keyed(browserKey.key), 401)
+  assert.match(revoked.error, /revoked/)
+  await refusedTool(
+    tokens,
+    "revoke_enroll_key",
+    { id: browserKey.enrollKey.id },
+    "NOT_FOUND"
+  )
+  // The machine it enrolled is the owner's, to retire like any of theirs.
+  await json(
+    await owner("/api/machines/revoke", { machineId: joined.machineId })
+  )
+  assert.equal((await me(joined.token)).status, 401)
+}
 console.log("OAuth discovery, PKCE, hive-bound consent and owner tools passed.")
 
 // Writing is for owners and admins, and it is refused when consent is given,
@@ -991,6 +1059,9 @@ await refusedTool(
   "FORBIDDEN"
 )
 await refusedTool(memberTokens, "set_budget", { monthlyUsd: 1 }, "FORBIDDEN")
+await refusedTool(memberTokens, "create_enroll_key", {}, "FORBIDDEN")
+await refusedTool(memberTokens, "list_enroll_keys", {}, "FORBIDDEN")
+assert.equal((await member("/api/enroll-keys", { organizationId })).status, 403)
 // A read-only connection removes nothing, not even its own person's machine.
 for (const machineId of [enrolled.machineId, memberMachine.machineId])
   await refusedTool(memberTokens, "remove_machine", { machineId }, "FORBIDDEN")

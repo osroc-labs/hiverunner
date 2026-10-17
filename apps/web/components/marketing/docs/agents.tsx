@@ -32,9 +32,10 @@ export function Agents() {
       <h2 id="from-nothing">From nothing to a first job</h2>
       <p>
         Each state you can be in, who acts, and how the agent can tell. An agent
-        does everything except four things only a person can: install the GitHub
-        App, run the install command on a machine, add funds and approve the
-        connection.
+        does everything except three things only a person can: install the
+        GitHub App, add funds and approve the connection. A machine joins when
+        the install command runs on it, which an agent with a shell there can do
+        itself with a key from <code>create_enroll_key</code>.
       </p>
       <table>
         <thead>

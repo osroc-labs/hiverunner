@@ -1,4 +1,5 @@
 import { toolResult, type McpServer } from "@workspace/mcp"
+import { ENROLL_KEY_MAX_HOURS } from "@workspace/db/enroll-keys"
 import { BOARD_PERIODS } from "@workspace/db/leaderboard"
 import { ROUTING_POLICIES } from "@workspace/db/settings"
 import {
@@ -33,6 +34,11 @@ import {
   setBudget,
   updateSettings,
 } from "@/operations/hive"
+import {
+  createEnrollKey,
+  listEnrollKeys,
+  revokeEnrollKey,
+} from "@/operations/enroll-keys"
 import { currentUser } from "@/operations/organization"
 import { HIVE_TOOLS } from "./tool-list"
 
@@ -64,8 +70,9 @@ export function serverInstructions(appUrl: string) {
     `A job needs three things: a machine online in the hive, a positive balance, and \`runs-on: ${base.label}\` in the workflow. get_workflow returns the YAML, with a fallback runner for when no machine is free.`,
     "One person is often several things at once, and they are separate: their role in the GitHub organization (owner, or a member), which is their role in the hive; whether they run machines in it, which any member may and most should; and what this connection was allowed. get_hive's `you` says which apply to the person you act for and what they can do; read it before saying who has to do something.",
     "The GitHub App is installed, reinstalled and unsuspended on GitHub by an owner of the organization. The person who signed up may not be one: they request the install and an owner approves it.",
-    "Reads need the hive:read permission. Changing settings, the budget, automatic top-up or machines needs hive:write, which only a hive owner or admin can grant; settings need an owner.",
-    "Only a person can do four things: install the GitHub App (as an owner of the organization), run the install command on a machine, add funds, and approve this connection. Say which of those is needed and give them the URL or command.",
+    "Reads need the hive:read permission. Changing settings, the budget, automatic top-up, machines or enroll keys needs hive:write, which only a hive owner or admin can grant; settings need an owner.",
+    "Only a person can do three things: install the GitHub App (as an owner of the organization), add funds, and approve this connection. Say which of those is needed and give them the URL.",
+    "Adding a machine takes running the install command on it. An agent with a shell on the machine can do that itself with a key from create_enroll_key, and nobody approves anything in a browser; without one, a person runs the command and approves the sign-in it prints.",
     "Everything else you can do yourself: read the hive, edit and push the workflow, and with hive:write set the budget and settings.",
     "Money is in US dollars. Adding funds is done by a person in the browser, at the wallet URL get_hive returns; no tool takes a payment.",
     "A tool that fails returns isError with a code (FORBIDDEN, CONFLICT, INVALID_INPUT, NOT_FOUND) and a sentence saying why.",
@@ -292,6 +299,57 @@ export function registerHiveTools(
       annotations: write,
     },
     async (input) => execute(() => setAutoTopUp(context, input))
+  )
+  server.registerTool(
+    "create_enroll_key",
+    {
+      ...described("create_enroll_key"),
+      inputSchema: z.object({
+        description: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("What the key is for, shown in list_enroll_keys."),
+        expiresInHours: z
+          .number()
+          .int()
+          .min(1)
+          .max(ENROLL_KEY_MAX_HOURS)
+          .optional()
+          .describe("How long it works. Default 24."),
+        maxUses: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .nullable()
+          .optional()
+          .describe(
+            "How many machines it may enroll. Left out or null: any number until it expires."
+          ),
+      }),
+      // Each call mints a new key.
+      annotations: { ...write, idempotentHint: false },
+    },
+    async (input) => execute(() => createEnrollKey(context, input))
+  )
+  server.registerTool(
+    "list_enroll_keys",
+    {
+      ...described("list_enroll_keys"),
+      inputSchema: z.object({}),
+      annotations: read,
+    },
+    async () => execute(() => listEnrollKeys(context))
+  )
+  server.registerTool(
+    "revoke_enroll_key",
+    {
+      ...described("revoke_enroll_key"),
+      inputSchema: z.object({ id: z.string().min(1).max(100) }),
+      annotations: { ...write, destructiveHint: true },
+    },
+    async (input) => execute(() => revokeEnrollKey(context, input))
   )
   server.registerTool(
     "remove_machine",

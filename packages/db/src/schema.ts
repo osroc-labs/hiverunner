@@ -156,6 +156,43 @@ export const machine = sqliteTable(
 )
 
 /**
+ * A key that enrolls machines in one hive with no browser: what a fleet, or
+ * an agent setting machines up, uses in place of approving each sign-in. An
+ * owner or admin mints it, and every machine it enrolls is theirs, as if
+ * they had signed in on it. Only the hash is kept; the key is shown once.
+ */
+export const enrollKey = sqliteTable(
+  "enroll_key",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Who minted it, and so whose the machines it enrolls are. */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** What it is for, in the minter's words. */
+    description: text("description").notNull().default(""),
+    /** SHA-256 of the key, hex. */
+    keyHash: text("key_hash").notNull(),
+    /** The key's first characters, to tell keys apart in a list. */
+    prefix: text("prefix").notNull(),
+    /** How many machines it may enroll; null for no limit. */
+    maxUses: integer("max_uses"),
+    uses: integer("uses").notNull().default(0),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    uniqueIndex("enroll_key_hash_idx").on(table.keyHash),
+    index("enroll_key_org_idx").on(table.organizationId),
+  ]
+)
+
+/**
  * A machine authorized to run one organization's jobs. One machine can serve
  * several organizations its owner belongs to; each is authorized, and
  * revoked, separately. The daemon holds one tunnel per row.

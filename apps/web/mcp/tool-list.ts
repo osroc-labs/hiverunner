@@ -109,4 +109,28 @@ export const HIVE_TOOLS = [
     description:
       "Stop a machine serving this hive. It keeps serving its other hives, and its owner can add it back with `hived link`. Ids come from list_machines.",
   },
+  {
+    name: "create_enroll_key",
+    title: "Mint an enroll key",
+    scope: "hive:write",
+    role: "Admin or owner",
+    description:
+      "Mint a key that adds machines to this hive with no browser, for a fleet or an agent with a shell on them. It returns the key once, with the install and hived login commands that use it. Machines it enrolls are yours. It expires (expiresInHours, default 24) and can be limited to a number of machines (maxUses).",
+  },
+  {
+    name: "list_enroll_keys",
+    title: "Enroll keys",
+    scope: "hive:read",
+    role: "Admin or owner",
+    description:
+      "The hive's enroll keys, newest first: what each is for, whether it is live, expired, used up or revoked, and how many machines it has enrolled. Never the keys themselves.",
+  },
+  {
+    name: "revoke_enroll_key",
+    title: "Revoke an enroll key",
+    scope: "hive:write",
+    role: "Admin or owner",
+    description:
+      "Stop an enroll key adding machines. Machines it already enrolled stay; remove them with remove_machine. Ids come from list_enroll_keys.",
+  },
 ] as const

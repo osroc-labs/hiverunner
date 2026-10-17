@@ -36,6 +36,12 @@ import {
   validateMachineFacts,
   MAX_MACHINES_PER_PERSON,
 } from "../packages/db/src/machines.ts"
+import {
+  enrollWithKey,
+  listEnrollKeys,
+  mintEnrollKey,
+  revokeEnrollKey,
+} from "../packages/db/src/enroll-keys.ts"
 import { GitHubError } from "../packages/github/src/index.ts"
 
 const acme = {
@@ -1048,4 +1054,126 @@ test("auto-join stops at the machine limit and survives a GitHub error", async (
     MAX_MACHINES_PER_PERSON
   )
   assert.equal(names(added).length, new Set(names(added)).size)
+})
+
+test("an enroll key adds machines to its hive as its minter's, until it may not", async (t) => {
+  const { db, sqlite } = database(t)
+  await provisionInstallation(db, acme)
+  await provisionInstallation(db, globex)
+  person(sqlite, "ada", 1)
+  await syncMemberships(db, inBoth(), sync)
+  const now = new Date("2026-10-17T12:00:00Z")
+  const later = (hours) => new Date(now.getTime() + hours * 3_600_000)
+
+  assert.equal(
+    (
+      await mintEnrollKey(
+        db,
+        { organizationId: orgId, userId: "ada", expiresInHours: 0 },
+        now
+      )
+    ).code,
+    "INVALID_INPUT"
+  )
+  const minted = await mintEnrollKey(
+    db,
+    {
+      organizationId: orgId,
+      userId: "ada",
+      description: "build boxes",
+      expiresInHours: 2,
+      maxUses: 2,
+    },
+    now
+  )
+  assert.equal(minted.ok, true)
+  assert.match(minted.key, /^hwe_/)
+  assert.ok(
+    !JSON.stringify(sqlite.prepare("select * from enroll_key").all()).includes(
+      minted.key
+    ),
+    "only the hash is stored"
+  )
+  const enroll = (key, extra = {}, at = now) =>
+    enrollWithKey(db, inBoth(), { key, facts: mac, ...extra }, at)
+
+  // Named, it must be the key's hive; a bad machine spends nothing.
+  const wrong = await enroll(minted.key, { hives: ["globex"] })
+  assert.equal(wrong.code, "FORBIDDEN")
+  assert.match(wrong.message, /adds machines to acme, not "globex"/)
+  assert.equal(
+    (await enroll(minted.key, { facts: { ...mac, cores: 0 } })).code,
+    "INVALID_INPUT"
+  )
+  const first = await enroll(minted.key, { hives: ["ACME"] })
+  assert.equal(first.ok, true)
+  assert.deepEqual(first.hive, { id: orgId, name: "acme" })
+  assert.deepEqual(
+    (await listMachinePools(db, first.machineId)).map((pool) => pool.id),
+    [orgId]
+  )
+  assert.equal(
+    sqlite
+      .prepare("select user_id from machine where id = ?")
+      .get(first.machineId).user_id,
+    "ada",
+    "the machine is the minter's"
+  )
+  assert.ok(await authenticateMachine(db, first.token))
+  assert.equal((await enroll(minted.key)).ok, true)
+  // Two uses, both spent.
+  const spent = await enroll(minted.key)
+  assert.equal(spent.code, "UNAUTHENTICATED")
+  assert.match(spent.message, /all the machines it allows/)
+  const [listed] = await listEnrollKeys(db, orgId)
+  assert.equal(listed.uses, 2)
+  assert.equal(listed.description, "build boxes")
+
+  // No limit on uses, but on time; and revoking ends it at once.
+  const open = await mintEnrollKey(
+    db,
+    { organizationId: orgId, userId: "ada", expiresInHours: 1 },
+    now
+  )
+  assert.match((await enroll(open.key, {}, later(2))).message, /expired/)
+  assert.equal(
+    await revokeEnrollKey(
+      db,
+      { organizationId: globexId, id: open.row.id },
+      now
+    ),
+    false,
+    "another hive's key"
+  )
+  assert.equal(
+    await revokeEnrollKey(db, { organizationId: orgId, id: open.row.id }, now),
+    true
+  )
+  assert.match((await enroll(open.key)).message, /revoked/)
+  assert.match(
+    (await enroll("hwe_nonsense")).message,
+    /not one Hive Runner knows/
+  )
+
+  // A refusal for the minter gives the use back: here, the hive's teams.
+  const once = await mintEnrollKey(
+    db,
+    { organizationId: orgId, userId: "ada", expiresInHours: 1, maxUses: 1 },
+    now
+  )
+  await updatePoolSettings(db, orgId, {
+    allowedTeams: ["ci"],
+    earningsDestination: "developer",
+    macosJobs: false,
+    routing: "fastest",
+    version: 1,
+  })
+  assert.match(
+    (await enroll(once.key)).message,
+    /limits machines to certain teams/
+  )
+  const row = sqlite
+    .prepare("select uses from enroll_key where id = ?")
+    .get(once.row.id)
+  assert.equal(row.uses, 0)
 })

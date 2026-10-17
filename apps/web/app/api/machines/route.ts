@@ -1,4 +1,5 @@
 import { listOrganizations } from "@workspace/auth"
+import { enrollWithKey } from "@workspace/db/enroll-keys"
 import {
   endSession,
   enrollMachine,
@@ -21,9 +22,16 @@ import { getGitHubApp } from "@/lib/github"
  * sign-in session is ended here: from now on the machine token is the
  * daemon's only credential, so a person's session expiring never takes their
  * machine offline.
+ *
+ * An enroll key (`Bearer hwe_…`) stands in for the sign-in: the machine is
+ * the key's minter's, in the key's hive, and nobody approves anything.
  */
 export async function POST(request: Request) {
   try {
+    const key = request.headers
+      .get("authorization")
+      ?.match(/^Bearer (hwe_\S+)$/)?.[1]
+    if (key) return await enrollByKey(request, key)
     const { user, session, bearer } = await apiSession(request)
     const input = (await request.json()) as Record<string, unknown>
     const db = getDb()
@@ -92,4 +100,32 @@ export async function POST(request: Request) {
     logError(error, "machine.enroll")
     return errorResponse(error, requestId())
   }
+}
+
+async function enrollByKey(request: Request, key: string) {
+  const input = (await request.json()) as Record<string, unknown>
+  const hives = input.organizationIds
+  if (
+    hives !== undefined &&
+    !(
+      Array.isArray(hives) &&
+      hives.every((hive): hive is string => typeof hive === "string")
+    )
+  )
+    throw new AppError("INVALID_INPUT", "Invalid input")
+  const result = await enrollWithKey(getDb(), getGitHubApp(), {
+    key,
+    hives,
+    facts: input as unknown as MachineFacts,
+  })
+  if (!result.ok) throw new AppError(result.code, result.message, result.fields)
+  return Response.json(
+    {
+      machineId: result.machineId,
+      token: result.token,
+      pools: [result.hive],
+      refused: [],
+    },
+    { status: 201, headers: { "Cache-Control": "no-store" } }
+  )
 }
