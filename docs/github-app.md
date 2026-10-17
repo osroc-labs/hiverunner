@@ -7,6 +7,28 @@ Each environment has its own App, so staging webhooks never reach production.
 record of what the App is allowed to do; change it in a pull request, then
 make GitHub match.
 
+The production App is **HiveWorker CI**, at `github.com/apps/hiveworker-ci`:
+"Hive Runner" was already taken as an App name on GitHub. Its slug is what
+`GITHUB_APP_SLUG` holds.
+
+## Change it
+
+GitHub has no API to edit an existing App: its URLs, permissions and events
+are changed by hand on its settings page. Moving the site to another origin
+meant changing the Callback URL and Setup URL there. After any change to the
+manifest, or to the App,
+
+```sh
+GITHUB_APP_ID=... GITHUB_APP_PRIVATE_KEY_FILE=path/to/key.pem pnpm run github-app check
+```
+
+compares the App, as `GET /app` and `GET /app/hook/config` describe it, with
+`apps/web/github-app.json`. It prints each difference, the settings that the
+API does not show (Callback URL, Setup URL and the installation switches) for
+checking by eye, and the settings page's URL, and fails if anything differs.
+Pass `--origin` for an environment whose App lives at another origin. It
+only reads, and prints neither the key nor a token.
+
 ## Create it
 
 1. On GitHub, open the owning organization's **Settings → Developer settings →
