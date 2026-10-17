@@ -42,6 +42,12 @@ export function GET() {
 - Jobs without a \`hive\` label keep running where they run today. Switching back is the same one line.
 - Labels: ${RUNNER_SIZES.map((size) => `\`${size.label}\` (${size.vcpus} vCPU)`).join(", ")}, all Linux arm64. x64 and macOS labels are in [Labels and sizes](${origin}/docs/labels-and-sizes).
 
+## Two sides
+
+- An organization owner installs the GitHub App, changes \`runs-on\` and pays for jobs. They choose who may add machines, who is paid when a machine runs a job, how jobs are routed, whether macOS jobs run, and a monthly budget: ${origin}/orgs
+- A developer in that organization runs the daemon, \`hived\`, on their own machine and decides when it lends: ${origin}/developers. Someone who is not an owner can request the install on GitHub at ${origin}/install, and an owner approves it there.
+- When an owner sets earnings to go to the developer (\`earningsDestination: "developer"\`), the machine's share of each job, all but ${percent.format(JOB_TAX_RATE)}, is credited to that developer's Hive Runner balance. There is no cash-out yet.
+
 ## The price
 
 - ${formatRate(ours.net)} per ${base.vcpus} vCPU minute when the hive's own machines do the work. The job is priced at ${formatRate(ours.gross)}, the machine that ran it earns all but ${percent.format(JOB_TAX_RATE)}, and in a hive of your own machines that comes straight back.
@@ -92,6 +98,8 @@ A job needs a machine online in the hive and a positive balance. To fall back to
 
 ## Docs
 
+- [For organizations](${origin}/orgs): the price, what an owner controls, and installing the App
+- [For developers](${origin}/developers): what the daemon does on a machine, what it earns, and how to ask for the install
 - [Quickstart](${origin}/docs/quickstart): install the App, add a machine, route a workflow
 - [Routing and fallback](${origin}/docs/routing): the routed workflow, the route action's inputs, and what it checks
 - [Agents and MCP](${origin}/docs/agents): connecting a client, the tools and their permissions

@@ -16,6 +16,8 @@ const COLUMNS = [
   {
     heading: "Product",
     links: [
+      { href: "/orgs", label: "For organizations" },
+      { href: "/developers", label: "For developers" },
       { href: "/pricing", label: "Pricing" },
       { href: "/security", label: "Security" },
       { href: "/download", label: "Download the daemon" },
