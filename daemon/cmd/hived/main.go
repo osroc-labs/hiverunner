@@ -40,7 +40,7 @@ const usage = `hived, the Hive Runner daemon
   hived login       Sign in with GitHub and enroll this machine
   hived link        Add this machine to another of your hives
   hived unlink      Stop serving one hive, and keep serving the others
-  hived hives       List the hives this machine serves
+  hived hives       List the hives this machine serves; --json for a script
   hived run         Connect to your hive and wait for jobs
   hived start       Start the daemon the installer set up; stop, restart too
   hived status      Show what this machine lends, and whether it is lending;
@@ -79,7 +79,7 @@ func main() {
 	case "unlink":
 		err = unlink(ctx, os.Args[2:])
 	case "hives":
-		err = hives(ctx)
+		err = hives(ctx, os.Args[2:])
 	case "run":
 		err = run(ctx)
 	case "start":
@@ -163,7 +163,7 @@ func server() string {
 
 func login(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("login", flag.ExitOnError)
-	hive := flags.String("hive", "", "hive ids to serve, separated by commas, if you belong to several")
+	hive := flags.String("hive", "", "the hives to serve if you are in several, separated by commas: as GitHub names the organization, or by id; \"all\" for every one")
 	// The name this flag had before a pool was called a hive.
 	flags.StringVar(hive, "pool", "", "the same as --hive")
 	noBrowser := flags.Bool("no-browser", false, "print the sign-in link instead of opening it")
@@ -206,15 +206,19 @@ func login(ctx context.Context, args []string) error {
 		DaemonVersion: version,
 		SpeedScore:    score,
 	}
-	if *hive != "" {
-		machine.OrganizationIDs = strings.Split(*hive, ",")
+	everyHive := strings.EqualFold(*hive, "all")
+	if *hive != "" && !everyHive {
+		machine.OrganizationIDs = splitHives(*hive)
 	}
 	enrollment, err := enrollChoosing(machine, func(machine api.Machine) (api.Enrollment, error) {
 		return client.Enroll(ctx, token, machine)
 	}, func(pools []api.Pool) ([]api.Pool, error) {
+		if everyHive {
+			return pools, nil
+		}
 		return askPools("You belong to more than one hive. Which should this machine serve?", pools, func(pool api.Pool) string {
-			return fmt.Sprintf("hived login --hive %s    (%s)", pool.ID, pool.Name)
-		})
+			return "hived login --hive " + pool.Name
+		}, "hived login --hive all")
 	})
 	var refusal *api.Error
 	if errors.As(err, &refusal) && refusal.Code == "NO_HIVE" {
@@ -246,8 +250,30 @@ func login(ctx context.Context, args []string) error {
 	for _, refused := range enrollment.Refused {
 		fmt.Printf("Not added to %s: %s\n", refused.Name, refused.Message)
 	}
+	// The installer starts the daemon itself once this returns.
+	if os.Getenv("HIVE_INSTALLING") == "1" {
+		return nil
+	}
+	// One the installer set up and could not start, for want of a hive, is
+	// started now: this is the one command it said was left. Not for a
+	// machine file of another name, which that service does not read.
+	if _, err := installedService(); err == nil && os.Getenv("HIVE_CONFIG") == "" {
+		return start()
+	}
 	fmt.Println("Start it with: hived run")
 	return nil
+}
+
+// splitHives is the hives a --hive flag names, without the spaces a person
+// may type after a comma.
+func splitHives(flag string) []string {
+	var hives []string
+	for _, hive := range strings.Split(flag, ",") {
+		if hive = strings.TrimSpace(hive); hive != "" {
+			hives = append(hives, hive)
+		}
+	}
+	return hives
 }
 
 // enrollChoosing enrolls a machine, and when the server wants to be told
@@ -352,10 +378,12 @@ func run(ctx context.Context) error {
 	var runner jobs.Runner
 	// A machine that cannot start a VM right now is another matter: the
 	// runner is kept, declines jobs while that lasts, and says so.
+	connections := connection.NewRecorder()
 	if vmRunner, err := loadRunner(log, live.Get()); err != nil {
 		log.Warn("this machine cannot run jobs yet", "reason", err)
 	} else {
 		runner = vmRunner
+		vmRunner.OnUnusable = connections.Unusable
 		// Asked now so that it is in the log's first lines, where the
 		// installer and the owner both look.
 		vmRunner.Unusable()
@@ -424,7 +452,7 @@ func run(ctx context.Context) error {
 	}()
 
 	err = pools.Run(ctx, pools.Options{
-		Connections:   connection.NewRecorder(),
+		Connections:   connections,
 		Client:        api.New(machine.Server),
 		Token:         machine.Token,
 		DaemonVersion: version,

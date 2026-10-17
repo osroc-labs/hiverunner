@@ -35,7 +35,11 @@ func (d deniedDevice) reason() string {
 	case !d.KVM:
 		return fmt.Sprintf("%s belongs to group %s, not kvm: run `sudo chgrp kvm %s`", d.Path, d.Group, d.Path)
 	case d.Listed && !d.Holds:
-		return fmt.Sprintf("your user's services started before your user joined the kvm group, so cannot open %s: run `sudo systemctl restart user@%d`, or restart the machine", d.Path, d.UID)
+		// Restarting the user's services would do it, and would end every
+		// session they have, an agent's in tmux included. Lending the
+		// devices to the user directly ends nothing; it lasts until the
+		// machine restarts, by when the group is enough.
+		return fmt.Sprintf("your user's services started before your user joined the kvm group, so cannot open %s: run `sudo setfacl -m u:$USER:rw /dev/kvm /dev/vhost-vsock; systemctl --user restart hiveworker`, or restart the machine. (`sudo systemctl restart user@%d` works too, but ends every session of yours)", d.Path, d.UID)
 	default:
 		return fmt.Sprintf("your user cannot open %s: run `sudo usermod -aG kvm $USER`, then log out and back in", d.Path)
 	}

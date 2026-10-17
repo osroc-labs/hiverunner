@@ -65,6 +65,44 @@ waited for the machine to be idle.
 the service, the image, the Actions cache, the settings, the sign-in and the
 binary, after asking.
 
+### With nobody at a terminal
+
+An agent, a script or `ssh host 'curl ... | sh'` has no terminal, and
+nothing here waits on one. Name the hive, as GitHub names the organization
+(or `all`), and the sign-in link is printed for someone to approve anywhere:
+
+```sh
+curl -fsSL https://get.hiverunner.dev/install.sh | sh -s -- --hive acme
+# or: HIVE=acme sh install.sh;  hived login --hive acme;  hived link --all
+```
+
+Without a terminal, `hived login` and `hived link` never ask which hive: for
+someone in several they stop and print the exact command for each one. A
+hive that is misspelt, or is not the person's, is refused with the ones they
+are in. If the installer cannot add the machine to a hive it still installs
+everything, sets the service up without starting it, and ends by printing
+the one command left; that `hived login` starts the service itself.
+`hived hives --json` lists what a machine serves, with each hive's id.
+
+The installer never asks for a password, so what needs root it prints for
+you to run, and `hived doctor` and `hived status` say it too:
+
+- **AppArmor** (Ubuntu 24.04 and later): `kernel.apparmor_restrict_unprivileged_userns=1`
+  stops the virtiofsd the installer downloads making the user namespace it
+  needs, and every job fails with `Error entering sandbox:
+CleanMount(PermissionDenied)`. The fix is a profile,
+  `/etc/apparmor.d/hiverunner-virtiofsd`, that allows that one program a user
+  namespace and nothing more; the command that writes and loads it names
+  this machine's own path.
+- **The kvm group, added after the user's services started**: the service
+  keeps the groups it started with. Rather than `sudo systemctl restart
+user@<uid>`, which ends every session of the user's (an agent in tmux
+  among them), lend the devices to the user and restart only the daemon:
+  `sudo setfacl -m u:$USER:rw /dev/kvm /dev/vhost-vsock; systemctl --user
+restart hiveworker`. That lasts until a reboot, when the group is enough.
+  `hived doctor` reads what the running daemon found, since the shell may
+  open what the service cannot.
+
 Building and publishing a release is in `docs/deployment.md`.
 
 ## On Windows

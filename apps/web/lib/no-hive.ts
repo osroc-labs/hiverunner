@@ -13,3 +13,27 @@ export function noHiveMessage() {
     "then run hived login again."
   )
 }
+
+/**
+ * The one of a person's hives that `hive` names: its id, or the GitHub
+ * organization's login in any case. What a person types is the login; the
+ * id is what the API hands back.
+ */
+export function findHive<T extends { id: string; name: string }>(
+  pools: T[],
+  hive: string
+) {
+  const wanted = hive.trim().toLowerCase()
+  return pools.find(
+    (pool) => pool.id === hive || pool.name.toLowerCase() === wanted
+  )
+}
+
+/** What to say of a hive asked for by someone not in it, and what they are in. */
+export function notInHive(hive: string, pools: Array<{ name: string }>) {
+  const theirs = pools.map((pool) => pool.name).join(", ")
+  return (
+    `You are not in a hive called ${JSON.stringify(hive)}. ` +
+    (theirs ? `Your hives: ${theirs}.` : "You are in no hive yet.")
+  )
+}

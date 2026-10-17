@@ -16,7 +16,7 @@ func TestWhyADeviceCouldNotBeOpenedSaysWhatToRun(t *testing.T) {
 		{"given to another group under Windows", deniedDevice{Path: "/dev/kvm", Group: "systemd-resolve", Listed: true, Holds: true, Windows: true},
 			[]string{"given to group systemd-resolve", "another Linux on this PC", "wsl -d HiveWorker -u root /usr/local/sbin/hive-devices"}},
 		{"a service older than the membership", deniedDevice{Path: "/dev/vhost-vsock", Group: "kvm", KVM: true, Listed: true, UID: 1000},
-			[]string{"started before your user joined the kvm group", "sudo systemctl restart user@1000"}},
+			[]string{"started before your user joined the kvm group", "sudo setfacl -m u:$USER:rw /dev/kvm /dev/vhost-vsock", "systemctl --user restart hiveworker", "sudo systemctl restart user@1000", "ends every session"}},
 		{"never a member", deniedDevice{Path: "/dev/kvm", Group: "kvm", KVM: true},
 			[]string{"your user cannot open /dev/kvm", "sudo usermod -aG kvm $USER"}},
 	} {

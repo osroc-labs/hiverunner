@@ -6,7 +6,7 @@ import {
 } from "@workspace/db/machines"
 
 import { getDb } from "@/db"
-import { noHiveMessage } from "@/lib/no-hive"
+import { findHive, noHiveMessage, notInHive } from "@/lib/no-hive"
 import { apiSession } from "@/lib/browser-request"
 import { logError, requestId } from "@/lib/diagnostics"
 import { AppError, errorResponse } from "@/lib/errors"
@@ -17,9 +17,10 @@ import { getGitHubApp } from "@/lib/github"
  *
  * Called by the daemon right after device sign-in. A machine can serve
  * several of its owner's organizations; each one asked for is authorized
- * separately. The sign-in session is ended here: from now on the machine
- * token is the daemon's only credential, so a person's session expiring
- * never takes their machine offline.
+ * separately, and named by id or as GitHub names the organization. The
+ * sign-in session is ended here: from now on the machine token is the
+ * daemon's only credential, so a person's session expiring never takes their
+ * machine offline.
  */
 export async function POST(request: Request) {
   try {
@@ -28,36 +29,40 @@ export async function POST(request: Request) {
     const db = getDb()
     const pools = await listOrganizations(db, user.id)
 
-    let organizationIds = input.organizationIds
-    if (organizationIds === undefined) {
-      // Signed in fine, but in no hive: the usual first-run dead end. The
-      // message is complete on its own because every daemon prints it.
-      if (!pools.length)
-        return Response.json(
-          {
-            error: noHiveMessage(),
-            code: "NO_HIVE",
-            pools: [],
-          },
-          { status: 403 }
-        )
-      if (pools.length !== 1)
-        // The daemon shows this list and asks again with a choice.
-        return Response.json(
-          {
-            error: "Choose which hives this machine should serve",
-            code: "CHOOSE_POOL",
-            pools: pools.map(({ id, name }) => ({ id, name })),
-          },
-          { status: 409 }
-        )
-      organizationIds = [pools[0]!.id]
-    }
+    // Signed in fine, but in no hive: the usual first-run dead end. The
+    // message is complete on its own because every daemon prints it.
+    if (!pools.length)
+      return Response.json(
+        {
+          error: noHiveMessage(),
+          code: "NO_HIVE",
+          pools: [],
+        },
+        { status: 403 }
+      )
+    const asked = input.organizationIds
+    if (asked === undefined && pools.length !== 1)
+      // The daemon shows this list and asks again with a choice.
+      return Response.json(
+        {
+          error: "Choose which hives this machine should serve",
+          code: "CHOOSE_POOL",
+          pools: pools.map(({ id, name }) => ({ id, name })),
+        },
+        { status: 409 }
+      )
+    const hives = asked === undefined ? [pools[0]!.id] : asked
     if (
-      !Array.isArray(organizationIds) ||
-      !organizationIds.every((id) => typeof id === "string")
+      !Array.isArray(hives) ||
+      !hives.every((hive): hive is string => typeof hive === "string")
     )
       throw new AppError("INVALID_INPUT", "Invalid input")
+    // Every hive asked for must be one of theirs, or nothing is enrolled: a
+    // misspelt name is better refused than half done.
+    const unknown = hives.find((hive) => !findHive(pools, hive))
+    if (unknown !== undefined)
+      throw new AppError("NOT_FOUND", notInHive(unknown, pools))
+    const organizationIds = hives.map((hive) => findHive(pools, hive)!.id)
 
     const result = await enrollMachine(db, getGitHubApp(), {
       userId: user.id,

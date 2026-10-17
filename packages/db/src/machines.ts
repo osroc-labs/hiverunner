@@ -5,7 +5,7 @@ import { member, organization, session, user } from "@workspace/auth/schema"
 import type { GitHubApp } from "@workspace/github"
 import { runnerArch } from "@workspace/pricing"
 
-import { canAddMachines, type SyncResult } from "@workspace/db/membership"
+import { type SyncResult, whyNoMachines } from "@workspace/db/membership"
 import {
   githubInstallation,
   machine,
@@ -125,26 +125,43 @@ async function authorizePool(
   github: GitHubChecks | null,
   input: { userId: string; organizationId: string; exceptMachineId?: string }
 ): Promise<Refusal | null> {
-  const [membership] = await db
-    .select({ id: member.id })
-    .from(member)
-    .where(
+  const [row] = await db
+    .select({ name: organization.name, member: member.id })
+    .from(organization)
+    .leftJoin(
+      member,
       and(
-        eq(member.organizationId, input.organizationId),
+        eq(member.organizationId, organization.id),
         eq(member.userId, input.userId)
       )
     )
+    .where(eq(organization.id, input.organizationId))
     .limit(1)
-  const allowed =
-    membership &&
-    (github
-      ? await canAddMachines(db, github, input)
-      : await poolIsActive(db, input.organizationId))
-  if (!allowed)
+  // The same answer whether the hive does not exist or is not theirs.
+  if (!row?.member)
+    return {
+      code: "NOT_FOUND",
+      message: "You are not a member of this hive.",
+    }
+  const why = github
+    ? await whyNoMachines(db, github, input)
+    : (await poolIsActive(db, input.organizationId))
+      ? null
+      : "inactive"
+  if (why === "inactive")
     return {
       code: "FORBIDDEN",
-      message:
-        "You cannot add machines to this hive. Ask an owner whether it is limited to certain teams.",
+      message: `${row.name} is not taking machines: Hive Runner is suspended or uninstalled on it. Ask an owner to restore it.`,
+    }
+  if (why === "not-member")
+    return {
+      code: "FORBIDDEN",
+      message: `GitHub does not list you as a member of ${row.name}. Accept its invitation on GitHub, then try again.`,
+    }
+  if (why === "teams")
+    return {
+      code: "FORBIDDEN",
+      message: `${row.name} limits machines to certain teams, and you are on none of them. Ask an owner to add you to one, or to change the hive's settings.`,
     }
   const mine = await db
     .select({ id: machine.id })

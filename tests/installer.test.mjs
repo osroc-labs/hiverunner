@@ -74,6 +74,14 @@ function release(root, origin) {
       join(making, "daemon/hived"),
       `# ${state.daemon}
 echo "hived $*" >> "${join(root, "asked.log")}"
+# Signed out until a login that is let through; one is refused while the
+# file "refuse" is there, as when the hive named is not one of the person's.
+[ "$1" = status ] && [ -e "${join(root, "signed-out")}" ] && exit 1
+if [ "$1" = login ]; then
+  [ -t 0 ] && echo "login read a terminal" >> "${join(root, "asked.log")}"
+  [ -e "${join(root, "refuse")}" ] && exit 1
+  rm -f "${join(root, "signed-out")}"
+fi
 [ "$1" = drain ] && [ "\${2:-}" != --end ] && [ -e "${join(root, "busy")}" ] && exit 1
 exit 0`
     )
@@ -197,49 +205,59 @@ esac`
   }
 }
 
+/** A release served from this process, a home, and the stand-ins. */
+async function setUp(t) {
+  const root = mkdtempSync(join(tmpdir(), "hive-installer-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const home = join(root, "home")
+  mkdirSync(home)
+
+  let served
+  const server = createServer((request, response) => {
+    const file = join(served, new URL(request.url, "http://x").pathname)
+    if (!existsSync(file)) return response.writeHead(404).end()
+    response.end(readFileSync(file))
+  })
+  server.listen(0, "127.0.0.1")
+  await once(server, "listening")
+  t.after(() => server.close())
+  const origin = `http://127.0.0.1:${server.address().port}`
+  const published = release(root, origin)
+  served = published.dir
+  const service = standIns(root)
+
+  const install = async (extra = {}, expected = 0, args = []) => {
+    const child = spawn("sh", [installer, ...args], {
+      env: {
+        ...process.env,
+        ...extra,
+        HOME: home,
+        XDG_CONFIG_HOME: "",
+        HIVE_RELEASES: origin,
+        HIVE_DEV: "1",
+        PATH: `${service.bin}:${process.env.PATH}`,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+      // A session of its own, with no terminal: as over ssh with a
+      // command, or from an agent.
+      detached: true,
+    })
+    let said = ""
+    child.stdout.on("data", (chunk) => (said += chunk))
+    child.stderr.on("data", (chunk) => (said += chunk))
+    const [code] = await once(child, "exit")
+    assert.equal(code, expected, said)
+    return said
+  }
+  const asked = () => readFileSync(join(root, "asked.log"), "utf8")
+  return { root, home, published, service, install, asked }
+}
+
 test(
   "the installer never restarts a daemon under a job it need not cancel",
   { skip: unusable() || false },
   async (t) => {
-    const root = mkdtempSync(join(tmpdir(), "hive-installer-"))
-    t.after(() => rmSync(root, { recursive: true, force: true }))
-    const home = join(root, "home")
-    mkdirSync(home)
-
-    let served
-    const server = createServer((request, response) => {
-      const file = join(served, new URL(request.url, "http://x").pathname)
-      if (!existsSync(file)) return response.writeHead(404).end()
-      response.end(readFileSync(file))
-    })
-    server.listen(0, "127.0.0.1")
-    await once(server, "listening")
-    t.after(() => server.close())
-    const origin = `http://127.0.0.1:${server.address().port}`
-    const published = release(root, origin)
-    served = published.dir
-    const service = standIns(root)
-
-    const install = async (extra = {}, expected = 0) => {
-      const child = spawn("sh", [installer], {
-        env: {
-          ...process.env,
-          ...extra,
-          HOME: home,
-          XDG_CONFIG_HOME: "",
-          HIVE_RELEASES: origin,
-          HIVE_DEV: "1",
-          PATH: `${service.bin}:${process.env.PATH}`,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      })
-      let said = ""
-      child.stdout.on("data", (chunk) => (said += chunk))
-      child.stderr.on("data", (chunk) => (said += chunk))
-      const [code] = await once(child, "exit")
-      assert.equal(code, expected, said)
-      return said
-    }
+    const { root, home, published, service, install } = await setUp(t)
 
     // A machine that has never had it: the daemon is started.
     await install()
@@ -299,5 +317,47 @@ test(
     // And after any of these, the next run is quiet again.
     await install()
     assert.equal(service.restarts(), 5)
+  }
+)
+
+test(
+  "the installer finishes with nobody at a terminal, and says what is left",
+  { skip: unusable() || false },
+  async (t) => {
+    const { root, home, service, install, asked } = await setUp(t)
+    writeFileSync(join(root, "signed-out"), "")
+    writeFileSync(join(root, "refuse"), "")
+
+    // Not added to a hive: everything else is still installed, the service
+    // is set up but not started, and the one command left is said.
+    const refused = await install({}, 1, ["--hive", "acme"])
+    assert.match(refused, /not in a hive yet/)
+    assert.match(refused, /hived login --hive acme/)
+    assert.ok(asked().includes("hived login --hive acme\n"), asked())
+    assert.ok(!asked().includes("login read a terminal"), "it asked a terminal")
+    assert.equal(service.restarts(), 0, "a daemon in no hive was started")
+    assert.ok(!existsSync(service.running))
+    assert.ok(existsSync(join(home, ".local/bin/hived")))
+    assert.ok(
+      existsSync(
+        mac
+          ? join(
+              home,
+              "Library/LaunchAgents/com.thecomputerplumbers.hiveworker.plist"
+            )
+          : join(home, ".config/systemd/user/hiveworker.service")
+      ),
+      "the service was not set up"
+    )
+
+    // HIVE says the same, and a login let through starts the daemon.
+    rmSync(join(root, "refuse"))
+    const added = await install({ HIVE: "globex" })
+    assert.ok(asked().includes("hived login --hive globex\n"), asked())
+    assert.equal(service.restarts(), 1, added)
+    assert.ok(existsSync(service.running))
+
+    // Anything else on the command line is refused before anything is done.
+    assert.match(await install({}, 2, ["--hives", "acme"]), /--hive <name>/)
   }
 )

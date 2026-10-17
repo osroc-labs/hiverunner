@@ -76,8 +76,9 @@ func (e *Error) Error() string {
 
 // Machine is what enrolling asks about this computer.
 type Machine struct {
-	// OrganizationIDs are the pools to serve. Empty lets the server choose,
-	// which it can only do for someone in exactly one pool.
+	// OrganizationIDs are the pools to serve, by id or as GitHub names the
+	// organization. Empty lets the server choose, which it can only do for
+	// someone in exactly one pool.
 	OrganizationIDs []string `json:"organizationIds,omitempty"`
 	Name            string   `json:"name"`
 	Model           string   `json:"model"`

@@ -18,6 +18,8 @@ type Runner struct {
 	Log       *slog.Logger
 	WarmVCPUs int
 	Guest     *GuestService
+	// OnUnusable is never called here: nothing here runs.
+	OnUnusable func(reason string)
 }
 
 var errUnsupported = errors.New("the VM runner needs macOS or Linux")

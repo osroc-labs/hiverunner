@@ -195,7 +195,8 @@ try {
   }
 
   // hived login: the daemon shows a code, the owner approves it in a browser.
-  const login = hived(["login", "--no-browser", "--hive", "gh-501"])
+  // Named as GitHub names it, in another case.
+  const login = hived(["login", "--no-browser", "--hive", "ACME"])
   await eventually(
     () => /user_code=/.test(login.output),
     "the daemon never showed a code"

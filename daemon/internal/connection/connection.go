@@ -32,6 +32,11 @@ type Hive struct {
 // State is every hive the daemon is serving, by name.
 type State struct {
 	Hives []Hive `json:"hives"`
+	// Unusable is why the daemon found it cannot run a VM, the last time it
+	// looked; empty if it can. It is the service's answer, which can differ
+	// from what the owner's own shell is allowed: a group added after the
+	// user's services started is the usual reason.
+	Unusable string `json:"unusable,omitempty"`
 	// WrittenBy is the daemon's process, so a reader can tell a file left
 	// by one that is gone from what a running one is saying.
 	WrittenBy int `json:"writtenBy"`
@@ -74,8 +79,9 @@ func (s State) Live() bool {
 // Recorder is the daemon's side: it is told as tunnels connect and drop, and
 // keeps the file in step. Its methods are safe to call from every tunnel.
 type Recorder struct {
-	mu    sync.Mutex
-	hives map[string]Hive
+	mu       sync.Mutex
+	hives    map[string]Hive
+	unusable string
 	// Now and Save are replaced in tests.
 	Now  func() time.Time
 	Save func(State) error
@@ -106,6 +112,17 @@ func (r *Recorder) Set(name string, connected bool, cause error) {
 	r.write()
 }
 
+// Unusable records why the daemon cannot run a VM, or "" once it can.
+func (r *Recorder) Unusable(reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.unusable == reason {
+		return
+	}
+	r.unusable = reason
+	r.write()
+}
+
 // Forget drops a hive the machine no longer serves.
 func (r *Recorder) Forget(name string) {
 	r.mu.Lock()
@@ -118,7 +135,7 @@ func (r *Recorder) Forget(name string) {
 }
 
 func (r *Recorder) write() {
-	state := State{WrittenBy: os.Getpid()}
+	state := State{Unusable: r.unusable, WrittenBy: os.Getpid()}
 	for _, hive := range r.hives {
 		state.Hives = append(state.Hives, hive)
 	}

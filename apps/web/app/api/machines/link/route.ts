@@ -11,6 +11,7 @@ import { apiSession } from "@/lib/browser-request"
 import { logError, requestId } from "@/lib/diagnostics"
 import { AppError, errorResponse } from "@/lib/errors"
 import { getGitHubApp } from "@/lib/github"
+import { findHive, notInHive } from "@/lib/no-hive"
 
 /**
  * Adds a machine its owner already enrolled to more of their hives: what
@@ -72,15 +73,12 @@ export async function POST(request: Request) {
       wanted.push(...open.map((pool) => pool.id))
     } else {
       for (const hive of new Set(asked as string[])) {
-        const found = pools.find(
-          (pool) =>
-            pool.id === hive || pool.name.toLowerCase() === hive.toLowerCase()
-        )
+        const found = findHive(pools, hive)
         if (!found)
           refused.push({
             id: hive,
             name: hive,
-            message: "You are not in a hive with that name.",
+            message: notInHive(hive, pools),
           })
         // Already serving it. Adding it again would mark a live tunnel
         // offline, so there is nothing to do and nothing to refuse.

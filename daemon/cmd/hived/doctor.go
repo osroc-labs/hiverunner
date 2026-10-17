@@ -65,6 +65,10 @@ func doctor() error {
 	}
 	if reason, fix := current.Holding(power, time.Now()), current.Fix(power, time.Now()); reason != "" {
 		checks = append(checks, host.Check{Name: "jobs", Found: "not taking jobs: " + reason, Fix: fix})
+		// Said as well, so that resuming is not the way to find it out.
+		if reason, fix := cannotRunVMs(); reason != "" {
+			checks = append(checks, host.Check{Name: "VMs", Found: "cannot start one: " + reason, Fix: fix})
+		}
 	} else if reason, fix := cannotRunVMs(); reason != "" {
 		checks = append(checks, host.Check{Name: "jobs", Found: "not taking jobs: " + reason, Fix: fix})
 	} else {
@@ -195,11 +199,24 @@ func reach(machine config.Machine) []host.Check {
 // would put it right, or two empty strings if it can. The daemon declines
 // jobs for as long as it is so, whatever the owner's settings say.
 func cannotRunVMs() (reason, fix string) {
-	err := vm.Preflight()
-	if err == nil {
+	remembered, _ := connection.Load()
+	return whyNoVMs(vm.Preflight(), remembered)
+}
+
+// whyNoVMs is cannotRunVMs from what this shell found and what the running
+// daemon last said. The two differ when the service may not open what the
+// shell may: a user's services keep the groups the user had when they
+// started, so a kvm group added since reaches the shell and not the daemon.
+func whyNoVMs(here error, daemon connection.State) (reason, fix string) {
+	if here != nil {
+		// The hypervisor's complaints say what to do after a colon.
+		reason, fix, _ = strings.Cut(here.Error(), ": ")
+		return reason, fix
+	}
+	if daemon.Unusable == "" || !daemon.Live() {
 		return "", ""
 	}
-	// The hypervisor's complaints say what to do after a colon.
-	reason, fix, _ = strings.Cut(err.Error(), ": ")
-	return reason, fix
+	said := strings.TrimPrefix(daemon.Unusable, "this machine cannot run a VM: ")
+	reason, fix, _ = strings.Cut(said, ": ")
+	return "the running daemon, though not this shell, finds " + reason, fix
 }

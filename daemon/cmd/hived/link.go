@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -37,13 +39,18 @@ func signIn(ctx context.Context, client *api.Client, noBrowser bool) (string, er
 func link(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("link", flag.ExitOnError)
 	noBrowser := flags.Bool("no-browser", false, "print the sign-in link instead of opening it")
+	all := flags.Bool("all", false, "add it to every hive you are in that it does not serve yet")
 	flags.Usage = func() {
-		fmt.Fprint(os.Stderr, "hived link [--no-browser] [hive ...]\n\n"+
+		fmt.Fprint(os.Stderr, "hived link [--no-browser] [--all | hive ...]\n\n"+
 			"Adds this machine to the hives named, or asks which if none are.\n"+
-			"A hive is named as GitHub names the organization.\n")
+			"A hive is named as GitHub names the organization, or by its id.\n"+
+			"With no terminal to ask in, it says the commands to run instead.\n")
 	}
 	_ = flags.Parse(args)
 	wanted := flags.Args()
+	if *all && len(wanted) > 0 {
+		return errors.New("name hives or say --all, not both")
+	}
 
 	machine, err := config.Load()
 	if err != nil {
@@ -69,11 +76,14 @@ func link(ctx context.Context, args []string) error {
 				open = append(open, pool)
 			}
 		}
-		chosen, err := askPools("Which other hives should this machine serve?", open, func(pool api.Pool) string {
-			return "hived link " + pool.Name
-		})
-		if err != nil {
-			return err
+		chosen := open
+		if !*all {
+			chosen, err = askPools("Which other hives should this machine serve?", open, func(pool api.Pool) string {
+				return "hived link " + pool.Name
+			}, "hived link --all")
+			if err != nil {
+				return err
+			}
 		}
 		// A second sign-in is not needed: a choice being offered is the one
 		// answer that leaves the session open.
@@ -136,8 +146,18 @@ func unlink(ctx context.Context, args []string) error {
 	return fmt.Errorf("this machine does not serve a hive called %q. %s", args[0], describe(assignment.Pools))
 }
 
-// hives prints the hives this machine serves, one to a line, for scripts.
-func hives(ctx context.Context) error {
+// hives prints the hives this machine serves, one to a line, for scripts;
+// with --json, each one's name and id.
+func hives(ctx context.Context, args []string) error {
+	asJSON := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			asJSON = true
+		default:
+			return errors.New("usage: hived hives [--json]")
+		}
+	}
 	machine, err := config.Load()
 	if err != nil {
 		return err
@@ -148,10 +168,31 @@ func hives(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if asJSON {
+		return writeHives(os.Stdout, assignment)
+	}
 	for _, pool := range assignment.Pools {
 		fmt.Println(pool.Name)
 	}
 	return nil
+}
+
+// writeHives is `hived hives --json`: this machine, and what it serves.
+func writeHives(out io.Writer, assignment api.Assignment) error {
+	type hive struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	listed := struct {
+		MachineID string `json:"machineId"`
+		Hives     []hive `json:"hives"`
+	}{MachineID: assignment.MachineID, Hives: []hive{}}
+	for _, pool := range assignment.Pools {
+		listed.Hives = append(listed.Hives, hive{ID: pool.ID, Name: pool.Name})
+	}
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(listed)
 }
 
 // served is a sentence saying which hives the machine serves right now.
@@ -189,8 +230,13 @@ func ids(pools []api.Pool) []string {
 }
 
 // askPools lets someone in several organizations choose which of them this
-// machine should serve. It can serve all of them at once.
-func askPools(question string, pools []api.Pool, again func(api.Pool) string) ([]api.Pool, error) {
+// machine should serve. It can serve all of them at once. With no terminal
+// to answer in, as when an agent or a script runs it, it asks nothing: a
+// question nobody can see would wait for ever.
+func askPools(question string, pools []api.Pool, again func(api.Pool) string, all string) ([]api.Pool, error) {
+	if !interactive(os.Stdin) {
+		return nil, unanswered(pools, again, all)
+	}
 	fmt.Println("\n" + question)
 	for i, pool := range pools {
 		fmt.Printf("  %d. %s\n", i+1, pool.Name)
@@ -199,19 +245,27 @@ func askPools(question string, pools []api.Pool, again func(api.Pool) string) ([
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		fmt.Println()
-		return nil, unanswered(pools, again)
+		return nil, unanswered(pools, again, all)
 	}
 	return choosePools(strings.TrimSpace(line), pools)
 }
 
+// interactive is whether a person could be typing into this file. A pipe or
+// a file never is; /dev/null is a device, but reads as an empty answer.
+func interactive(file *os.File) bool {
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
 // unanswered is what to say when nobody was there to choose, as when the
 // command was started by a script. The approval is spent by then, so it
-// gives the command that names each hive and needs no question.
-func unanswered(pools []api.Pool, again func(api.Pool) string) error {
-	lines := []string{"no hive was chosen, because there was no one to ask. Run it again and name the hive:"}
+// gives the commands that name the hives and need no question.
+func unanswered(pools []api.Pool, again func(api.Pool) string, all string) error {
+	lines := []string{"you are in more than one hive, and there was no one to ask which. Run it again and name the hive:"}
 	for _, pool := range pools {
 		lines = append(lines, "  "+again(pool))
 	}
+	lines = append(lines, "or every one of them:", "  "+all)
 	return errors.New(strings.Join(lines, "\n"))
 }
 

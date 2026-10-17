@@ -4,6 +4,14 @@
 #
 #   curl -fsSL https://get.hiverunner.dev/install.sh | sh
 #
+# With no one at a terminal, as over ssh with a command or from an agent,
+# name the hive this machine serves, as GitHub names the organization:
+#
+#   curl -fsSL https://get.hiverunner.dev/install.sh | sh -s -- --hive acme
+#
+# (or HIVE=acme; "all" for every hive you are in). The sign-in link is
+# printed for someone to approve anywhere; nothing waits on a question.
+#
 # It downloads the daemon and the Linux image jobs run in, checks both
 # against the checksums published with them, installs them under your home
 # directory, signs this Mac in with GitHub, and starts the daemon as a
@@ -15,6 +23,27 @@
 # has. HIVE_NOW=1 does not wait, and cancels them. To remove everything:
 # `hived uninstall`.
 set -eu
+
+# Which hives to add this machine to, if the person signing in is in more
+# than one. hived checks the names, so they are only passed on here.
+HIVE="${HIVE:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --hive)
+      [ $# -ge 2 ] || { printf 'hiveworker: --hive needs the name of a hive\n' >&2; exit 2; }
+      HIVE=$2
+      shift 2
+      ;;
+    --hive=*)
+      HIVE=${1#--hive=}
+      shift
+      ;;
+    *)
+      printf 'hiveworker: %s is not something this installer takes. It takes --hive <name>.\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+done
 
 BASE="${HIVE_RELEASES:-https://get.hiverunner.dev}"
 LABEL="com.thecomputerplumbers.hiveworker"
@@ -45,6 +74,32 @@ signed_in() {
   hives=$("$BIN_DIR/hived" hives 2>/dev/null | paste -sd, - | sed 's/,/, /g') || hives=""
   say "This $1 is already signed in${hives:+, and serves: $hives}."
   say "To add it to another hive, run: hived link"
+}
+
+# Signs this machine in with GitHub and adds it to a hive; fails if it was
+# not added. hived reads the terminal when there is one: piped from curl,
+# this script's own input is the script. When there is none it is given
+# nothing to read, and says the command to run instead of asking.
+# HIVE_INSTALLING tells it the daemon is started here, not by it.
+enroll() {
+  set -- login
+  [ -z "$HIVE" ] || set -- "$@" --hive "$HIVE"
+  if (: </dev/tty) 2>/dev/null; then
+    HIVE_INSTALLING=1 "$BIN_DIR/hived" "$@" </dev/tty
+  else
+    HIVE_INSTALLING=1 "$BIN_DIR/hived" "$@" </dev/null
+  fi
+}
+
+# Said at the end when signing in did not add this machine to a hive.
+# Everything else is in place, so one command is left, and it starts the
+# daemon too.
+not_enrolled() { # what this machine is called
+  say ""
+  say "Installed, but $1 is not in a hive yet, so the daemon was not started."
+  say "See what hived said above. One command is left, and it starts the daemon:"
+  say "  $BIN_DIR/hived login${HIVE:+ --hive $HIVE}"
+  exit 1
 }
 
 # Where the image goes: beside the settings, unless its owner keeps it on
@@ -193,12 +248,11 @@ if [ "${HIVE_NO_START:-}" = "1" ]; then
 fi
 
 step "Adding this Mac to your hive"
+enrolled=yes
 if "$BIN_DIR/hived" status >/dev/null 2>&1; then
   signed_in Mac
 else
-  # Read from the terminal: when this script is piped from curl, its own
-  # input is the script.
-  "$BIN_DIR/hived" login </dev/tty || fail "this machine was not added to a hive. See what hived said above; once that is sorted, run this again."
+  enroll || enrolled=""
 fi
 
 step "Starting the daemon"
@@ -236,6 +290,9 @@ PLIST
 cmp -s "$work/agent.plist" "$AGENT" || changed=yes
 cp "$work/agent.plist" "$AGENT"
 domain="gui/$(id -u)"
+# Not in a hive, the daemon would only exit and be started again. It is
+# left for hived login to start.
+[ -n "$enrolled" ] || not_enrolled "this Mac"
 # Nothing new, and the daemon is running: it is left alone. Restarting it
 # would cancel a job it is in the middle of, for the same daemon again.
 if [ -z "$changed" ] && launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
@@ -294,6 +351,25 @@ DATA_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/HiveWorker"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT="hiveworker.service"
 
+# Ubuntu 24.04 and later let no unprivileged program make a user namespace
+# unless an AppArmor profile allows it, and the virtiofsd this installs
+# needs one to share a job's directory with its VM. Without it every job
+# fails, with "Error entering sandbox: CleanMount(PermissionDenied)". This
+# says what to run, since this script never asks for a password; hived
+# doctor says the same. Only for the copy installed here: a distribution's
+# own virtiofsd is its packager's to allow.
+apparmor() {
+  [ -x "$DATA_DIR/bin/virtiofsd" ] && [ "$virtiofsd" = "" ] || return 0
+  [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ] || return 0
+  profile=/etc/apparmor.d/hiverunner-virtiofsd
+  [ -e "$profile" ] && return 0
+  grep -qsF "$DATA_DIR/bin/virtiofsd" /etc/apparmor.d/* 2>/dev/null && return 0
+  say ""
+  say "AppArmor stops virtiofsd here, so no job can start until this is run. It"
+  say "allows that one program a user namespace and nothing else:"
+  say "  printf 'abi <abi/4.0>,\\ninclude <tunables/global>\\nprofile hiverunner-virtiofsd \"$DATA_DIR/bin/virtiofsd\" flags=(unconfined) {\\n  userns,\\n  include if exists <local/hiverunner-virtiofsd>\\n}\\n' | sudo tee $profile >/dev/null && sudo apparmor_parser -r $profile"
+}
+
 step "Checking this machine can run VMs"
 missing=""
 command -v "$qemu" >/dev/null 2>&1 || missing="$missing $qemu"
@@ -323,8 +399,10 @@ if [ -n "$missing" ]; then
 fi
 [ -e /dev/kvm ] || fail "there is no /dev/kvm. Virtualization is switched off in this machine's firmware, or this is a cloud VM without nested virtualization."
 if ! [ -r /dev/kvm ] || ! [ -w /dev/kvm ]; then
-  say "Your user cannot use /dev/kvm yet. Run this, log out and back in, then run this script again:"
-  say "  sudo usermod -aG kvm $(id -un)"
+  # The group is for good, from the next login. The ACL is for now, for
+  # this shell and the daemon's service alike, so nobody has to log out.
+  say "Your user cannot use /dev/kvm yet. Run this, then this script again:"
+  say "  sudo usermod -aG kvm $(id -un) && sudo setfacl -m u:$(id -un):rw /dev/kvm /dev/vhost-vsock"
   exit 1
 fi
 say "KVM, QEMU and passt are here."
@@ -435,10 +513,11 @@ if [ "${HIVE_NO_START:-}" = "1" ]; then
 fi
 
 step "Adding this machine to your hive"
+enrolled=yes
 if "$BIN_DIR/hived" status >/dev/null 2>&1; then
   signed_in machine
 else
-  "$BIN_DIR/hived" login </dev/tty || fail "this machine was not added to a hive. See what hived said above; once that is sorted, run this again."
+  enroll || enrolled=""
 fi
 
 step "Starting the daemon"
@@ -446,6 +525,8 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
   say "This login has no systemd user session, so no service was set up."
   say "Start the daemon yourself, and keep it running however you keep things running:"
   say "  $BIN_DIR/hived run"
+  apparmor
+  [ -n "$enrolled" ] || not_enrolled "this machine"
   exit 0
 fi
 mkdir -p "$UNIT_DIR"
@@ -467,10 +548,20 @@ WantedBy=default.target
 SERVICE
 cmp -s "$work/$UNIT" "$UNIT_DIR/$UNIT" || changed=yes
 cp "$work/$UNIT" "$UNIT_DIR/$UNIT"
+if [ -z "$enrolled" ]; then
+  # Set up to start at boot, and not started now: not in a hive, it would
+  # only exit. hived login starts it.
+  systemctl --user daemon-reload
+  systemctl --user enable "$UNIT" >/dev/null 2>&1 || true
+  loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || true
+  apparmor
+  not_enrolled "this machine"
+fi
 # Nothing new, and the daemon is running: it is left alone. Restarting it
 # would cancel a job it is in the middle of, for the same daemon again.
 if [ -z "$changed" ] && systemctl --user is-active --quiet "$UNIT"; then
   say "hived $version is already running, and was left as it is."
+  apparmor
   say ""
   say "Done. Nothing needed updating."
   tips "this machine" "~/.profile"
@@ -506,21 +597,28 @@ fi
 
 # The service belongs to this user's systemd, which took its groups when it
 # started. If the kvm group was added since, the shell has it and the
-# service does not yet, and the daemon says so in its first lines.
+# service does not yet, and the daemon says so in its first lines. Lending
+# the devices to the user directly fixes that until the next boot, when the
+# group is enough; restarting the user's systemd would also do it, and would
+# end every session they have, an agent's in tmux included.
 sleep 3
 started=$(journalctl --user -u hiveworker -n 20 --no-pager 2>/dev/null || true)
+lend="sudo setfacl -m u:$(id -un):rw /dev/kvm /dev/vhost-vsock; systemctl --user restart hiveworker"
 if printf '%s' "$started" | grep -q "cannot open /dev/kvm"; then
   say ""
   say "The daemon is running but cannot use KVM yet: your login got the kvm group"
-  say "after your user's services started. Restart them (or reboot), and it will:"
-  say "  sudo systemctl restart user@$(id -u)"
+  say "after your user's services started. This lends it the devices without ending"
+  say "any of your sessions, and lasts until a reboot, after which the group does:"
+  say "  $lend"
+  say "(sudo systemctl restart user@$(id -u) works too, but ends every session of yours.)"
 elif printf '%s' "$started" | grep -q "cannot open /dev/vhost-vsock" && [ -r /dev/vhost-vsock ] && [ -w /dev/vhost-vsock ]; then
   say ""
-  say "Jobs will run, but without this machine's own Actions cache until your"
-  say "user's services are restarted: they started before your login got the"
-  say "kvm group. Restart them (or reboot):"
-  say "  sudo systemctl restart user@$(id -u)"
+  say "Jobs will run, but without this machine's own Actions cache: your user's"
+  say "services started before your login got the kvm group. This lends the"
+  say "daemon the devices without ending any of your sessions, until a reboot:"
+  say "  $lend"
 fi
+apparmor
 
 say ""
 say "Done. This machine now runs jobs for your hive. Logs: journalctl --user -u hiveworker"

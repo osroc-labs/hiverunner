@@ -54,11 +54,26 @@ type tools struct {
 // Preflight reports why this host cannot run VMs, in words its owner can act
 // on, or nil if it can.
 func Preflight() error {
-	_, err := findTools()
+	found, err := findTools()
 	if err != nil {
 		return err
 	}
-	return kvmUsable()
+	if err := kvmUsable(); err != nil {
+		return err
+	}
+	if blocked := appArmorBlocks(found.virtiofsd, bundledVirtiofsd(), os.ReadFile, os.ReadDir); blocked != "" {
+		return errors.New(blocked)
+	}
+	return nil
+}
+
+// bundledVirtiofsd is where the installer puts its own virtiofsd, on a
+// system that packages none able to run without root.
+func bundledVirtiofsd() string {
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "HiveWorker", "bin", "virtiofsd")
+	}
+	return ""
 }
 
 func kvmUsable() error {
@@ -152,11 +167,7 @@ func findTools() (tools, error) {
 	// packages no virtiofsd able to run without root. Otherwise the
 	// system's, which distributions keep out of PATH. Not /usr/lib/qemu:
 	// what lives there is the older one from inside QEMU, which must be root.
-	bundled := ""
-	if dir, err := os.UserConfigDir(); err == nil {
-		bundled = filepath.Join(dir, "HiveWorker", "bin", "virtiofsd")
-	}
-	look(&found.virtiofsd, bundled, "virtiofsd", "/usr/libexec/virtiofsd", "/usr/lib/virtiofsd")
+	look(&found.virtiofsd, bundledVirtiofsd(), "virtiofsd", "/usr/libexec/virtiofsd", "/usr/lib/virtiofsd")
 	look(&found.passt, "passt")
 	if len(missing) > 0 {
 		return tools{}, fmt.Errorf("%s missing: on Debian or Ubuntu run `sudo apt install qemu-system qemu-utils passt`, and the installer again for virtiofsd", strings.Join(missing, ", "))
