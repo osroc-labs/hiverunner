@@ -156,6 +156,32 @@ exit 0`
   return { dir, state, publish }
 }
 
+/** Mutate the published image fields without rebuilding the archives. */
+function rewriteRelease(published, image) {
+  if (mac) {
+    const path = join(published.dir, "latest.json")
+    const latest = JSON.parse(readFileSync(path, "utf8"))
+    Object.assign(latest.image, image)
+    writeFileSync(path, JSON.stringify(latest))
+    return
+  }
+  const path = join(published.dir, `linux-${linuxArch}.txt`)
+  let text = readFileSync(path, "utf8")
+  if (image.sha256) {
+    text = text.replace(
+      /image_sha256=[a-f0-9]+/,
+      `image_sha256=${image.sha256}`
+    )
+  }
+  if (image.megabytes != null) {
+    text = text.replace(
+      /image_megabytes=\d+/,
+      `image_megabytes=${image.megabytes}`
+    )
+  }
+  writeFileSync(path, text)
+}
+
 /**
  * The service manager and, on Linux, the programs a VM is made of: each
  * writes down what it was asked. `running` is the file whose presence means
@@ -192,12 +218,28 @@ esac`
       script(join(bin, name), "exit 0")
     script(join(bin, "virtiofsd"), 'echo "virtiofsd 1.13.2"')
   }
+  // Record where curl writes, so a test can see the image was not staged
+  // in /tmp. PATH is this directory first, so command -v curl is us.
+  script(
+    join(bin, "curl"),
+    `echo "curl $*" >> "${asked}"
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then
+    echo "curl-out $arg" >> "${asked}"
+  fi
+  prev=$arg
+done
+exec env PATH="/usr/bin:/bin" curl "$@"`
+  )
   const lines = () => readFileSync(asked, "utf8").split("\n")
   return {
     bin,
     running,
+    lines,
     // How many times the daemon was asked to stop taking jobs and wait.
     drains: () => lines().filter((line) => line === "hived drain").length,
+    ends: () => lines().filter((line) => line === "hived drain --end").length,
     // How many times a running daemon was stopped or a stopped one started.
     restarts: () =>
       lines().filter((line) =>
@@ -318,6 +360,75 @@ test(
     // And after any of these, the next run is quiet again.
     await install()
     assert.equal(service.restarts(), 5)
+
+    // The guest image is staged on the data disk, not in /tmp.
+    const imageOuts = service
+      .lines()
+      .filter(
+        (line) => line.startsWith("curl-out ") && /\/staging\//.test(line)
+      )
+    assert.ok(imageOuts.length > 0, "the image was not downloaded")
+    const dataHome = mac
+      ? join(home, "Library/Application Support/HiveWorker")
+      : join(home, ".config/HiveWorker")
+    for (const line of imageOuts) {
+      const path = line.slice("curl-out ".length)
+      assert.ok(
+        path.startsWith(join(dataHome, "staging") + "/"),
+        `image staged off the data disk:\n${path}`
+      )
+    }
+  }
+)
+
+test(
+  "a failed image update puts the machine back as it was",
+  { skip: unusable() || false },
+  async (t) => {
+    const { home, published, service, install } = await setUp(t)
+    await install()
+    assert.equal(service.restarts(), 1)
+
+    published.state.image = 2
+    published.publish()
+    rewriteRelease(published, { sha256: "deadbeef" })
+
+    const untilFail = service.drains()
+    const failed = await install({}, 1)
+    assert.match(failed, /does not match its published checksum/)
+    assert.match(failed, /put back as it was/)
+    assert.ok(service.drains() > untilFail, "it was not asked to finish first")
+    assert.ok(service.ends() > 0, "the pause the drain put on was not lifted")
+    assert.equal(service.restarts(), 1, "restarted after a failed image fetch")
+    const dataHome = mac
+      ? join(home, "Library/Application Support/HiveWorker")
+      : join(home, ".config/HiveWorker")
+    assert.ok(
+      !existsSync(join(dataHome, "staging")),
+      "the staging directory was left behind"
+    )
+  }
+)
+
+test(
+  "the installer refuses an image that will not fit, before it pauses the machine",
+  { skip: unusable() || false },
+  async (t) => {
+    const { published, service, install } = await setUp(t)
+    await install()
+    published.state.image = 2
+    published.publish()
+    rewriteRelease(published, { megabytes: 999999 })
+    const untilSpace = service.drains()
+    const refused = await install({}, 1)
+    assert.match(refused, /not enough room/)
+    assert.equal(
+      service.drains(),
+      untilSpace,
+      "paused before it knew it would fail"
+    )
+    assert.equal(service.ends(), 0)
+    assert.equal(service.restarts(), 1)
   }
 )
 

@@ -71,6 +71,28 @@ func TestTheDaemonUpdatesItselfOnlyOnceItHasNoJob(t *testing.T) {
 	}
 }
 
+func TestTheDaemonFetchesANewImageWhenTheDaemonIsCurrent(t *testing.T) {
+	t.Setenv("HIVE_CONFIG", filepath.Join(t.TempDir(), "machine.json"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"version":"0.4.21","commit":"abc","image":{"version":"11-2.337.0"}}`))
+	}))
+	defer server.Close()
+	t.Setenv("HIVE_RELEASES", server.URL)
+
+	var updating atomic.Bool
+	var applied atomic.Int32
+	tick(context.Background(), Options{
+		Version: "0.4.21", Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AutoUpdate: func() bool { return true }, Busy: func() bool { return false },
+		Image:    func() string { return "10-2.337.0" },
+		Updating: &updating, installed: func() bool { return true }, poll: time.Millisecond,
+		apply: func(context.Context) error { applied.Add(1); return nil },
+	})
+	if applied.Load() != 1 {
+		t.Fatalf("the installer ran %d times", applied.Load())
+	}
+}
+
 func TestTheDaemonLeavesItselfAloneWhenItIsCurrentOrToldTo(t *testing.T) {
 	t.Setenv("HIVE_CONFIG", filepath.Join(t.TempDir(), "machine.json"))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -94,6 +116,7 @@ func TestTheDaemonLeavesItselfAloneWhenItIsCurrentOrToldTo(t *testing.T) {
 			tick(context.Background(), Options{
 				Version: test.version, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 				AutoUpdate: func() bool { return test.auto }, Busy: func() bool { return false },
+				Image:    func() string { return "1-2.0.0" },
 				Updating: &updating, installed: func() bool { return true }, poll: time.Millisecond,
 				apply: func(context.Context) error { t.Error("the installer was run"); return nil },
 			})
