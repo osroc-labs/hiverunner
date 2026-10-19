@@ -79,3 +79,37 @@ test("unknown fields are dropped, not passed through", () => {
     { type: "presence", presence: "online" }
   )
 })
+
+test("job.exited carries an optional kill reason", () => {
+  assert.deepEqual(
+    parseDaemonMessage(
+      JSON.stringify({
+        type: "job.exited",
+        assignmentId: "a-1",
+        exitCode: -1,
+        reason: "guest_oom",
+        detail: "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5",
+        extra: true,
+      })
+    ),
+    {
+      type: "job.exited",
+      assignmentId: "a-1",
+      exitCode: -1,
+      reason: "guest_oom",
+      detail: "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5",
+    }
+  )
+  assert.deepEqual(
+    parseDaemonMessage(
+      JSON.stringify({
+        type: "job.exited",
+        assignmentId: "a-1",
+        exitCode: 0,
+        reason: "made-up",
+        detail: "",
+      })
+    ),
+    { type: "job.exited", assignmentId: "a-1", exitCode: 0 }
+  )
+})

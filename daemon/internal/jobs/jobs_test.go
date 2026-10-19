@@ -24,14 +24,14 @@ func newFake() *fake {
 	return &fake{started: make(chan Job, 1), finish: make(chan int), stopped: make(chan struct{}, 1)}
 }
 
-func (f *fake) Run(ctx context.Context, job Job) (int, error) {
+func (f *fake) Run(ctx context.Context, job Job) (Result, error) {
 	f.started <- job
 	select {
 	case code := <-f.finish:
-		return code, nil
+		return Result{ExitCode: code}, nil
 	case <-ctx.Done():
 		f.stopped <- struct{}{}
-		return -1, ctx.Err()
+		return Result{ExitCode: -1}, ctx.Err()
 	}
 }
 
@@ -65,7 +65,7 @@ func TestAJobRunsAndItsResultIsDelivered(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := <-runner.started
-	if job.JITConfig != "jit" || job.VCPUs != 2 || job.Timeout != time.Hour || job.RunnerName != "hw-m-a-1" {
+	if job.JITConfig != "jit" || job.VCPUs != 2 || job.Timeout != time.Hour || job.RunnerName != "hw-m-a-1" || job.Label != "hive" {
 		t.Fatalf("runner got %+v", job)
 	}
 	runner.finish <- 3
@@ -138,12 +138,12 @@ func newSlow() *slow {
 	return &slow{started: make(chan struct{}), teardown: make(chan struct{}), tornDown: make(chan struct{})}
 }
 
-func (r *slow) Run(ctx context.Context, _ Job) (int, error) {
+func (r *slow) Run(ctx context.Context, _ Job) (Result, error) {
 	close(r.started)
 	<-ctx.Done()
 	<-r.teardown
 	close(r.tornDown)
-	return -1, ctx.Err()
+	return Result{ExitCode: -1}, ctx.Err()
 }
 
 // The order that matters: a released job's VM is destroyed before the
@@ -186,7 +186,7 @@ func TestAReleasedJobHoldsTheSlotUntilItsVMIsGone(t *testing.T) {
 	// The pool is told the job is gone, so it can count the cores as free.
 	select {
 	case exit := <-m.Exits("acme"):
-		if exit.AssignmentID != "a-1" {
+		if exit.AssignmentID != "a-1" || exit.Reason != ReasonReleased {
 			t.Fatalf("the wrong job was reported gone: %+v", exit)
 		}
 	case <-within(t, "the released job's exit"):
@@ -225,6 +225,14 @@ func TestWaitReturnsOnlyAfterTeardown(t *testing.T) {
 	default:
 		t.Fatal("Wait returned before teardown finished")
 	}
+	select {
+	case exit := <-m.Exits("acme"):
+		if exit.Reason != ReasonDaemonShutdown {
+			t.Fatalf("a job stopped by shutdown = %+v", exit)
+		}
+	case <-within(t, "shutdown exit"):
+		t.Fatal("the pool was never told the shutdown job ended")
+	}
 }
 
 // An offer that was accepted but never started holds no VM: releasing it
@@ -254,8 +262,8 @@ func TestTheJobTimeoutDestroysTheRunner(t *testing.T) {
 	<-runner.started
 	select {
 	case exit := <-m.Exits("acme"):
-		if exit.ExitCode == 0 {
-			t.Fatal("a timed-out job reported success")
+		if exit.ExitCode == 0 || exit.Reason != ReasonTimeout {
+			t.Fatalf("a timed-out job = %+v", exit)
 		}
 	case <-within(t, "timeout"):
 		t.Fatal("the job outlived its timeout")

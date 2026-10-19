@@ -14,6 +14,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Deliberately not the hosted runners' toolcache; jobs install what they need
 # with setup-* actions, as they do anywhere.
 #
+# linux-image-virtual is the small VM kernel. zram (compressed swap) lives
+# in that kernel's extra-modules package, which the virtual image leaves
+# out. The extra package is here so a job that uses a lot of RAM can swap
+# instead of being killed; hive-agent loads the module at boot.
+#
 # Python is the exception, and only the system's own: workflows and actions
 # call `python3` for a few lines of glue as freely as they call jq, and
 # found none here. It is Ubuntu's 3.12 with venv, and no pip outside a venv;
@@ -27,6 +32,9 @@ RUN apt-get update \
       ca-certificates curl git sudo iproute2 iputils-ping \
       jq tar gzip unzip zip xz-utils zstd openssh-client locales socat \
       libatomic1 python3 python3-venv \
+ && kernel=$(ls /lib/modules | sort -V | tail -1) \
+ && { apt-get install -y --no-install-recommends "linux-modules-extra-$kernel" \
+      || apt-get install -y --no-install-recommends linux-image-extra-virtual; } \
  && locale-gen en_US.UTF-8 \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -c 'import json, sqlite3, ssl, tomllib' \
@@ -58,11 +66,12 @@ RUN useradd --create-home --uid 1001 --shell /bin/bash runner \
 # Docker does not wait for it or give it memory. busybox is the self-test's
 # container: one static file, so the test pulls nothing.
 #
-# linux-image-virtual leaves out linux-modules-extra, and what Docker needs
-# of the kernel is all in the modules it does bring: overlayfs, bridges and
-# veth pairs, and the netfilter pieces iptables-nft drives. The build fails
-# if a kernel ever moves one of them out, rather than produce an image whose
-# containers have no network.
+# linux-image-virtual has what Docker needs of the kernel: overlayfs, bridges
+# and veth pairs, and the netfilter pieces iptables-nft drives. zram comes
+# from linux-modules-extra for that same kernel ABI, installed above. The
+# build fails if a kernel ever moves one of them out, rather than produce an
+# image whose containers have no network or whose jobs have no compressed
+# swap.
 RUN install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL -o /etc/apt/keyrings/docker.asc https://download.docker.com/linux/ubuntu/gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
@@ -78,7 +87,7 @@ RUN install -m 0755 -d /etc/apt/keyrings \
  && docker --version && docker buildx version && docker compose version \
  && kernel=$(ls /lib/modules | sort -V | tail -1) \
  && for module in overlay bridge veth br_netfilter nf_tables nft_compat nft_chain_nat \
-      nf_nat nf_conntrack xt_MASQUERADE xt_addrtype xt_conntrack; do \
+      nf_nat nf_conntrack xt_MASQUERADE xt_addrtype xt_conntrack zram; do \
       modinfo -k "$kernel" "$module" >/dev/null || { echo "the kernel has no $module" >&2; exit 1; }; \
     done
 

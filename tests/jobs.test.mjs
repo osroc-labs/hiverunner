@@ -7,8 +7,10 @@ import {
   provisionInstallation,
 } from "../packages/db/src/installations.ts"
 import {
+  applyJobExit,
   canAcquireJobs,
   jobIdFor,
+  recordJobExit,
   settleJob,
   settleLedger,
   startJob,
@@ -237,4 +239,43 @@ test("the accepted quote survives a pool revocation and score change", async (t)
       .speed_score,
     1.5
   )
+})
+
+test("a daemon-reported kill reason is stored and copied onto the job", async (t) => {
+  const { db, sqlite } = await pool(t)
+  await recordJobExit(db, {
+    assignmentId: "asg-1",
+    organizationId: orgId,
+    machineId: "mac",
+    exitCode: -1,
+    reason: "guest_oom",
+    detail: "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5",
+  })
+  assert.equal(
+    sqlite
+      .prepare("select reason from job_exit where assignment_id = ?")
+      .get("asg-1").reason,
+    "guest_oom"
+  )
+  const jobId = await start(db, 3, { assignmentId: "asg-1" })
+  const row = sqlite
+    .prepare("select end_reason, end_detail from job where id = ?")
+    .get(jobId)
+  assert.equal(row.end_reason, "guest_oom")
+  assert.match(row.end_detail, /guest OOM/)
+  await recordJobExit(db, {
+    assignmentId: "asg-1",
+    organizationId: orgId,
+    machineId: "mac",
+    exitCode: -1,
+    reason: "guest_oom",
+    detail:
+      "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5 (hive-4cpu)",
+  })
+  assert.match(
+    sqlite.prepare("select end_detail from job where id = ?").get(jobId)
+      .end_detail,
+    /hive-4cpu/
+  )
+  assert.equal(await applyJobExit(db, jobId, "missing"), false)
 })

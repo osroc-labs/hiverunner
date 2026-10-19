@@ -107,6 +107,13 @@ type JobExited struct {
 	Type         string `json:"type"`
 	AssignmentID string `json:"assignmentId"`
 	ExitCode     int    `json:"exitCode"`
+	// Reason is why the runner or VM was stopped, when that was not a
+	// normal job finish. Absent on a clean runner exit. Older coordinators
+	// ignore the field.
+	Reason string `json:"reason,omitempty"`
+	// Detail is one sentence a human can read, with the host and the
+	// numbers that justify the reason.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Welcome is the coordinator's first frame.

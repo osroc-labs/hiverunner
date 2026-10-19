@@ -42,6 +42,9 @@ export default async function JobPage({
         : "still running",
     ],
     ["took", took === null ? "still running" : formatDuration(took)],
+    ...(job.endDetail
+      ? ([["stopped", job.endDetail]] as Array<[string, string]>)
+      : []),
   ]
   const tone =
     job.result === "failed"

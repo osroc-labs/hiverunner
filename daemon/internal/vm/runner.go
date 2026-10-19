@@ -22,7 +22,6 @@ import (
 )
 
 const (
-	gib = 1 << 30
 	// What a job's disk can grow to. The disk is a clone or an overlay, so
 	// this costs nothing until the job writes.
 	diskBytes = 40 * gib
@@ -131,6 +130,14 @@ type instance struct {
 	// any way but powering itself off, and is written before ended closes.
 	ended   chan struct{}
 	failure error
+	// memory is the RAM the VM was given, for kill-reason messages.
+	memory uint64
+	// stopped is set when we pulled the plug, so a SIGKILL from us is not
+	// reported as the host killing the VM.
+	stopped atomic.Bool
+	// hostKilled is set when the hypervisor died from outside, typically
+	// the host OOM-killing QEMU.
+	hostKilled bool
 	// stop pulls the plug. It is safe to call more than once, and on a VM
 	// that has already stopped.
 	stop func()
@@ -152,8 +159,8 @@ func (vm *instance) owner() string {
 
 // Run hands the job to a VM, waits for it to power off, and deletes
 // everything it used. The VM is the warm one if it fits, or a fresh boot.
-func (r *Runner) Run(ctx context.Context, job jobs.Job) (int, error) {
-	return r.run(ctx, job.AssignmentID, job.Pool, job.VCPUs, "jitconfig", job.JITConfig, nil)
+func (r *Runner) Run(ctx context.Context, job jobs.Job) (jobs.Result, error) {
+	return r.run(ctx, job, "jitconfig", job.JITConfig, nil)
 }
 
 // SelfTest runs a VM with no credential and returns what the guest reports
@@ -161,24 +168,29 @@ func (r *Runner) Run(ctx context.Context, job jobs.Job) (int, error) {
 // binary work on this machine.
 func (r *Runner) SelfTest(ctx context.Context, vcpus int) (string, error) {
 	var report string
-	code, err := r.run(ctx, "selftest", "selftest", vcpus, "selftest", "1", func(share string) {
+	result, err := r.run(ctx, jobs.Job{AssignmentID: "selftest", Pool: "selftest", VCPUs: vcpus}, "selftest", "1", func(share string) {
 		raw, _ := os.ReadFile(filepath.Join(share, "selftest.out"))
 		report = string(raw)
 	})
 	if err != nil {
 		return report, err
 	}
-	if code != 0 {
-		return report, fmt.Errorf("guest self-test exited %d", code)
+	if result.ExitCode != 0 {
+		return report, fmt.Errorf("guest self-test exited %d", result.ExitCode)
 	}
 	return report, nil
 }
 
-func (r *Runner) run(ctx context.Context, id, pool string, vcpus int, file, content string, collect func(share string)) (code int, err error) {
+// How long the guest has to notice stop-reason and write it into the job
+// log before the plug is pulled.
+const stopGrace = 2 * time.Second
+
+func (r *Runner) run(ctx context.Context, job jobs.Job, file, content string, collect func(share string)) (result jobs.Result, err error) {
+	id := job.AssignmentID
 	started := time.Now()
 	r.mu.Lock()
 	r.active++
-	vm := r.takeWarmLocked(vcpus)
+	vm := r.takeWarmLocked(job.VCPUs)
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
@@ -188,8 +200,8 @@ func (r *Runner) run(ctx context.Context, id, pool string, vcpus int, file, cont
 
 	warm := vm != nil
 	if vm == nil {
-		if vm, err = r.boot(vcpus); err != nil {
-			return -1, err
+		if vm, err = r.boot(job.VCPUs); err != nil {
+			return jobs.Result{ExitCode: -1}, err
 		}
 	}
 	// Whatever happens: the disk, the share and the credential go.
@@ -197,34 +209,42 @@ func (r *Runner) run(ctx context.Context, id, pool string, vcpus int, file, cont
 
 	// The VM now works for this pool, and is told where the host's service
 	// is before it is told about the job.
-	extras := map[string]string{}
-	if vm.served && r.Guest.Enabled() {
+	extras := map[string]string{"host": hostName()}
+	if job.Label != "" {
+		extras["label"] = job.Label
+	}
+	if vm.served && r.Guest != nil && r.Guest.Enabled() {
+		pool := job.Pool
 		vm.pool.Store(&pool)
 		extras[GuestServiceFile] = strconv.FormatUint(uint64(r.Guest.Port), 10)
 	}
 	if err := vm.handoff(extras, file, content); err != nil {
-		return -1, err
+		return jobs.Result{ExitCode: -1}, err
 	}
-	r.Log.Info("VM has the job", "job", id, "vcpus", vcpus, "warm", warm)
+	r.Log.Info("VM has the job", "job", id, "vcpus", job.VCPUs, "label", job.Label, "warm", warm)
 
 	select {
 	case <-vm.ended:
 		err = vm.failure
 	case <-ctx.Done():
-		// Cancelled or out of time. There is nothing in the VM worth a
-		// graceful shutdown; destroy pulls the plug.
 		err = ctx.Err()
+		// A timeout or daemon shutdown: give the guest a moment to write
+		// why into the GitHub log. A release is GitHub already finished.
+		r.askGuestToStop(vm, ctx)
+		if vm.alive() {
+			vm.stop()
+			select {
+			case <-vm.ended:
+			case <-time.After(15 * time.Second):
+			}
+		}
 	}
 
 	if collect != nil {
 		collect(vm.share)
 	}
-	code = -1
-	if raw, readErr := os.ReadFile(filepath.Join(vm.share, "exit")); readErr == nil {
-		if parsed, parseErr := strconv.Atoi(strings.TrimSpace(string(raw))); parseErr == nil {
-			code = parsed
-		}
-	} else if err == nil {
+	code, hasExit := readExit(vm.share)
+	if !hasExit && err == nil {
 		err = errors.New("the VM stopped without reporting a result")
 	}
 	if code == ExitRunnerDeprecated && file == "jitconfig" {
@@ -233,20 +253,91 @@ func (r *Runner) run(ctx context.Context, id, pool string, vcpus int, file, cont
 		r.stale.Store(true)
 		r.Log.Error("GitHub refused the guest's runner as too old; this machine will decline jobs until the image is rebuilt", "runner", r.Image.RunnerVersion)
 	}
+	end := classifyStop(vm, job, code, hasExit, ctx, err)
+	result = jobs.Result{ExitCode: code, Reason: end.Reason, Detail: end.Detail}
 	if errors.Is(err, context.Canceled) {
 		// Stopped on purpose: released by the pool, or the daemon is
 		// shutting down. The caller knows which; it is not a VM failing.
-		r.Log.Info("VM stopped", "job", id, "exit", code, "seconds", int(time.Since(started).Seconds()))
-		return code, err
+		r.Log.Info("VM stopped", "job", id, "exit", code, "reason", end.Reason, "seconds", int(time.Since(started).Seconds()))
+		return result, err
 	}
 	if err != nil {
 		// The guest's console is not logged. A job can write anything to it,
 		// secrets included, and this log outlives the VM. Keeping it is an
 		// explicit choice made while debugging a boot.
-		r.Log.Error("VM failed", "job", id, "error", err, "console", vm.keepConsole())
+		r.Log.Error("VM failed", "job", id, "error", err, "reason", end.Reason, "console", vm.keepConsole())
 	}
-	r.Log.Info("VM ended", "job", id, "exit", code, "seconds", int(time.Since(started).Seconds()))
-	return code, err
+	if end.Detail != "" && end.Reason != jobs.ReasonReleased {
+		r.Log.Error(end.Detail, "job", id, "reason", end.Reason, "exit", code)
+	}
+	r.Log.Info("VM ended", "job", id, "exit", code, "reason", end.Reason, "seconds", int(time.Since(started).Seconds()))
+	return result, err
+}
+
+func (r *Runner) askGuestToStop(vm *instance, ctx context.Context) {
+	cause := context.Cause(ctx)
+	reason := jobs.ReasonDaemonShutdown
+	switch {
+	case errors.Is(cause, jobs.ErrTimeout) || errors.Is(ctx.Err(), context.DeadlineExceeded):
+		reason = jobs.ReasonTimeout
+	case errors.Is(cause, jobs.ErrReleased):
+		return
+	}
+	_ = os.WriteFile(filepath.Join(vm.share, "stop-reason"), []byte(reason+"\n"), 0o600)
+	select {
+	case <-vm.ended:
+	case <-time.After(stopGrace):
+	}
+}
+
+func classifyStop(vm *instance, job jobs.Job, code int, hasExit bool, ctx context.Context, err error) jobs.End {
+	diag, _ := os.ReadFile(filepath.Join(vm.share, "diag"))
+	used, total, swapUsed, swapTotal, oom, disk := jobs.ParseDiag(string(diag))
+	console, _ := os.ReadFile(vm.console)
+	consoleOOM, consoleDisk, panicked := jobs.ScanConsole(string(console))
+	mem := vm.memory
+	if total > 0 {
+		mem = total
+	}
+	cause := context.Cause(ctx)
+	pulled := vm.stopped.Load()
+	return jobs.Classify(jobs.Evidence{
+		Host:           hostName(),
+		Label:          job.Label,
+		MemoryBytes:    mem,
+		PeakUsedBytes:  used,
+		SwapTotalBytes: swapTotal,
+		SwapUsedBytes:  swapUsed,
+		GuestOOM:       oom || consoleOOM,
+		DiskFull:       disk || consoleDisk,
+		HostKilled:     vm.hostKilled && !pulled,
+		VMFailed:       !pulled && (vm.failure != nil || panicked || (err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded))),
+		ExitCode:       code,
+		HasExit:        hasExit,
+		Timeout:        errors.Is(cause, jobs.ErrTimeout) || errors.Is(err, context.DeadlineExceeded),
+		Released:       errors.Is(cause, jobs.ErrReleased),
+		Shutdown:       errors.Is(err, context.Canceled) && !errors.Is(cause, jobs.ErrTimeout) && !errors.Is(cause, jobs.ErrReleased),
+	})
+}
+
+func hostName() string {
+	name, err := os.Hostname()
+	if err != nil || name == "" {
+		return "this machine"
+	}
+	return name
+}
+
+func readExit(share string) (int, bool) {
+	raw, err := os.ReadFile(filepath.Join(share, "exit"))
+	if err != nil {
+		return -1, false
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		return -1, false
+	}
+	return parsed, true
 }
 
 // boot starts a fresh VM on a clone of the guest disk, with an empty share.
@@ -286,6 +377,11 @@ func (r *Runner) boot(vcpus int) (*instance, error) {
 		release()
 		os.RemoveAll(dir)
 		return nil, err
+	}
+	stop := vm.stop
+	vm.stop = func() {
+		vm.stopped.Store(true)
+		stop()
 	}
 	return vm, nil
 }

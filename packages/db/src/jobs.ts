@@ -12,6 +12,7 @@ import {
 } from "@workspace/db/receipts"
 import {
   job,
+  jobExit,
   ledgerEntry,
   machine,
   machinePool,
@@ -54,6 +55,8 @@ export type JobStart = {
   speedScore?: number
   /** GitHub's time, not the machine's. */
   startedAt: Date
+  /** The coordinator's assignment id, so a later `job.exited` can find this row. */
+  assignmentId?: string
 }
 
 /**
@@ -93,6 +96,7 @@ export async function startJob(db: AuthDb, input: JobStart) {
       id,
       organizationId: input.organizationId,
       machineId: input.machineId,
+      assignmentId: input.assignmentId,
       label: input.label,
       repository: input.repository,
       jobName: input.jobName ?? "",
@@ -104,7 +108,69 @@ export async function startJob(db: AuthDb, input: JobStart) {
       startedAt: input.startedAt,
     })
     .onConflictDoNothing()
+  if (input.assignmentId) await applyJobExit(db, id, input.assignmentId)
   return id
+}
+
+export type JobExitInput = {
+  assignmentId: string
+  organizationId: string
+  machineId: string
+  exitCode: number
+  reason: string
+  detail: string
+}
+
+/**
+ * Stores what the daemon said about why a runner stopped. `job.exited` can
+ * arrive before GitHub has started the job row, so this is keyed by
+ * assignment and copied onto `job` when that row exists.
+ */
+export async function recordJobExit(db: AuthDb, input: JobExitInput) {
+  if (!input.assignmentId || !input.reason) return
+  const createdAt = new Date()
+  await db
+    .insert(jobExit)
+    .values({
+      assignmentId: input.assignmentId,
+      organizationId: input.organizationId,
+      machineId: input.machineId,
+      exitCode: input.exitCode,
+      reason: input.reason,
+      detail: input.detail,
+      createdAt,
+    })
+    .onConflictDoUpdate({
+      target: jobExit.assignmentId,
+      set: {
+        exitCode: input.exitCode,
+        reason: input.reason,
+        detail: input.detail,
+      },
+    })
+  await db
+    .update(job)
+    .set({ endReason: input.reason, endDetail: input.detail })
+    .where(eq(job.assignmentId, input.assignmentId))
+}
+
+/** Copies a stored exit onto the job row once GitHub has started it. */
+export async function applyJobExit(
+  db: AuthDb,
+  jobId: string,
+  assignmentId: string
+) {
+  const [row] = await db
+    .select()
+    .from(jobExit)
+    .where(eq(jobExit.assignmentId, assignmentId))
+    .limit(1)
+  if (!row?.reason) return false
+  await db
+    .update(job)
+    .set({ endReason: row.reason, endDetail: row.detail })
+    .where(eq(job.id, jobId))
+  return true
 }
 
 export type SettleResult =
@@ -281,6 +347,8 @@ export async function listJobs(db: AuthDb, organizationId: string, limit = 50) {
       startedAt: job.startedAt,
       completedAt: job.completedAt,
       result: job.result,
+      endReason: job.endReason,
+      endDetail: job.endDetail,
       amount: job.amount,
     })
     .from(job)

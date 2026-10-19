@@ -328,7 +328,8 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 	var sysinfo unix.Sysinfo_t
 	_ = unix.Sysinfo(&sysinfo)
 	vcpus := min(max(vm.vcpus, 1), runtime.NumCPU())
-	megabytes := GuestMemoryBytes(vcpus, uint64(sysinfo.Totalram)*uint64(sysinfo.Unit)) >> 20
+	vm.memory = GuestMemoryBytes(vcpus, uint64(sysinfo.Totalram)*uint64(sysinfo.Unit))
+	megabytes := vm.memory >> 20
 	memory := strconv.FormatUint(megabytes, 10) + "M"
 
 	args := []string{
@@ -403,8 +404,13 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		// Powered off by the guest, or killed by us (which has no exit
 		// status): both are a stop. Any other end is the VM failing.
 		var exit *exec.ExitError
-		if errors.As(waitErr, &exit) && exit.ExitCode() > 0 {
-			vm.failure = fmt.Errorf("the VM ended with status %d (%s)", exit.ExitCode(), tail(vm.dir, "qemu.log"))
+		if errors.As(waitErr, &exit) {
+			if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() && status.Signal() == syscall.SIGKILL && !vm.stopped.Load() {
+				vm.hostKilled = true
+				vm.failure = fmt.Errorf("the host killed the VM (%s)", tail(vm.dir, "qemu.log"))
+			} else if exit.ExitCode() > 0 {
+				vm.failure = fmt.Errorf("the VM ended with status %d (%s)", exit.ExitCode(), tail(vm.dir, "qemu.log"))
+			}
 		}
 		stopHelpers()
 		os.RemoveAll(sockets)

@@ -24,7 +24,9 @@ type Runner struct {
 
 var errUnsupported = errors.New("the VM runner needs macOS or Linux")
 
-func (r *Runner) Run(context.Context, jobs.Job) (int, error) { return -1, errUnsupported }
+func (r *Runner) Run(context.Context, jobs.Job) (jobs.Result, error) {
+	return jobs.Result{ExitCode: -1}, errUnsupported
+}
 
 func (r *Runner) SelfTest(context.Context, int) (string, error) { return "", errUnsupported }
 

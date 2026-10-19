@@ -244,6 +244,11 @@ export const job = sqliteTable(
     machineId: text("machine_id")
       .notNull()
       .references(() => machine.id),
+    /**
+     * The coordinator's assignment id, also the runner name without `hw-`.
+     * Used to attach a daemon-reported kill reason after GitHub starts the job.
+     */
+    assignmentId: text("assignment_id"),
     /** The `runs-on` label. */
     label: text("label").notNull(),
     repository: text("repository").notNull(),
@@ -259,6 +264,14 @@ export const job = sqliteTable(
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
     /** GitHub's conclusion: `succeeded`, `failed`, `canceled`. */
     result: text("result"),
+    /**
+     * Why the runner or VM was stopped, when that was not a normal finish:
+     * `guest_oom`, `host_killed`, `disk_full`, `timeout`, `daemon_shutdown`,
+     * `vm_crash`, `released`. Written from the daemon's `job.exited`.
+     */
+    endReason: text("end_reason"),
+    /** One sentence a human can read, with the host and the numbers. */
+    endDetail: text("end_detail"),
     computeUnits: real("compute_units"),
     /** Micro-tokens. `amount` is what the org paid; `tax + earning` equals it. */
     amount: integer("amount"),
@@ -274,6 +287,32 @@ export const job = sqliteTable(
   (table) => [
     index("job_org_idx").on(table.organizationId, table.startedAt),
     index("job_machine_idx").on(table.machineId, table.startedAt),
+    index("job_assignment_idx").on(table.assignmentId),
+  ]
+)
+
+/**
+ * What the daemon said about why a runner stopped. Written on `job.exited`,
+ * which can arrive before GitHub has started the job row. `applyJobExit`
+ * copies it onto `job` once that row exists.
+ */
+export const jobExit = sqliteTable(
+  "job_exit",
+  {
+    assignmentId: text("assignment_id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    machineId: text("machine_id")
+      .notNull()
+      .references(() => machine.id),
+    exitCode: integer("exit_code").notNull(),
+    reason: text("reason").notNull().default(""),
+    detail: text("detail").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    index("job_exit_org_idx").on(table.organizationId, table.createdAt),
   ]
 )
 

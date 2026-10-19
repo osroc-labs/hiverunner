@@ -35,7 +35,7 @@ export const HIVE_TOOLS = [
     scope: "hive:read",
     role: "Member",
     description:
-      "Recent jobs, newest first, with result, duration and price. Filter by status or repository; call get_job for one job's receipt.",
+      "Recent jobs, newest first, with result, duration, price, and why the runner stopped when it was killed. Filter by status or repository; call get_job for one job's receipt.",
   },
   {
     name: "get_job",
@@ -43,7 +43,7 @@ export const HIVE_TOOLS = [
     scope: "hive:read",
     role: "Member",
     description:
-      "One job by id, with its price split and the signed receipt once it has finished. Ids come from list_jobs.",
+      "One job by id, with its price split, signed receipt, and why the runner stopped when it was killed. Ids come from list_jobs.",
   },
   {
     name: "get_usage",

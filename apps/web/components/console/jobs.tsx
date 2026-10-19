@@ -156,7 +156,7 @@ export function JobTable({
                 key={job.id}
                 className="group border-t border-border [&>td]:py-2 [&>td]:pr-3 last:[&>td]:pr-0"
               >
-                <td>
+                <td title={job.endDetail ?? undefined}>
                   <ResultGlyph result={job.result} className="text-sm" />
                 </td>
                 <td className="w-[40%] max-w-0 truncate">

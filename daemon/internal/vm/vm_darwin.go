@@ -37,6 +37,8 @@ func (r *Runner) launch(vm *instance, mac net.HardwareAddr) error {
 	if err != nil {
 		return err
 	}
+	total, _ := unix.SysctlUint64("hw.memsize")
+	vm.memory = GuestMemoryBytes(vm.vcpus, total)
 	// Listening before the guest boots, so it never finds the socket shut.
 	// A VM without the service still runs jobs; they use GitHub's cache.
 	if r.Guest != nil {
@@ -51,6 +53,9 @@ func (r *Runner) launch(vm *instance, mac net.HardwareAddr) error {
 			if state == vz.VirtualMachineStateStopped || state == vz.VirtualMachineStateError {
 				if state != vz.VirtualMachineStateStopped {
 					vm.failure = fmt.Errorf("the VM ended in state %v", state)
+					if !vm.stopped.Load() {
+						vm.hostKilled = true
+					}
 				}
 				close(vm.ended)
 				return

@@ -478,6 +478,7 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
               organizationId: settings.organizationId,
               runnerRequestId: key,
               machineId: slot.machineId,
+              assignmentId: slot.assignmentId,
               speedScore: slot.speedScore,
               label: settings.label,
               vcpus: settings.vcpus,
