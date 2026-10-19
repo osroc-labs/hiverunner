@@ -23,8 +23,9 @@
 #
 # Run it again to update. A daemon that is running jobs is not restarted
 # under them: it stops taking new ones, and the update waits for the ones it
-# has. HIVE_NOW=1 does not wait, and cancels them. To remove everything:
-# `hived uninstall`.
+# has. HIVE_NOW=1 does not wait, and cancels them. The guest image is staged
+# on the data disk, not in /tmp. If the update fails, the machine is put
+# back as it was. To remove everything: `hived uninstall`.
 set -eu
 
 # Which hives to add this machine to, if the person signing in is in more
@@ -74,6 +75,29 @@ fail() {
   printf '\nhiveworker: %s\n' "$*" >&2
   exit 1
 }
+
+# A failed install must not leave the machine paused. drain records that it
+# paused this machine; cleanup lifts that pause unless a new daemon started
+# to. The guest image is staged on the data disk, never in /tmp.
+work=""
+stage=""
+drained=""
+restarted=""
+cleanup() {
+  status=$?
+  if [ -n "$drained" ] && [ -z "$restarted" ]; then
+    if "$BIN_DIR/hived" drain --end >/dev/null 2>&1; then
+      printf 'hiveworker: the update did not finish, so this machine was put back as it was.\n' >&2
+    else
+      printf 'hiveworker: the update did not finish. If this machine is not taking jobs, run: hived drain --end\n' >&2
+    fi
+  fi
+  [ -n "$stage" ] && rm -rf "$stage"
+  [ -n "$work" ] && rm -rf "$work"
+  exit "$status"
+}
+trap 'cleanup' EXIT
+
 # Before a running daemon is replaced: it is told to take no more jobs, and
 # the ones it has are waited for. Restarting it at once would cancel them,
 # and GitHub runs nothing again by itself. $1 is the hived that does the
@@ -82,6 +106,36 @@ fail() {
 drain() {
   [ "${HIVE_NOW:-}" = "1" ] && return 0
   "$1" drain || fail "the daemon was left running as it was. To update now, and cancel the jobs it is running: hived update --now"
+  drained=yes
+}
+
+# Free 1024-byte blocks on the filesystem of $1.
+free_kb() {
+  df -Pk "$1" | awk 'NR==2 { print $4 }'
+}
+
+# The guest image is staged beside where it will be installed. $1 is that
+# home, $2 the published size in megabytes.
+prepare_image_download() {
+  home=$1
+  mb=$2
+  mkdir -p "$home" || fail "could not make $home"
+  case $mb in
+    '' | *[!0-9]*) mb=800 ;;
+  esac
+  # The archive, an unpacked copy beside the old image, and a little room.
+  need_mb=$((mb * 3 + 64))
+  free=$(free_kb "$home")
+  case $free in
+    '' | *[!0-9]*) fail "could not see how much room is in $home" ;;
+  esac
+  free_mb=$((free / 1024))
+  if [ "$free_mb" -lt "$need_mb" ]; then
+    fail "there is not enough room in $home for the guest image (${mb} MB to download; about $need_mb MB free is needed, and $free_mb MB is free). Free some space and run this again."
+  fi
+  stage="$home/staging"
+  rm -rf "$stage"
+  mkdir "$stage" || fail "could not make $stage"
 }
 
 # Said in place of signing in, to a machine that already is. Someone running
@@ -158,7 +212,6 @@ macos=$(sw_vers -productVersion)
 [ "${macos%%.*}" -ge 13 ] || fail "the daemon needs macOS 13 or later. This Mac has $macos."
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
 
 # Downloads over HTTPS only, unless pointed at a local server for testing.
 fetch() {
@@ -228,26 +281,28 @@ if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
   changed=yes
+  prepare_image_download "$image_home" "$image_mb"
   [ -z "$running" ] || drain "$BIN_DIR/hived"
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   # The image is published in pieces. The checksum is of the whole. A
   # manifest that names no pieces is of an image published whole.
   if [ -n "$image_parts" ]; then
-    : >"$work/image.aar"
+    : >"$stage/image.aar"
     for part in $image_parts; do
-      fetch -# -o "$work/image.part" "$image_url.$part"
-      cat "$work/image.part" >>"$work/image.aar"
-      rm -f "$work/image.part"
+      fetch -# -o "$stage/image.part" "$image_url.$part"
+      cat "$stage/image.part" >>"$stage/image.aar"
+      rm -f "$stage/image.part"
     done
   else
-    fetch -# -o "$work/image.aar" "$image_url"
+    fetch -# -o "$stage/image.aar" "$image_url"
   fi
-  check "$work/image.aar" "$image_sha"
-  mkdir -p "$image_home"
+  check "$stage/image.aar" "$image_sha"
   rm -rf "$image_home/image.new"
   mkdir "$image_home/image.new"
-  aa extract -d "$image_home/image.new" -i "$work/image.aar" || fail "could not unpack the image."
+  aa extract -d "$image_home/image.new" -i "$stage/image.aar" || fail "could not unpack the image."
   [ -f "$image_home/image.new/manifest.json" ] || fail "the image download is incomplete."
+  rm -rf "$stage"
+  stage=""
   # Swapped in whole. A daemon running jobs keeps using the image it has
   # open until it is restarted below.
   rm -rf "$image_home/image.old"
@@ -342,10 +397,9 @@ for attempt in 1 2 3 4 5; do
   sleep 2
 done
 if [ -z "$started" ]; then
-  # Nothing started to lift the pause the drain put on.
-  "$BIN_DIR/hived" drain --end >/dev/null 2>&1 || true
   fail "could not start the daemon. See $LOG_DIR/hived.log"
 fi
+restarted=yes
 
 say ""
 say "Done. This Mac now runs jobs for your hive whenever it is awake."
@@ -424,7 +478,6 @@ fi
 say "KVM, QEMU and passt are here."
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
 fetch() {
   case "$BASE" in
     https://*) curl -fL --proto '=https' --tlsv1.2 --retry 3 "$@" ;;
@@ -499,22 +552,24 @@ if [ "$have" = "$image_version" ]; then
   say "Already up to date ($image_version)."
 else
   changed=yes
+  prepare_image_download "$image_home" "$image_mb"
   [ -z "$running" ] || drain "$BIN_DIR/hived"
   say "Downloading ${image_mb:-about 300} MB. This is the slow part."
   # The image is published in pieces. The checksum is of the whole.
-  : >"$work/image.tar.gz"
+  : >"$stage/image.tar.gz"
   for part in $image_parts; do
-    fetch -# -o "$work/image.part" "$image_url.$part"
-    cat "$work/image.part" >>"$work/image.tar.gz"
-    rm -f "$work/image.part"
+    fetch -# -o "$stage/image.part" "$image_url.$part"
+    cat "$stage/image.part" >>"$stage/image.tar.gz"
+    rm -f "$stage/image.part"
   done
-  check "$work/image.tar.gz" "$image_sha"
-  mkdir -p "$image_home"
+  check "$stage/image.tar.gz" "$image_sha"
   rm -rf "$image_home/image.new"
   mkdir "$image_home/image.new"
   # Sparse, so the disk takes the room its contents do and no more.
-  tar -xzSf "$work/image.tar.gz" -C "$image_home/image.new" || fail "could not unpack the image."
+  tar -xzSf "$stage/image.tar.gz" -C "$image_home/image.new" || fail "could not unpack the image."
   [ -f "$image_home/image.new/manifest.json" ] || fail "the image download is incomplete."
+  rm -rf "$stage"
+  stage=""
   rm -rf "$image_home/image.old"
   [ -d "$image_dir" ] && mv "$image_dir" "$image_home/image.old"
   mv "$image_home/image.new" "$image_dir"
@@ -592,10 +647,9 @@ fi
 systemctl --user daemon-reload
 systemctl --user enable "$UNIT" >/dev/null 2>&1 || true
 if ! systemctl --user restart "$UNIT"; then
-  # Nothing started to lift the pause the drain put on.
-  "$BIN_DIR/hived" drain --end >/dev/null 2>&1 || true
   fail "could not start the daemon. See: journalctl --user -u hiveworker"
 fi
+restarted=yes
 # Without this the service stops when you log out.
 if ! loginctl enable-linger "$(id -un)" >/dev/null 2>&1; then
   say "To keep it running after you log out:  sudo loginctl enable-linger $(id -un)"

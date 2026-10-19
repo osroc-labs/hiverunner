@@ -49,8 +49,9 @@ const usage = `hived, the Hive Runner daemon
   hived doctor      Check this machine keeps taking jobs with nobody at it
   hived cache       Show or empty this machine's Actions cache
   hived macos       Set this Mac up for macOS jobs (Xcode, iOS builds)
-  hived update      Update to the current release, if this is not it, once
-                    the jobs it is running have finished; --now to not wait
+  hived update      Update the daemon and guest image to the current
+                    release, once the jobs it is running have finished;
+                    --now to not wait
   hived pause       Stop taking jobs until you say otherwise
   hived resume      Take jobs again
   hived logout      Forget this machine's token; --revoke to end it on the
@@ -387,6 +388,7 @@ func run(ctx context.Context) error {
 
 	// Without a guest image the machine still connects and reports presence;
 	// it declines jobs and says why.
+	installedImage := ""
 	var runner jobs.Runner
 	// A machine that cannot start a VM right now is another matter: the
 	// runner is kept, declines jobs while that lasts, and says so.
@@ -394,6 +396,7 @@ func run(ctx context.Context) error {
 	if vmRunner, err := loadRunner(log, live.Get()); err != nil {
 		log.Warn("this machine cannot run jobs yet", "reason", err)
 	} else {
+		installedImage = update.ImageID(vmRunner.Image.ImageVersion, vmRunner.Image.RunnerVersion)
 		runner = vmRunner
 		vmRunner.OnUnusable = connections.Unusable
 		// Asked now so that it is in the log's first lines, where the
@@ -449,6 +452,7 @@ func run(ctx context.Context) error {
 		Log:        log,
 		AutoUpdate: func() bool { return live.Get().AutoUpdate },
 		Busy:       slot.Busy,
+		Image:      func() string { return installedImage },
 		Updating:   &updating,
 	})
 
@@ -540,7 +544,8 @@ func sameMove(a, b *move) bool {
 }
 
 // updateCommand is `hived update`: the installer, run again, if there is a
-// newer release than this one. The daemon's own service is restarted by it.
+// newer release than this one or the guest image is missing or behind. The
+// daemon's own service is restarted by it.
 func updateCommand(ctx context.Context, args []string) error {
 	now := false
 	for _, arg := range args {
@@ -557,20 +562,44 @@ func updateCommand(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("could not check for a release: %w", err)
 	}
-	if !update.Newer(version, latest.Version) {
+	have := installedImageVersion()
+	if !update.Needed(version, latest, have) {
 		fmt.Printf("hived %s is the current release.\n", version)
 		if latest.Version != version {
 			fmt.Printf("(The published release is %s; this build is not from it.)\n", latest.Version)
 		}
 		return nil
 	}
-	if now {
+	switch {
+	case update.Newer(version, latest.Version) && now:
 		fmt.Printf("Updating hived %s to %s now. A job running on this machine is cancelled.\n\n", version, latest.Version)
-	} else {
+	case update.Newer(version, latest.Version):
 		fmt.Printf("Updating hived %s to %s. The daemon is restarted once this machine has no job.\n\n", version, latest.Version)
+	case now:
+		fmt.Printf("Updating the guest image to %s now. A job running on this machine is cancelled.\n\n", latest.Image.Version)
+	default:
+		fmt.Printf("Updating the guest image to %s. The daemon is restarted once this machine has no job.\n\n", latest.Image.Version)
 	}
 	_, err = update.Apply(ctx, false, now)
 	return err
+}
+
+// installedImageVersion is the guest image on disk, as the release
+// manifest names it, or "" if none is installed.
+func installedImageVersion() string {
+	current, err := settings.Load()
+	if err != nil {
+		return ""
+	}
+	dir, err := imageDir(current)
+	if err != nil {
+		return ""
+	}
+	image, err := vm.LoadImage(dir)
+	if err != nil {
+		return ""
+	}
+	return update.ImageID(image.ImageVersion, image.RunnerVersion)
 }
 
 // newRunner is a runner for a command that boots a VM now, and so wants to
@@ -612,21 +641,30 @@ func selftest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Held while the VM exists, so a daemon starting meanwhile cannot sweep
-	// it away as a leftover.
+	jobsWork := runner.WorkDir
+	// Beside the daemon's work directory, so the daemon can stay running.
+	// A job in hand would share the machine with the test VM.
+	runner.WorkDir = selftestDir(runner.Image.Dir)
+	if err := refuseSelftestWhileBusy(jobsWork); err != nil {
+		return err
+	}
 	release, err := vm.LockWorkDir(runner.WorkDir)
 	if errors.Is(err, vm.ErrWorkDirInUse) {
-		// Almost always the daemon. The test boots a VM in the directory
-		// the daemon keeps its own in, so they cannot share it.
-		return fmt.Errorf("%w\nThe daemon is running, and a self-test needs it stopped. A job it is running stops with it.\n\n  hived stop && hived selftest; hived start", err)
+		return fmt.Errorf("%w\nA self-test is already running.", err)
 	}
 	if err != nil {
 		return err
 	}
 	defer release()
+	if _, err := vm.SweepWorkDir(runner.WorkDir); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	offerCache(runner, log, func() settings.Settings { return current })
+	// The daemon already holds the cache's vsock when it is running.
+	if !vm.WorkDirInUse(jobsWork) {
+		offerCache(runner, log, func() settings.Settings { return current })
+	}
 	started := time.Now()
 	report, err := runner.SelfTest(ctx, 2)
 	report = tidyReport(report, runner.Image)
@@ -639,6 +677,22 @@ func selftest(ctx context.Context) error {
 	}
 	fmt.Printf("A VM booted, ran and was destroyed in %.1fs.\n", time.Since(started).Seconds())
 	return nil
+}
+
+// selftestDir is where a self-test keeps its throwaway VM: beside the
+// image, like a job, but not the directory the daemon holds.
+func selftestDir(image string) string { return image + "-selftest" }
+
+func refuseSelftestWhileBusy(work string) error {
+	n := jobsInHand(work)
+	switch n {
+	case 0:
+		return nil
+	case 1:
+		return errors.New("a job is running on this machine; wait until it finishes, then run hived selftest again")
+	default:
+		return fmt.Errorf("%d jobs are running on this machine; wait until they finish, then run hived selftest again", n)
+	}
 }
 
 // reportFailure is what a guest's report says is wrong with it, or nil.

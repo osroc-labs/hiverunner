@@ -153,6 +153,32 @@ func Check(ctx context.Context, state *State) (latest Latest, changed bool, err 
 	return latest, true, nil
 }
 
+// ImageID is how a guest image is named in the release manifest:
+// imageVersion-runnerVersion. An empty image has no name.
+func ImageID(imageVersion int, runnerVersion string) string {
+	if imageVersion == 0 && runnerVersion == "" {
+		return ""
+	}
+	return strconv.Itoa(imageVersion) + "-" + runnerVersion
+}
+
+// Needed reports whether the installer should run: a newer daemon, or,
+// when this daemon is already the published release, a guest image that is
+// missing or not that release's. A build that is not the published daemon
+// is a developer's and is left alone, image included.
+func Needed(current string, latest Latest, installedImage string) bool {
+	if Newer(current, latest.Version) {
+		return true
+	}
+	if current != latest.Version {
+		return false
+	}
+	if latest.Image.Version == "" {
+		return false
+	}
+	return installedImage != latest.Image.Version
+}
+
 // Newer reports whether latest is a release newer than current. A daemon
 // built by hand, whose version is not a number, is never behind.
 func Newer(current, latest string) bool {
@@ -311,6 +337,10 @@ type Options struct {
 	AutoUpdate func() bool
 	// Busy is whether a job is running or held. An update waits for none.
 	Busy func() bool
+	// Image is this machine's installed guest image, as the release
+	// manifest names it, or "" if none. A current daemon with a missing
+	// or older image still runs the installer.
+	Image func() string
 	// Updating is set while an update is pending or under way, so the
 	// daemon stops taking jobs; it is cleared if the update fails.
 	Updating *atomic.Bool
@@ -364,10 +394,14 @@ func tick(ctx context.Context, options Options) {
 		return
 	}
 	defer func() { _ = SaveState(state) }()
-	if !Newer(options.Version, latest.Version) {
+	have := ""
+	if options.Image != nil {
+		have = options.Image()
+	}
+	if !Needed(options.Version, latest, have) {
 		return
 	}
-	if state.Notified != latest.Version {
+	if Newer(options.Version, latest.Version) && state.Notified != latest.Version {
 		options.Log.Warn("a newer Hive Runner is available", "installed", options.Version, "available", latest.Version, "update", "hived update")
 		Notify(latest.Version)
 		state.Notified = latest.Version
@@ -407,7 +441,11 @@ func tick(ctx context.Context, options Options) {
 		case <-time.After(poll):
 		}
 	}
-	options.Log.Info("updating Hive Runner", "from", options.Version, "to", latest.Version)
+	if Newer(options.Version, latest.Version) {
+		options.Log.Info("updating Hive Runner", "from", options.Version, "to", latest.Version)
+	} else {
+		options.Log.Info("updating the guest image", "from", have, "to", latest.Image.Version)
+	}
 	_ = SaveState(state)
 	if err := apply(ctx); err != nil {
 		options.Log.Error("the update did not take; carrying on with this version", "error", err)

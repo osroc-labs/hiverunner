@@ -8,6 +8,34 @@ import (
 	"testing"
 )
 
+func TestNeededIsTheDaemonOrTheImage(t *testing.T) {
+	latest := Latest{Version: "0.4.21"}
+	latest.Image.Version = "11-2.337.0"
+	cases := []struct {
+		current, image string
+		want           bool
+	}{
+		{"0.4.20", "11-2.337.0", true},
+		{"0.4.21", "11-2.337.0", false},
+		{"0.4.21", "10-2.337.0", true},
+		{"0.4.21", "", true},
+		{"0.4.22", "10-2.337.0", false},
+		{"0.0.0-dev", "10-2.337.0", false},
+	}
+	for _, c := range cases {
+		if got := Needed(c.current, latest, c.image); got != c.want {
+			t.Errorf("Needed(%q, %q) = %v, want %v", c.current, c.image, got, c.want)
+		}
+	}
+	empty := Latest{Version: "0.4.21"}
+	if Needed("0.4.21", empty, "") {
+		t.Error("a manifest with no image still wanted an image fetch")
+	}
+	if ImageID(11, "2.337.0") != "11-2.337.0" || ImageID(0, "") != "" {
+		t.Errorf("ImageID = %q %q", ImageID(11, "2.337.0"), ImageID(0, ""))
+	}
+}
+
 func TestNewerComparesReleasesOnly(t *testing.T) {
 	cases := []struct {
 		current, latest string

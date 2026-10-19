@@ -327,7 +327,10 @@ the daemon's process group when the installer restarts the service, and the
 installer must outlive that). The installer checks every download against its
 published checksum, as at first install. `hived update` does the same from the
 terminal, waiting for the machine's jobs in the same way unless it is given
-`--now`. A daemon run from anywhere but `~/.local/bin/hived` is a
+`--now`, and fetches a missing or older guest image even when the daemon
+itself is current. The image is staged on the data disk, not in `/tmp`. A
+failed update puts the machine back as it was, rather than leaving it
+paused. A daemon run from anywhere but `~/.local/bin/hived` is a
 developer's build: it is told about releases and never replaced by one. The
 state is `update.json` beside `machine.json`.
 
@@ -503,11 +506,11 @@ refusal.
 
 If the daemon is killed, or the Mac loses power, a job's disk and directory
 are left behind. The next `hived run` removes them before it starts anything.
-It can do that safely because every command that boots a VM (`run`,
-`selftest`, `dev-job`) first takes an exclusive lock on the work directory,
-which sits beside the guest image and is named after it. A second command on
-the same directory exits, saying it is in use; stop the daemon to run a
-self-test against its image.
+It can do that safely because every command that boots a job VM (`run`,
+`dev-job`) first takes an exclusive lock on the work directory, which sits
+beside the guest image and is named after it. `hived selftest` uses a
+directory of its own, so the daemon can stay running; if a job is running it
+refuses, rather than sharing the machine with it.
 
 ## What it does not do yet
 
