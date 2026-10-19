@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "f586cdf3-367f-4a4b-9426-cc7365b098f6",
-  "prevIds": [
-    "f1e92ef5-2aa4-4b8c-94d2-13f1560dabe3"
-  ],
+  "prevIds": ["f1e92ef5-2aa4-4b8c-94d2-13f1560dabe3"],
   "ddl": [
     {
       "name": "account",
@@ -3581,13 +3579,9 @@
       "table": "project"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3596,13 +3590,9 @@
       "table": "account"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3611,13 +3601,9 @@
       "table": "agent_grant"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3626,13 +3612,9 @@
       "table": "agent_grant"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3641,13 +3623,9 @@
       "table": "invitation"
     },
     {
-      "columns": [
-        "inviter_id"
-      ],
+      "columns": ["inviter_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3656,13 +3634,9 @@
       "table": "invitation"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3671,13 +3645,9 @@
       "table": "member"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3686,13 +3656,9 @@
       "table": "member"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3701,13 +3667,9 @@
       "table": "session"
     },
     {
-      "columns": [
-        "client_id"
-      ],
+      "columns": ["client_id"],
       "tableTo": "oauth_client",
-      "columnsTo": [
-        "client_id"
-      ],
+      "columnsTo": ["client_id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3716,13 +3678,9 @@
       "table": "oauth_access_token"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3731,13 +3689,9 @@
       "table": "oauth_access_token"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3746,13 +3700,9 @@
       "table": "oauth_access_token"
     },
     {
-      "columns": [
-        "refresh_id"
-      ],
+      "columns": ["refresh_id"],
       "tableTo": "oauth_refresh_token",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3761,13 +3711,9 @@
       "table": "oauth_access_token"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3776,13 +3722,9 @@
       "table": "oauth_client"
     },
     {
-      "columns": [
-        "client_id"
-      ],
+      "columns": ["client_id"],
       "tableTo": "oauth_client",
-      "columnsTo": [
-        "client_id"
-      ],
+      "columnsTo": ["client_id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3791,13 +3733,9 @@
       "table": "oauth_client_resource"
     },
     {
-      "columns": [
-        "resource_id"
-      ],
+      "columns": ["resource_id"],
       "tableTo": "oauth_resource",
-      "columnsTo": [
-        "identifier"
-      ],
+      "columnsTo": ["identifier"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3806,13 +3744,9 @@
       "table": "oauth_client_resource"
     },
     {
-      "columns": [
-        "client_id"
-      ],
+      "columns": ["client_id"],
       "tableTo": "oauth_client",
-      "columnsTo": [
-        "client_id"
-      ],
+      "columnsTo": ["client_id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3821,13 +3755,9 @@
       "table": "oauth_consent"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3836,13 +3766,9 @@
       "table": "oauth_consent"
     },
     {
-      "columns": [
-        "client_id"
-      ],
+      "columns": ["client_id"],
       "tableTo": "oauth_client",
-      "columnsTo": [
-        "client_id"
-      ],
+      "columnsTo": ["client_id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3851,13 +3777,9 @@
       "table": "oauth_refresh_token"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3866,13 +3788,9 @@
       "table": "oauth_refresh_token"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3881,13 +3799,9 @@
       "table": "oauth_refresh_token"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3896,13 +3810,9 @@
       "table": "auto_top_up"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3911,13 +3821,9 @@
       "table": "billing_notice"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3926,13 +3832,9 @@
       "table": "enroll_key"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3941,13 +3843,9 @@
       "table": "enroll_key"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3956,13 +3854,9 @@
       "table": "github_installation"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3971,13 +3865,9 @@
       "table": "job"
     },
     {
-      "columns": [
-        "machine_id"
-      ],
+      "columns": ["machine_id"],
       "tableTo": "machine",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
@@ -3986,13 +3876,9 @@
       "table": "job"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4001,13 +3887,9 @@
       "table": "job_exit"
     },
     {
-      "columns": [
-        "machine_id"
-      ],
+      "columns": ["machine_id"],
       "tableTo": "machine",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
@@ -4016,13 +3898,9 @@
       "table": "job_exit"
     },
     {
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4031,13 +3909,9 @@
       "table": "machine"
     },
     {
-      "columns": [
-        "machine_id"
-      ],
+      "columns": ["machine_id"],
       "tableTo": "machine",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4046,13 +3920,9 @@
       "table": "machine_pool"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4061,13 +3931,9 @@
       "table": "machine_pool"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4076,13 +3942,9 @@
       "table": "pool_settings"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4091,13 +3953,9 @@
       "table": "runner_scale_set"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4106,13 +3964,9 @@
       "table": "spend_budget"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4121,326 +3975,252 @@
       "table": "project"
     },
     {
-      "columns": [
-        "machine_id",
-        "organization_id"
-      ],
+      "columns": ["machine_id", "organization_id"],
       "nameExplicit": false,
       "name": "machine_pool_pk",
       "entityType": "pks",
       "table": "machine_pool"
     },
     {
-      "columns": [
-        "organization_id",
-        "label"
-      ],
+      "columns": ["organization_id", "label"],
       "nameExplicit": false,
       "name": "runner_scale_set_pk",
       "entityType": "pks",
       "table": "runner_scale_set"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "account_pk",
       "table": "account",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "agent_grant_pk",
       "table": "agent_grant",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "audit_event_pk",
       "table": "audit_event",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "invitation_pk",
       "table": "invitation",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "member_pk",
       "table": "member",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "organization_pk",
       "table": "organization",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "rate_limit_pk",
       "table": "rate_limit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "user_pk",
       "table": "user",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "verification_pk",
       "table": "verification",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "device_code_pk",
       "table": "device_code",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "jwks_pk",
       "table": "jwks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_access_token_pk",
       "table": "oauth_access_token",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_client_pk",
       "table": "oauth_client",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_client_assertion_pk",
       "table": "oauth_client_assertion",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_client_resource_pk",
       "table": "oauth_client_resource",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_consent_pk",
       "table": "oauth_consent",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_refresh_token_pk",
       "table": "oauth_refresh_token",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "oauth_resource_pk",
       "table": "oauth_resource",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "stripe_customer_pk",
       "table": "stripe_customer",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "stripe_event_pk",
       "table": "stripe_event",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "stripe_subscription_pk",
       "table": "stripe_subscription",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "nameExplicit": false,
       "name": "auto_top_up_pk",
       "table": "auto_top_up",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "billing_notice_pk",
       "table": "billing_notice",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "enroll_key_pk",
       "table": "enroll_key",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "account_id"
-      ],
+      "columns": ["account_id"],
       "nameExplicit": false,
       "name": "github_installation_pk",
       "table": "github_installation",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "job_pk",
       "table": "job",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "assignment_id"
-      ],
+      "columns": ["assignment_id"],
       "nameExplicit": false,
       "name": "job_exit_pk",
       "table": "job_exit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "ledger_entry_pk",
       "table": "ledger_entry",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "machine_pk",
       "table": "machine",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "nameExplicit": false,
       "name": "pool_settings_pk",
       "table": "pool_settings",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "nameExplicit": false,
       "name": "spend_budget_pk",
       "table": "spend_budget",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "webhook_delivery_pk",
       "table": "webhook_delivery",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "project_pk",
       "table": "project",
@@ -5159,81 +4939,63 @@
       "table": "project"
     },
     {
-      "columns": [
-        "request_id"
-      ],
+      "columns": ["request_id"],
       "nameExplicit": false,
       "name": "audit_event_request_id_unique",
       "entityType": "uniques",
       "table": "audit_event"
     },
     {
-      "columns": [
-        "slug"
-      ],
+      "columns": ["slug"],
       "nameExplicit": false,
       "name": "organization_slug_unique",
       "entityType": "uniques",
       "table": "organization"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "rate_limit_key_unique",
       "entityType": "uniques",
       "table": "rate_limit"
     },
     {
-      "columns": [
-        "token"
-      ],
+      "columns": ["token"],
       "nameExplicit": false,
       "name": "session_token_unique",
       "entityType": "uniques",
       "table": "session"
     },
     {
-      "columns": [
-        "email"
-      ],
+      "columns": ["email"],
       "nameExplicit": false,
       "name": "user_email_unique",
       "entityType": "uniques",
       "table": "user"
     },
     {
-      "columns": [
-        "token"
-      ],
+      "columns": ["token"],
       "nameExplicit": false,
       "name": "oauth_access_token_token_unique",
       "entityType": "uniques",
       "table": "oauth_access_token"
     },
     {
-      "columns": [
-        "client_id"
-      ],
+      "columns": ["client_id"],
       "nameExplicit": false,
       "name": "oauth_client_client_id_unique",
       "entityType": "uniques",
       "table": "oauth_client"
     },
     {
-      "columns": [
-        "token"
-      ],
+      "columns": ["token"],
       "nameExplicit": false,
       "name": "oauth_refresh_token_token_unique",
       "entityType": "uniques",
       "table": "oauth_refresh_token"
     },
     {
-      "columns": [
-        "identifier"
-      ],
+      "columns": ["identifier"],
       "nameExplicit": false,
       "name": "oauth_resource_identifier_unique",
       "entityType": "uniques",
