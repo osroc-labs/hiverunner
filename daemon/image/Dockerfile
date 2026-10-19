@@ -78,7 +78,7 @@ RUN install -m 0755 -d /etc/apt/keyrings \
  && docker --version && docker buildx version && docker compose version \
  && kernel=$(ls /lib/modules | sort -V | tail -1) \
  && for module in overlay bridge veth br_netfilter nf_tables nft_compat nft_chain_nat \
-      nf_nat nf_conntrack xt_MASQUERADE xt_addrtype xt_conntrack; do \
+      nf_nat nf_conntrack xt_MASQUERADE xt_addrtype xt_conntrack zram; do \
       modinfo -k "$kernel" "$module" >/dev/null || { echo "the kernel has no $module" >&2; exit 1; }; \
     done
 

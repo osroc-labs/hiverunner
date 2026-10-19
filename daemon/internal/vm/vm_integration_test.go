@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
 )
 
 // These boot real virtual machines, so they need the built guest image and a
@@ -88,7 +90,7 @@ func TestAVMBootsReportsAndLeavesNothingBehind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-test: %v\n%s", err, report)
 	}
-	for _, want := range []string{"CPUS=2", "USER=runner", "NETWORK=ok", "DOCKER=ok", "RUNNER=" + r.Image.RunnerVersion} {
+	for _, want := range []string{"CPUS=2", "USER=runner", "NETWORK=ok", "DOCKER=ok", "ZRAM=ok", "SWAP=ok", "RUNNER=" + r.Image.RunnerVersion} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}
@@ -106,11 +108,11 @@ func TestCancellationDestroysTheVM(t *testing.T) {
 	defer cancel()
 	started := time.Now()
 	// A file the guest agent does not act on: the VM boots and waits.
-	code, err := r.run(ctx, "held", "test", 2, "nothing-to-do", "", nil)
+	result, err := r.run(ctx, jobs.Job{AssignmentID: "held", Pool: "test", VCPUs: 2}, "nothing-to-do", "", nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("run() = %d, %v; want a deadline error", code, err)
+		t.Fatalf("run() = %+v, %v; want a deadline error", result, err)
 	}
-	if code == 0 {
+	if result.ExitCode == 0 {
 		t.Error("a destroyed VM reported success")
 	}
 	if elapsed := time.Since(started); elapsed > 25*time.Second {
@@ -127,7 +129,7 @@ func TestTheShareHoldsOnlyTheJob(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), patient(2*time.Minute))
 	defer cancel()
 	var names []string
-	_, err := r.run(ctx, "share", "test", 1, "selftest", "1", func(share string) {
+	_, err := r.run(ctx, jobs.Job{AssignmentID: "share", Pool: "test", VCPUs: 1}, "selftest", "1", func(share string) {
 		entries, _ := os.ReadDir(share)
 		for _, entry := range entries {
 			names = append(names, entry.Name())
@@ -136,7 +138,10 @@ func TestTheShareHoldsOnlyTheJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"clock": true, "ready": true, "selftest": true, "selftest.out": true, "exit": true}
+	allowed := map[string]bool{
+		"clock": true, "ready": true, "selftest": true, "selftest.out": true, "exit": true,
+		"host": true, "label": true, "diag": true, "notices": true, "stop-reason": true,
+	}
 	for _, name := range names {
 		if !allowed[name] {
 			t.Errorf("unexpected file in the share: %s", name)

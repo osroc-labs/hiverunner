@@ -63,11 +63,27 @@ runner, so publishing a release is how a fleet stays within that.
 
 Use these labels in a repository's workflow:
 
-| `runs-on`   | Guest vCPUs | Minimum host cores |
-| ----------- | ----------- | ------------------ |
-| `hive`      | 2           | 4                  |
-| `hive-4cpu` | 4           | 6                  |
-| `hive-8cpu` | 8           | 10                 |
+| `runs-on`   | Guest vCPUs | Guest RAM | zram + swap file | Minimum host cores |
+| ----------- | ----------- | --------- | ---------------- | ------------------ |
+| `hive`      | 2           | 4 GB      | 2 GB + 2 GB      | 4                  |
+| `hive-4cpu` | 4           | 8 GB      | 4 GB + 4 GB      | 6                  |
+| `hive-8cpu` | 8           | 16 GB     | 8 GB + 4 GB      | 10                 |
+
+Guest RAM is 2 GiB a core (at least 4), and never more than half the host.
+Each guest also gets compressed zram (half of RAM) and a disk-backed swap
+file (half of RAM, at most 4 GiB), so memory pressure slows the job instead
+of the OOM killer cutting it. `/dev/shm` stays at the kernel default (half
+of RAM); tmpfs pages can swap. Soft memory limits only warn in the GitHub
+job log; they never kill the job.
+
+When a runner or VM is still killed or shut down, the daemon classifies why
+(`guest_oom`, `host_killed`, `disk_full`, `timeout`, `daemon_shutdown`,
+`vm_crash`, `released`) and writes one sentence such as `runner killed: guest
+OOM (7.9/8 GB peak) on MacBook-Pro-5`. That sentence is injected into the
+GitHub job log when the guest is still alive, logged by hived, stored on the
+job in D1 (`end_reason` / `end_detail`), and shown on the job page and
+`get_job` / `list_jobs`. The virtio balloon device is present but is not
+used to shrink a running job.
 
 ```yaml
 jobs:

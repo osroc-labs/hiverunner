@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+func oomExit() JobExited {
+	exit := NewJobExited("a-1", -1)
+	exit.Reason = "guest_oom"
+	exit.Detail = "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5"
+	return exit
+}
+
 func fixtures(t *testing.T, name string) []json.RawMessage {
 	t.Helper()
 	raw, err := os.ReadFile("../../../packages/protocol/fixtures/" + name)
@@ -62,6 +69,7 @@ func TestDaemonMessagesMatchFixtures(t *testing.T) {
 		NewJobAccepted("a-1"),
 		NewJobRejected("a-1", "lid closed"),
 		NewJobExited("a-1", 0),
+		oomExit(),
 	}
 	want := fixtures(t, "daemon.json")
 	if len(sent) != len(want) {

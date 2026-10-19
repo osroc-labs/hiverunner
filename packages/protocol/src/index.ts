@@ -94,7 +94,33 @@ export type DaemonMessage =
   | { type: "job.accepted"; assignmentId: string }
   | { type: "job.rejected"; assignmentId: string; reason: string }
   /** The runner has ended and the VM is gone. `exitCode` is the runner's. */
-  | { type: "job.exited"; assignmentId: string; exitCode: number }
+  | {
+      type: "job.exited"
+      assignmentId: string
+      exitCode: number
+      /**
+       * Why the runner or VM was stopped, when that was not a normal job
+       * finish. Absent on a clean runner exit. Older coordinators ignore it.
+       */
+      reason?: EndReason
+      /** One sentence a human can read, with the host and the numbers. */
+      detail?: string
+    }
+
+/** Why a runner or its VM was stopped. Keep these words stable. */
+export const END_REASONS = [
+  "guest_oom",
+  "host_killed",
+  "disk_full",
+  "timeout",
+  "daemon_shutdown",
+  "vm_crash",
+  "released",
+] as const
+export type EndReason = (typeof END_REASONS)[number]
+
+const isEndReason = (value: unknown): value is EndReason =>
+  END_REASONS.includes(value as EndReason)
 
 /**
  * A job goes to a machine in two steps, because GitHub hands an acquired job
@@ -229,13 +255,19 @@ export function parseDaemonMessage(raw: string): DaemonMessage | null {
           }
         : null
     case "job.exited":
-      return isString(value.assignmentId) && Number.isInteger(value.exitCode)
-        ? {
-            type: "job.exited",
-            assignmentId: value.assignmentId,
-            exitCode: value.exitCode as number,
-          }
-        : null
+      if (!isString(value.assignmentId) || !Number.isInteger(value.exitCode))
+        return null
+      return {
+        type: "job.exited",
+        assignmentId: value.assignmentId,
+        exitCode: value.exitCode as number,
+        ...(isEndReason(value.reason) ? { reason: value.reason } : {}),
+        ...(typeof value.detail === "string" &&
+        value.detail.length > 0 &&
+        value.detail.length <= 500
+          ? { detail: value.detail }
+          : {}),
+      }
     default:
       return null
   }

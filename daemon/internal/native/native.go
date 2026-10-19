@@ -165,7 +165,7 @@ func (r *Runner) status(fresh bool) Report {
 
 // Run implements jobs.Runner: the job runs as the hiveworker user, through
 // the sudo rule, and returns the runner's exit code.
-func (r *Runner) Run(ctx context.Context, job jobs.Job) (int, error) {
+func (r *Runner) Run(ctx context.Context, job jobs.Job) (jobs.Result, error) {
 	started := time.Now()
 	cmd := exec.CommandContext(ctx, "/usr/bin/sudo", "-n", "-u", User, r.Executable, "macos-job")
 	cmd.Stderr = os.Stderr
@@ -175,17 +175,17 @@ func (r *Runner) Run(ctx context.Context, job jobs.Job) (int, error) {
 	cmd.WaitDelay = 30 * time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return -1, err
+		return jobs.Result{ExitCode: -1}, err
 	}
 	if err := cmd.Start(); err != nil {
-		return -1, err
+		return jobs.Result{ExitCode: -1}, err
 	}
 	err = json.NewEncoder(stdin).Encode(request{Job: &jobRequest{ID: job.AssignmentID, JITConfig: job.JITConfig}})
 	stdin.Close()
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return -1, err
+		return jobs.Result{ExitCode: -1}, err
 	}
 	err = cmd.Wait()
 	code := 0
@@ -202,7 +202,7 @@ func (r *Runner) Run(ctx context.Context, job jobs.Job) (int, error) {
 		r.Log.Error("GitHub refused this Mac's runner as too old; macOS jobs are declined until hived is updated", "runner", RunnerVersion)
 	}
 	r.Log.Info("macOS job ended", "job", job.AssignmentID, "exit", code, "seconds", int(time.Since(started).Seconds()))
-	return code, err
+	return jobs.Result{ExitCode: code}, err
 }
 
 // askChild runs `hived macos-job` as the hiveworker user with one request

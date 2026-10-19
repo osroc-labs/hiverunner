@@ -159,6 +159,8 @@ function jobShape(job: LiveJob) {
     startedAt: iso(job.startedAt),
     completedAt: iso(job.completedAt),
     result: job.result,
+    endReason: job.endReason,
+    endDetail: job.endDetail,
     durationSeconds:
       job.completedAt === null
         ? null
@@ -510,6 +512,8 @@ export async function getJob(context: OperationContext, input: { id: string }) {
     startedAt: iso(job.startedAt),
     completedAt: iso(job.completedAt),
     result: job.result,
+    endReason: job.endReason,
+    endDetail: job.endDetail,
     durationSeconds: job.completedAt
       ? Math.max(
           0,

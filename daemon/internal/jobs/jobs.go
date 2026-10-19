@@ -36,13 +36,21 @@ type Job struct {
 	VCPUs      int
 	// Timeout bounds the whole job; the VM is destroyed when it passes.
 	Timeout time.Duration
+	// Label is the runs-on label, for kill-reason messages.
+	Label string
 }
+
+// ErrTimeout is the cause when a job exceeds its limit.
+var ErrTimeout = errors.New("job timed out")
+
+// ErrReleased is the cause when the coordinator backs out of a running job.
+var ErrReleased = errors.New("job released")
 
 // Runner runs a job to completion in isolation and returns the runner's exit
 // code. It must destroy everything it created before returning, including
 // when ctx is cancelled.
 type Runner interface {
-	Run(ctx context.Context, job Job) (exitCode int, err error)
+	Run(ctx context.Context, job Job) (Result, error)
 }
 
 // Unusable is implemented by a runner that can find out it will not be able
@@ -99,6 +107,7 @@ type slot struct {
 	kind         string
 	vcpus        int
 	timeout      time.Duration
+	label        string
 	phase        phase
 	// cancel stops the start timer (accepted) or the runner (running).
 	cancel func()
@@ -251,6 +260,7 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 		kind:         kind,
 		vcpus:        offer.VCPUs,
 		timeout:      time.Duration(offer.TimeoutMinutes) * time.Minute,
+		label:        offer.Label,
 		phase:        accepted,
 	}
 	// If the coordinator never follows up, the machine must not stay
@@ -283,12 +293,19 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 		return ErrNotHeld
 	}
 	held.cancel()
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancelCause(ctx)
 	if held.timeout > 0 {
-		runCtx, cancel = context.WithTimeout(ctx, held.timeout)
+		timed, stop := context.WithTimeoutCause(runCtx, held.timeout, ErrTimeout)
+		runCtx = timed
+		held.phase = running
+		held.cancel = func() {
+			stop()
+			cancel(ErrReleased)
+		}
+	} else {
+		held.phase = running
+		held.cancel = func() { cancel(ErrReleased) }
 	}
-	held.phase = running
-	held.cancel = cancel
 	exits := m.exitsLocked(pool)
 	m.mu.Unlock()
 
@@ -300,6 +317,7 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 		RunnerName:   start.RunnerName,
 		VCPUs:        held.vcpus,
 		Timeout:      held.timeout,
+		Label:        held.label,
 	}
 	runner := m.runner
 	if held.kind == protocol.KindMacOS {
@@ -308,13 +326,14 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 	m.running.Add(1)
 	go func() {
 		defer m.running.Done()
-		defer cancel()
-		m.log.Info("job started", "assignment", job.AssignmentID, "runner", job.RunnerName, "kind", job.Kind, "vcpus", job.VCPUs)
+		defer cancel(nil)
+		m.log.Info("job started", "assignment", job.AssignmentID, "runner", job.RunnerName, "kind", job.Kind, "vcpus", job.VCPUs, "label", job.Label)
 		// Run returns only once the VM and its files are gone.
-		exitCode, err := runner.Run(runCtx, job)
+		result, err := runner.Run(runCtx, job)
 		m.mu.Lock()
 		released := held.released
 		m.mu.Unlock()
+		exitCode := result.ExitCode
 		if err != nil {
 			// The pool releases a job once GitHub says it is over, which
 			// stops a VM that was about to stop anyway. That is not a
@@ -326,6 +345,19 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 				exitCode = -1
 			}
 		}
+		end := End{Reason: result.Reason, Detail: result.Detail}
+		if end.Reason == "" {
+			// The runner did not see a guest or host kill. Name the
+			// stop we caused, or a VM that vanished without a result.
+			end = Classify(Evidence{
+				Label:    job.Label,
+				HasExit:  exitCode != -1,
+				ExitCode: exitCode,
+				Timeout:  errors.Is(context.Cause(runCtx), ErrTimeout),
+				Released: released || errors.Is(context.Cause(runCtx), ErrReleased),
+				Shutdown: err != nil && !released && errors.Is(err, context.Canceled) && !errors.Is(context.Cause(runCtx), ErrTimeout),
+			})
+		}
 		// The slot is freed here and nowhere else for a running job: not
 		// before its VM is destroyed, even when the job was released.
 		m.mu.Lock()
@@ -333,10 +365,16 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 			delete(m.held, id)
 		}
 		m.mu.Unlock()
-		m.log.Info("job ended", "assignment", job.AssignmentID, "exit", exitCode, "released", released)
+		if end.Reason != "" && end.Reason != ReasonReleased {
+			m.log.Error(end.Detail, "assignment", job.AssignmentID, "reason", end.Reason, "exit", exitCode)
+		}
+		m.log.Info("job ended", "assignment", job.AssignmentID, "exit", exitCode, "reason", end.Reason, "released", released)
 		// Said for a released job too: its result is of no interest to the
 		// coordinator, but that its cores are free again is.
-		exits <- protocol.NewJobExited(job.AssignmentID, exitCode)
+		exited := protocol.NewJobExited(job.AssignmentID, exitCode)
+		exited.Reason = end.Reason
+		exited.Detail = end.Detail
+		exits <- exited
 	}()
 	return nil
 }

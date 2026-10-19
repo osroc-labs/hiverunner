@@ -32,6 +32,8 @@ const jobColumns = {
   startedAt: job.startedAt,
   completedAt: job.completedAt,
   result: job.result,
+  endReason: job.endReason,
+  endDetail: job.endDetail,
   price: price.as("price"),
 }
 
@@ -50,6 +52,9 @@ export type LiveJob = {
   startedAt: number
   completedAt: number | null
   result: string | null
+  /** Why the runner stopped, when that was not a normal finish. */
+  endReason: string | null
+  endDetail: string | null
   /** Micro-tokens; null while the job is running. */
   price: number | null
 }

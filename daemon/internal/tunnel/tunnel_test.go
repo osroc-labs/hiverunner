@@ -157,17 +157,19 @@ func TestADroppedConnectionIsRetried(t *testing.T) {
 // instant is a runner that finishes at once with a fixed code.
 type instant struct{ code int }
 
-func (r instant) Run(context.Context, jobs.Job) (int, error) { return r.code, nil }
+func (r instant) Run(context.Context, jobs.Job) (jobs.Result, error) {
+	return jobs.Result{ExitCode: r.code}, nil
+}
 
 // held is a runner that runs until told to finish.
 type held struct{ finish chan int }
 
-func (r held) Run(ctx context.Context, _ jobs.Job) (int, error) {
+func (r held) Run(ctx context.Context, _ jobs.Job) (jobs.Result, error) {
 	select {
 	case code := <-r.finish:
-		return code, nil
+		return jobs.Result{ExitCode: code}, nil
 	case <-ctx.Done():
-		return -1, ctx.Err()
+		return jobs.Result{ExitCode: -1}, ctx.Err()
 	}
 }
 

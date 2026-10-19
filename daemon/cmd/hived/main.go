@@ -711,7 +711,7 @@ func devJob(ctx context.Context, args []string) error {
 	defer release()
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(*minutes)*time.Minute)
 	defer cancel()
-	code, err := runner.Run(ctx, jobs.Job{
+	result, err := runner.Run(ctx, jobs.Job{
 		AssignmentID: "dev",
 		JITConfig:    strings.TrimSpace(string(raw)),
 		RunnerName:   "dev",
@@ -720,8 +720,8 @@ func devJob(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if code != 0 {
-		return fmt.Errorf("the runner exited %d", code)
+	if result.ExitCode != 0 {
+		return fmt.Errorf("the runner exited %d", result.ExitCode)
 	}
 	return nil
 }

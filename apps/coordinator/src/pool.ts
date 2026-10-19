@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers"
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/d1"
+import { recordJobExit } from "@workspace/db/jobs"
 import { githubInstallation, machine, machinePool } from "@workspace/db/schema"
 import { routingPolicy } from "@workspace/db/settings"
 import {
@@ -183,12 +184,23 @@ export class Pool extends DurableObject<CoordinatorEnv> {
     }
     // Rejected or exited: those cores are free again. A job the pool backed
     // out of has no reservation left to mark.
-    if (message.type === "job.exited" && !held.releasing)
-      await this.ctx.storage.put<Reservation>(
-        `assignment:${message.assignmentId}`,
-        { ...held, machineId: state.machineId, exited: true }
-      )
-    else await this.ctx.storage.delete(`assignment:${message.assignmentId}`)
+    if (message.type === "job.exited") {
+      if (message.reason)
+        await recordJobExit(this.db, {
+          assignmentId: message.assignmentId,
+          organizationId: state.organizationId,
+          machineId: state.machineId,
+          exitCode: message.exitCode,
+          reason: message.reason,
+          detail: message.detail ?? "",
+        })
+      if (!held.releasing)
+        await this.ctx.storage.put<Reservation>(
+          `assignment:${message.assignmentId}`,
+          { ...held, machineId: state.machineId, exited: true }
+        )
+      else await this.ctx.storage.delete(`assignment:${message.assignmentId}`)
+    } else await this.ctx.storage.delete(`assignment:${message.assignmentId}`)
     delete state.jobs[message.assignmentId]
     return this.setPresence(socket, state, state.presence)
   }

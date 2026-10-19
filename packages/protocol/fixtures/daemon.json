@@ -39,5 +39,12 @@
   { "type": "presence", "presence": "draining" },
   { "type": "job.accepted", "assignmentId": "a-1" },
   { "type": "job.rejected", "assignmentId": "a-1", "reason": "lid closed" },
-  { "type": "job.exited", "assignmentId": "a-1", "exitCode": 0 }
+  { "type": "job.exited", "assignmentId": "a-1", "exitCode": 0 },
+  {
+    "type": "job.exited",
+    "assignmentId": "a-1",
+    "exitCode": -1,
+    "reason": "guest_oom",
+    "detail": "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5"
+  }
 ]

@@ -8,13 +8,150 @@
 set -u
 
 share=/run/hive
+watchdog_pid=
+peak_used_kb=0
+swap_peak_kb=0
+saw_oom=0
+saw_disk_full=0
+warned_pressure=0
+warned_critical=0
+
+write_diag() {
+  mem_total_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  swap_total_kb=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  swap_free_kb=$(awk '/^SwapFree:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  swap_used_kb=0
+  if [ "${swap_total_kb:-0}" -gt 0 ]; then
+    swap_used_kb=$((swap_total_kb - swap_free_kb))
+  fi
+  {
+    echo "mem_total_kb=${mem_total_kb:-0}"
+    echo "peak_used_kb=${peak_used_kb:-0}"
+    echo "swap_total_kb=${swap_total_kb:-0}"
+    echo "swap_used_kb=${swap_used_kb:-0}"
+    echo "oom=${saw_oom:-0}"
+    echo "disk_full=${saw_disk_full:-0}"
+  } > "$share/diag.tmp" 2>/dev/null && mv "$share/diag.tmp" "$share/diag"
+}
+
+# Put a notice in the GitHub job log, if the runner is still listening, and
+# always in the share and the kernel log so the host can classify a kill.
+inject() {
+  local kind="$1" msg="$2"
+  printf '%s\n' "$msg" >> "$share/notices" 2>/dev/null || true
+  echo "hive-agent: $msg" > /dev/kmsg 2>/dev/null || true
+  for cmd in /proc/[0-9]*/cmdline; do
+    if tr '\0' ' ' < "$cmd" 2>/dev/null | grep -q 'Runner.Worker'; then
+      pid=${cmd%/cmdline}
+      pid=${pid##*/}
+      printf '::%s title=Hive Runner::%s\n' "$kind" "$msg" > "/proc/$pid/fd/1" 2>/dev/null || true
+    fi
+  done
+}
+
+host_where() {
+  local host label
+  host=$(tr -cd 'A-Za-z0-9._-' < "$share/host" 2>/dev/null || true)
+  label=$(tr -cd 'A-Za-z0-9._-' < "$share/label" 2>/dev/null || true)
+  host=${host:-guest}
+  if [ -n "$label" ]; then
+    echo "$host ($label)"
+  else
+    echo "$host"
+  fi
+}
+
+sample_memory() {
+  local mem_total_kb mem_avail_kb used_kb swap_total_kb swap_free_kb swap_used_kb pct where
+  mem_total_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  mem_avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  swap_total_kb=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  swap_free_kb=$(awk '/^SwapFree:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  [ "${mem_total_kb:-0}" -gt 0 ] || return 0
+  used_kb=$((mem_total_kb - mem_avail_kb))
+  swap_used_kb=0
+  [ "${swap_total_kb:-0}" -gt 0 ] && swap_used_kb=$((swap_total_kb - swap_free_kb))
+  [ "$used_kb" -gt "${peak_used_kb:-0}" ] && peak_used_kb=$used_kb
+  [ "$swap_used_kb" -gt "${swap_peak_kb:-0}" ] && swap_peak_kb=$swap_used_kb
+  pct=$((used_kb * 100 / mem_total_kb))
+  where=$(host_where)
+  if [ "$pct" -ge 95 ] && [ "$warned_critical" -eq 0 ]; then
+    warned_critical=1
+    inject warning "memory pressure: $((used_kb / 1024))/$((mem_total_kb / 1024)) MB used on $where; swapping rather than killing"
+  elif [ "$pct" -ge 85 ] && [ "$warned_pressure" -eq 0 ]; then
+    warned_pressure=1
+    inject warning "memory pressure: $((used_kb / 1024))/$((mem_total_kb / 1024)) MB used on $where"
+  fi
+  if dmesg 2>/dev/null | grep -qiE 'out of memory|oom-kill|invoked oom-killer'; then
+    if [ "$saw_oom" -eq 0 ]; then
+      saw_oom=1
+      inject error "runner killed: guest OOM ($((used_kb / 1024))/$((mem_total_kb / 1024)) MB peak) on $where"
+    fi
+  fi
+  if dmesg 2>/dev/null | grep -qi 'no space left on device'; then
+    if [ "$saw_disk_full" -eq 0 ]; then
+      saw_disk_full=1
+      inject error "runner stopped: disk full on $where"
+    fi
+  fi
+  write_diag
+}
+
+watch_job() {
+  while [ ! -e "$share/exit" ]; do
+    if [ -e "$share/stop-reason" ]; then
+      reason=$(tr -cd 'a-z_' < "$share/stop-reason")
+      inject error "runner stopped: ${reason:-shutdown} on $(host_where)"
+      write_diag
+      return
+    fi
+    sample_memory
+    sleep 2
+  done
+}
+
 finish() {
+  [ -n "${watchdog_pid:-}" ] && kill "$watchdog_pid" 2>/dev/null || true
+  write_diag
   # Written under another name first, so the host never reads half a file.
   echo "$1" > "$share/exit.tmp" 2>/dev/null && mv "$share/exit.tmp" "$share/exit"
   sync
   umount "$share" 2>/dev/null
   systemctl poweroff --no-block
   exit 0
+}
+
+# Compressed swap first (half of RAM), then a disk-backed file (half of RAM,
+# at most 4 GiB). Memory pressure then slows down instead of killing the job.
+# Soft limits only warn; nothing here sends SIGKILL.
+setup_memory_headroom() {
+  local mem_kb zram_bytes swap_kb
+  mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  [ "${mem_kb:-0}" -gt 0 ] || return 0
+  zram_bytes=$((mem_kb * 1024 / 2))
+  swap_kb=$((mem_kb / 2))
+  [ "$swap_kb" -gt $((4 * 1024 * 1024)) ] && swap_kb=$((4 * 1024 * 1024))
+
+  if modprobe zram num_devices=1 2>/dev/null && [ -e /sys/block/zram0/disksize ]; then
+    if grep -qw zstd /sys/block/zram0/comp_algorithm 2>/dev/null; then
+      echo zstd > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    else
+      echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    fi
+    echo "$zram_bytes" > /sys/block/zram0/disksize 2>/dev/null || true
+    mkswap /dev/zram0 >/dev/null 2>&1 && swapon -p 100 /dev/zram0 || true
+  fi
+
+  if [ ! -f /swapfile ]; then
+    if fallocate -l "${swap_kb}k" /swapfile 2>/dev/null \
+      || dd if=/dev/zero of=/swapfile bs=1k count="$swap_kb" status=none 2>/dev/null; then
+      chmod 600 /swapfile
+      mkswap /swapfile >/dev/null 2>&1 || rm -f /swapfile
+    fi
+  fi
+  [ -f /swapfile ] && swapon -p 10 /swapfile || true
+  # Prefer swap over the OOM killer; do not cut a job on a soft limit.
+  echo 80 > /proc/sys/vm/swappiness 2>/dev/null || true
 }
 
 mkdir -p "$share"
@@ -26,12 +163,16 @@ fi
 
 # The job's disk is a clone the host has grown; take the room.
 resize2fs /dev/vda >/dev/null 2>&1 || true
+setup_memory_headroom
 
 # A warm VM waits here, booted, for its job to arrive.
 # `ready` tells the host the boot is behind it.
 : > "$share/ready"
 waited=0
 until [ -e "$share/jitconfig" ] || [ -e "$share/selftest" ]; do
+  if [ -e "$share/stop-reason" ]; then
+    finish 143
+  fi
   sleep 0.2
   waited=$((waited + 1))
   # Half an hour without a job: the host has forgotten this VM.
@@ -83,8 +224,11 @@ if [ -e "$share/selftest" ]; then
     echo "ARCH=$(uname -m)"
     echo "KERNEL=$(uname -r)"
     echo "CPUS=$(nproc)"
+    echo "MEM=$(awk '/^MemTotal:/ {printf "%dM", $2/1024}' /proc/meminfo)"
     echo "USER=$(sudo -u runner id -un)"
     echo "RUNNER=$(sudo -u runner /opt/runner/bin/Runner.Listener --version)"
+    if grep -q zram /proc/swaps 2>/dev/null; then echo "ZRAM=ok"; else echo "ZRAM=missing"; fi
+    if grep -q /swapfile /proc/swaps 2>/dev/null; then echo "SWAP=ok"; else echo "SWAP=missing"; fi
     curl -fsS -o /dev/null -m 20 https://api.github.com/zen && echo "NETWORK=ok" || echo "NETWORK=failed"
     # Whether the host offered its cache, and whether this VM reached it.
     [ -r "$share/cache" ] && echo "CACHE=$cache"
@@ -115,6 +259,9 @@ if [ -e "$share/selftest" ]; then
   } > "$share/selftest.out" 2>&1
   finish 0
 fi
+
+watch_job &
+watchdog_pid=$!
 
 jit=$(cat "$share/jitconfig")
 rm -f "$share/jitconfig"

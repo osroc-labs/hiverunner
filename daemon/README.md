@@ -421,7 +421,16 @@ destroyed when the job ends.
 4. The guest's agent reads the configuration, deletes it, and runs GitHub's
    runner as an unprivileged user. The runner talks to GitHub directly.
 5. The guest writes its exit code and powers off. The daemon deletes the disk
-   and the directory and reports `job.exited`.
+   and the directory and reports `job.exited`, with a kill reason when the
+   runner did not just finish.
+
+Each guest is given 2 GiB of RAM a core (at least 4, never more than half
+the host), plus zram of half that RAM and a swap file of half that RAM up to
+4 GiB. Memory pressure then swaps instead of killing the job. Soft limits
+only warn, in the GitHub job log (`::warning::`). If the VM or runner is
+still stopped, hived classifies why and sends `reason` and `detail` on
+`job.exited` so the coordinator can store `runner killed: guest OOM (7.9/8 GB
+peak) on MacBook-Pro-5` on the job.
 
 What the guest can reach: outbound, whatever the machine it runs on can.
 That is the internet, and it is also the machine's own network: other
