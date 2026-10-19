@@ -14,6 +14,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Deliberately not the hosted runners' toolcache; jobs install what they need
 # with setup-* actions, as they do anywhere.
 #
+# linux-image-virtual is the small VM kernel. zram (compressed swap) lives
+# in linux-modules-extra-virtual, which the virtual image leaves out. The
+# extra package is here so a job that uses a lot of RAM can swap instead of
+# being killed; hive-agent loads the module at boot.
+#
 # Python is the exception, and only the system's own: workflows and actions
 # call `python3` for a few lines of glue as freely as they call jq, and
 # found none here. It is Ubuntu's 3.12 with venv, and no pip outside a venv;
@@ -23,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv systemd-resolved dbus udev kmod \
-      linux-image-virtual initramfs-tools e2fsprogs \
+      linux-image-virtual linux-modules-extra-virtual initramfs-tools e2fsprogs \
       ca-certificates curl git sudo iproute2 iputils-ping \
       jq tar gzip unzip zip xz-utils zstd openssh-client locales socat \
       libatomic1 python3 python3-venv \
@@ -58,11 +63,12 @@ RUN useradd --create-home --uid 1001 --shell /bin/bash runner \
 # Docker does not wait for it or give it memory. busybox is the self-test's
 # container: one static file, so the test pulls nothing.
 #
-# linux-image-virtual leaves out linux-modules-extra, and what Docker needs
-# of the kernel is all in the modules it does bring: overlayfs, bridges and
-# veth pairs, and the netfilter pieces iptables-nft drives. The build fails
-# if a kernel ever moves one of them out, rather than produce an image whose
-# containers have no network.
+# linux-image-virtual has what Docker needs of the kernel: overlayfs, bridges
+# and veth pairs, and the netfilter pieces iptables-nft drives. zram comes
+# from linux-modules-extra-virtual, installed with the kernel above. The
+# build fails if a kernel ever moves one of them out, rather than produce an
+# image whose containers have no network or whose jobs have no compressed
+# swap.
 RUN install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL -o /etc/apt/keyrings/docker.asc https://download.docker.com/linux/ubuntu/gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
