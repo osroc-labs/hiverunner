@@ -15,9 +15,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # with setup-* actions, as they do anywhere.
 #
 # linux-image-virtual is the small VM kernel. zram (compressed swap) lives
-# in linux-modules-extra-virtual, which the virtual image leaves out. The
-# extra package is here so a job that uses a lot of RAM can swap instead of
-# being killed; hive-agent loads the module at boot.
+# in that kernel's extra-modules package, which the virtual image leaves
+# out. The extra package is here so a job that uses a lot of RAM can swap
+# instead of being killed; hive-agent loads the module at boot.
 #
 # Python is the exception, and only the system's own: workflows and actions
 # call `python3` for a few lines of glue as freely as they call jq, and
@@ -28,10 +28,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv systemd-resolved dbus udev kmod \
-      linux-image-virtual linux-modules-extra-virtual initramfs-tools e2fsprogs \
+      linux-image-virtual initramfs-tools e2fsprogs \
       ca-certificates curl git sudo iproute2 iputils-ping \
       jq tar gzip unzip zip xz-utils zstd openssh-client locales socat \
       libatomic1 python3 python3-venv \
+ && kernel=$(ls /lib/modules | sort -V | tail -1) \
+ && { apt-get install -y --no-install-recommends "linux-modules-extra-$kernel" \
+      || apt-get install -y --no-install-recommends linux-image-extra-virtual; } \
  && locale-gen en_US.UTF-8 \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -c 'import json, sqlite3, ssl, tomllib' \
@@ -65,7 +68,7 @@ RUN useradd --create-home --uid 1001 --shell /bin/bash runner \
 #
 # linux-image-virtual has what Docker needs of the kernel: overlayfs, bridges
 # and veth pairs, and the netfilter pieces iptables-nft drives. zram comes
-# from linux-modules-extra-virtual, installed with the kernel above. The
+# from linux-modules-extra for that same kernel ABI, installed above. The
 # build fails if a kernel ever moves one of them out, rather than produce an
 # image whose containers have no network or whose jobs have no compressed
 # swap.
