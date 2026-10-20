@@ -108,3 +108,36 @@ export function pickMachine(
 }
 
 const load = (candidate: Candidate) => Object.keys(candidate.jobs ?? {}).length
+
+/** GitHub's counts for a scale set, as its messages carry them. */
+export type Counts = {
+  totalAssignedJobs: number
+  totalRunningJobs: number
+  totalAvailableJobs?: number
+}
+
+/**
+ * The demand a listener acts on: GitHub's counts, but never fewer jobs than
+ * the listener itself has been told of and not yet seen start or end.
+ *
+ * GitHub's counts are a snapshot of when a message was made. Jobs queued
+ * together arrive in one batch whose counts can name only the first, and
+ * nothing new is sent until something else happens, so counts alone left
+ * the rest of the batch waiting on a free machine for minutes. A job the
+ * listener holds a claim for is assigned to this set; one it was offered
+ * and has not claimed is still on offer. Each leaves when GitHub says the
+ * job started or completed, or when another set acquires it.
+ */
+export function demand(
+  counts: Counts | undefined,
+  known: Record<string, unknown>,
+  claims: Record<string, unknown>
+) {
+  const claimed = Object.keys(claims).length
+  const unclaimed = Object.keys(known).filter((key) => !(key in claims)).length
+  return {
+    assigned: Math.max(counts?.totalAssignedJobs ?? 0, claimed),
+    running: counts?.totalRunningJobs ?? 0,
+    available: Math.max(counts?.totalAvailableJobs ?? 0, unclaimed),
+  }
+}

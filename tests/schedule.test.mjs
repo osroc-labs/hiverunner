@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import {
+  demand,
   fits,
   pickMachine,
   room,
@@ -165,4 +166,40 @@ test("a macOS job goes only to a Mac whose owner opted in", () => {
   assert.equal(fits(opted, arm(2)), true)
   assert.equal(serves({ arch: "arm64", macos: true }, "macos"), true)
   assert.equal(serves({ arch: "arm64" }, "macos"), false)
+})
+
+test("a batch of jobs is wanted whole, whatever counts came with it", () => {
+  // Three jobs queued together, in a message whose counts name only one.
+  const counts = {
+    totalAssignedJobs: 0,
+    totalRunningJobs: 0,
+    totalAvailableJobs: 1,
+  }
+  const known = { 101: {}, 102: {}, 103: {} }
+  assert.deepEqual(demand(counts, known, {}), {
+    assigned: 0,
+    running: 0,
+    available: 3,
+  })
+  // The first is acquired and the counts have not caught up.
+  assert.deepEqual(demand(counts, known, { 101: "owned" }), {
+    assigned: 1,
+    running: 0,
+    available: 2,
+  })
+  // Counts ahead of what this listener has heard of are kept.
+  assert.deepEqual(
+    demand(
+      { totalAssignedJobs: 4, totalRunningJobs: 2, totalAvailableJobs: 5 },
+      known,
+      {}
+    ),
+    { assigned: 4, running: 2, available: 5 }
+  )
+  // Before any message: only what is known.
+  assert.deepEqual(demand(undefined, { 7: {} }, {}), {
+    assigned: 0,
+    running: 0,
+    available: 1,
+  })
 })

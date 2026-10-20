@@ -21,6 +21,7 @@ import {
 } from "@workspace/github/scale-sets"
 import { runnerSize } from "@workspace/pricing"
 import { githubTestAPI } from "./config"
+import { demand } from "./schedule"
 import type { Pool } from "./pool"
 
 type Settings = { organizationId: string; label: string; vcpus: number }
@@ -315,11 +316,9 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
       for (const available of Object.values(state.available)) {
         if (!mayAcquire && !state.claims[String(jobKey(available))]) continue
         // GitHub supplies aggregate demand even when a message only carries
-        // fifty jobs. Message count is never the desired runner count.
-        const desired = state.statistics
-          ? state.statistics.totalAssignedJobs +
-            (state.statistics.totalAvailableJobs ?? 0)
-          : Object.keys(state.available).length
+        // fifty jobs, and its counts can trail the jobs it has sent here.
+        const wanted = demand(state.statistics, state.available, state.claims)
+        const desired = wanted.assigned + wanted.available
         if (
           !state.claims[String(jobKey(available))] &&
           Object.keys(state.slots).length >= desired
@@ -536,12 +535,20 @@ export class ScaleListener extends DurableObject<CoordinatorEnv> {
         // the jobs not yet running, and one is spare only when both say so.
         // Done before the acknowledgement, so a failure to ask GitHub about
         // a runner has the batch delivered again.
+        //
+        // Assignments are GitHub's alone to count here: one that ended with
+        // no word of it shows only as the count falling. A job on offer is
+        // also one this listener knows of, since counts can trail a batch.
         const assigned = message.statistics.totalAssignedJobs
         const waiting = Math.max(
           0,
           assigned - message.statistics.totalRunningJobs
         )
-        const onOffer = message.statistics.totalAvailableJobs ?? 0
+        const onOffer = demand(
+          message.statistics,
+          state.available,
+          state.claims
+        ).available
         for (const slot of Object.values(state.slots)) {
           if (slot.githubStarted) continue
           const held = Object.values(state.slots)
