@@ -225,18 +225,19 @@ the journal for the log (`journalctl --user -u hiveworker`).
 The machine's owner decides what it lends. `hived config` shows the settings
 and `hived config set <name> <value>` changes one:
 
-| Setting      | Values                | What it does                                     |
-| ------------ | --------------------- | ------------------------------------------------ |
-| `max-jobs`   | `1` to `8`            | How many jobs run at once                        |
-| `max-vcpus`  | `2`, `4`, `8`, `auto` | The largest job this Mac takes                   |
-| `warm`       | `on`, `off`           | Keep one VM booted so a `hive` job starts sooner |
-| `battery`    | `on`, `off`           | Take jobs while unplugged                        |
-| `lid`        | `on`, `off`           | Take jobs with the lid closed                    |
-| `hours`      | `22:00-07:00`, `any`  | When jobs may start, in local time               |
-| `cache`      | `on`, `off`           | Keep an Actions cache on this Mac                |
-| `cache-size` | `1` to `2000`, `auto` | The most disk the cache may use, in gigabytes    |
-| `data-dir`   | a path, `default`     | Where the image and each job's disk are kept     |
-| `cache-dir`  | a path, `default`     | Where the Actions cache is kept                  |
+| Setting          | Values                | What it does                                     |
+| ---------------- | --------------------- | ------------------------------------------------ |
+| `max-jobs`       | `1` to `8`            | How many jobs run at once                        |
+| `max-vcpus`      | `2`, `4`, `8`, `auto` | The largest job this Mac takes                   |
+| `warm`           | `on`, `off`           | Keep one VM booted so a `hive` job starts sooner |
+| `battery`        | `on`, `off`           | Take jobs while unplugged                        |
+| `lid`            | `on`, `off`           | Take jobs with the lid closed                    |
+| `hours`          | `22:00-07:00`, `any`  | When jobs may start, in local time               |
+| `cache`          | `on`, `off`           | Keep an Actions cache on this Mac                |
+| `cache-size`     | `1` to `2000`, `auto` | The most disk the cache may use, in gigabytes    |
+| `reserve-memory` | `24G`, `40%`, `off`   | Memory kept for everything else on this machine  |
+| `data-dir`       | a path, `default`     | Where the image and each job's disk are kept     |
+| `cache-dir`      | a path, `default`     | Where the Actions cache is kept                  |
 
 `hived pause` and `hived resume` stop and restart lending altogether. A job
 already running always finishes.
@@ -354,6 +355,16 @@ down with it, and a daemon restarted after one, count as the same event, found
 by the `host-oom` marker's time, so one incident is one step. It is kept in
 `cooldown.json` beside the settings, so a restart does not end it, and
 `hived status` shows it. Deleting the file ends it early.
+
+`hived config set reserve-memory 24G` (or `40%`; `off` clears it) is memory
+the daemon leaves for everything else on the host. Jobs get the host's memory
+less the reserve, and the machine runs at most as many jobs as fit in that,
+counting the largest job the settings allow and the warm VM when it is on,
+or `max-jobs` if that is fewer. It also declines a job that would leave less
+than the reserve (plus the usual 1 GiB margin) free. `hived status` shows, for
+example, `Memory budget 36 of 60 GB (24 GB reserved)` and how many jobs that
+runs at once; `hived doctor` warns when the reserve leaves room for no job. A
+change is picked up within seconds, like the other settings.
 
 Jobs running at once share the Mac: together they never take the last two
 cores, and each gets its own VM, memory and disk. A machine serving several

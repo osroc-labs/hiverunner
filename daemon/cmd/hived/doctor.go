@@ -94,6 +94,9 @@ func doctor() error {
 		if problem, fix := overcommit(facts, current, host.AvailableMemory()); problem != "" {
 			checks = append(checks, host.Check{Name: "memory", Found: problem, Fix: fix})
 		}
+		if problem, fix := reserveProblem(facts, current); problem != "" {
+			checks = append(checks, host.Check{Name: "reserve", Found: problem, Fix: fix})
+		}
 	}
 	// A disk the owner keeps the image or the cache on has to be attached.
 	if gone := absent(current); len(gone) > 0 {

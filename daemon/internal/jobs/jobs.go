@@ -98,6 +98,9 @@ type Limits struct {
 	// Available is the memory the host can give a new VM right now, in
 	// bytes. Zero means unknown, and no job is declined for want of memory.
 	Available uint64
+	// Reserve is memory the owner keeps for everything else on the host: a
+	// job is declined if accepting it would leave Available below it.
+	Reserve uint64
 	// GuestMemory is the memory a job of this many vCPUs is given. Nil
 	// means memory is not checked.
 	GuestMemory func(vcpus int) uint64
@@ -291,7 +294,7 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 				pending += limits.GuestMemory(other.vcpus)
 			}
 		}
-		need := limits.GuestMemory(offer.VCPUs) + pending + MemoryMargin
+		need := limits.GuestMemory(offer.VCPUs) + pending + MemoryMargin + limits.Reserve
 		if limits.Available < need {
 			m.log.Warn("declining a job: not enough free memory", "assignment", offer.AssignmentID, "available_mb", limits.Available>>20, "needed_mb", need>>20)
 			return ReasonLowMemory

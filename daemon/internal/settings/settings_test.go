@@ -45,6 +45,12 @@ func TestSetRefusesWhatItCannotMean(t *testing.T) {
 		{"hours", "9-5"},
 		{"hours", "09:00-09:00"},
 		{"cores", "4"},
+		{"reserve-memory", "24"},
+		{"reserve-memory", "0G"},
+		{"reserve-memory", "0%"},
+		{"reserve-memory", "95%"},
+		{"reserve-memory", "lots"},
+		{"reserve-memory", "-4G"},
 	} {
 		if err := current.Set(bad[0], bad[1]); err == nil {
 			t.Errorf("set %s %s was accepted", bad[0], bad[1])
@@ -159,5 +165,44 @@ func TestADirIsTakenAsTyped(t *testing.T) {
 	}
 	if err := current.Set("data-dir", "Default"); err != nil || current.DataDir != "" {
 		t.Errorf("default: %q %v", current.DataDir, err)
+	}
+}
+
+func TestReserveMemory(t *testing.T) {
+	const gib = 1 << 30
+	for _, test := range []struct {
+		typed, stored string
+		of60          uint64
+	}{
+		{"24G", "24G", 24 * gib},
+		{" 24gb ", "24G", 24 * gib},
+		{"40%", "40%", 24 * gib},
+		{"off", "", 0},
+	} {
+		current := Default()
+		current.ReserveMemory = "8G"
+		if err := current.Set("reserve-memory", test.typed); err != nil {
+			t.Fatalf("set reserve-memory %q: %v", test.typed, err)
+		}
+		if current.ReserveMemory != test.stored {
+			t.Errorf("%q stored as %q, want %q", test.typed, current.ReserveMemory, test.stored)
+		}
+		if got := current.ReserveBytes(60 * gib); got != test.of60 {
+			t.Errorf("%q of 60 GB = %d, want %d", test.typed, got, test.of60)
+		}
+	}
+	// A hand-edited file is checked like the command line.
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"reserveMemory":"lots"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := read(path); err == nil {
+		t.Error("a reserve that means nothing was read")
+	}
+	if err := os.WriteFile(path, []byte(`{"reserveMemory":"24G"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := read(path); err != nil || got.ReserveMemory != "24G" {
+		t.Errorf("read = %+v, %v", got, err)
 	}
 }
