@@ -61,6 +61,7 @@ func doctor() error {
 			checks = append(checks, host.Check{Name: "service", Found: "not installed, so hived runs only while you run it", Fix: "run the installer again"})
 		} else {
 			checks = append(checks, host.Check{Name: "service", Found: "installed", OK: true})
+			checks = append(checks, serviceChecks(definition)...)
 		}
 	}
 	if reason, fix := current.Holding(power, time.Now()), current.Fix(power, time.Now()); reason != "" {

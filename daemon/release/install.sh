@@ -640,6 +640,9 @@ Restart=on-failure
 RestartSec=30
 # Long enough for a job's VM to be destroyed and its files removed.
 TimeoutStopSec=60
+# The kernel killing one job's VM for memory must not fail the service and
+# take the daemon and every other job with it.
+OOMPolicy=continue
 
 [Install]
 WantedBy=default.target
