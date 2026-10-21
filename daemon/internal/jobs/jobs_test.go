@@ -512,6 +512,20 @@ func TestAJobIsDeclinedWhenTheHostLacksTheMemory(t *testing.T) {
 	}
 }
 
+// The owner's reserve is memory a job may not cut into, however much the
+// host reports free.
+func TestAJobIsDeclinedWhenItWouldCutIntoTheReserve(t *testing.T) {
+	m := New(newFake(), quiet)
+	m.Limit(limited(Limits{MaxJobs: 2, Available: 24*gib + 4*gib + MemoryMargin - 1, Reserve: 24 * gib, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-1", 2)); reason != ReasonLowMemory {
+		t.Fatalf("a byte into the reserve: %q, want low memory", reason)
+	}
+	m.Limit(limited(Limits{MaxJobs: 2, Available: 24*gib + 4*gib + MemoryMargin, Reserve: 24 * gib, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-1", 2)); reason != "" {
+		t.Fatalf("exactly clear of the reserve: %q", reason)
+	}
+}
+
 // A guest has not touched its memory when it is accepted, so the host's
 // figure does not yet include it.
 func TestAcceptedJobsCountAgainstFreeMemory(t *testing.T) {

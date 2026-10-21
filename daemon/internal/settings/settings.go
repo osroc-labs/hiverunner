@@ -52,6 +52,10 @@ type Settings struct {
 	// AutoUpdate lets the daemon update itself when a release is out and
 	// it has no job, by running the installer. Off, it only says so.
 	AutoUpdate bool `json:"autoUpdate"`
+	// ReserveMemory is the memory HiveRunner leaves for everything else on
+	// the host, as "24G" or "40%". Empty means none is held back. Use
+	// ReserveBytes for what it comes to.
+	ReserveMemory string `json:"reserveMemory,omitempty"`
 	// DataDir is where the guest image and each job's disk are kept, for an
 	// owner who wants them on another disk. Empty means beside the machine
 	// file. The two cannot be apart: a job's disk is a clone of the image.
@@ -66,6 +70,13 @@ var Sizes = []int{2, 4, 8}
 
 // MostCacheGB is the largest cache an owner can ask for.
 const MostCacheGB = 2000
+
+// MostReserveGB and MostReservePercent are the largest reserve an owner can
+// ask for. A reserve that takes the whole host leaves no job at all.
+const (
+	MostReserveGB      = 4096
+	MostReservePercent = 90
+)
 
 // MostJobs is the most jobs any machine runs at once, whatever its owner
 // asks for. The pool refuses a daemon that claims more.
@@ -155,6 +166,9 @@ func (s Settings) validate() error {
 			return fmt.Errorf("%s must be a full path, or left out for the default", key)
 		}
 	}
+	if _, err := parseReserve(s.ReserveMemory); err != nil {
+		return err
+	}
 	_, _, err := parseHours(s.Hours)
 	return err
 }
@@ -169,7 +183,7 @@ func isSize(vcpus int) bool {
 }
 
 // Keys are the settings `hived config set` accepts, in the order shown.
-var Keys = []string{"max-jobs", "max-vcpus", "warm", "battery", "lid", "hours", "cache", "cache-size", "macos-jobs", "auto-update", "data-dir", "cache-dir"}
+var Keys = []string{"max-jobs", "max-vcpus", "warm", "battery", "lid", "hours", "cache", "cache-size", "reserve-memory", "macos-jobs", "auto-update", "data-dir", "cache-dir"}
 
 // Set changes one setting from what was typed on a command line.
 func (s *Settings) Set(key, value string) error {
@@ -233,6 +247,16 @@ func (s *Settings) Set(key, value string) error {
 			return fmt.Errorf("cache-size takes a number of gigabytes from 1 to %d, or auto", MostCacheGB)
 		}
 		s.CacheGB = gigabytes
+	case "reserve-memory":
+		if value == "off" {
+			s.ReserveMemory = ""
+			return nil
+		}
+		reserve, err := parseReserve(value)
+		if err != nil {
+			return err
+		}
+		s.ReserveMemory = reserve.text()
 	case "hours":
 		if value == "any" {
 			value = ""
@@ -245,6 +269,61 @@ func (s *Settings) Set(key, value string) error {
 		return fmt.Errorf("there is no setting called %q; the settings are %s", key, strings.Join(Keys, ", "))
 	}
 	return nil
+}
+
+// reserve is a parsed reserve-memory: gigabytes, or a percent of the host's
+// memory. The zero value holds nothing back.
+type reserve struct {
+	gigabytes, percent int
+}
+
+var errReserve = fmt.Errorf("reserve-memory takes an amount like 24G, a share like 40%%, or off")
+
+// parseReserve reads "24G", "24GB", "40%" or "" (and "off").
+func parseReserve(value string) (reserve, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || value == "off" {
+		return reserve{}, nil
+	}
+	if number, ok := strings.CutSuffix(value, "%"); ok {
+		percent, err := strconv.Atoi(strings.TrimSpace(number))
+		if err != nil || percent < 1 || percent > MostReservePercent {
+			return reserve{}, fmt.Errorf("reserve-memory takes a share from 1%% to %d%%, an amount like 24G, or off", MostReservePercent)
+		}
+		return reserve{percent: percent}, nil
+	}
+	number := strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(value, "b"), "g"))
+	if number == value {
+		return reserve{}, errReserve
+	}
+	gigabytes, err := strconv.Atoi(number)
+	if err != nil || gigabytes < 1 || gigabytes > MostReserveGB {
+		return reserve{}, fmt.Errorf("reserve-memory takes a number of gigabytes from 1 to %d like 24G, a share like 40%%, or off", MostReserveGB)
+	}
+	return reserve{gigabytes: gigabytes}, nil
+}
+
+func (r reserve) text() string {
+	switch {
+	case r.percent > 0:
+		return fmt.Sprintf("%d%%", r.percent)
+	case r.gigabytes > 0:
+		return fmt.Sprintf("%dG", r.gigabytes)
+	}
+	return ""
+}
+
+// ReserveBytes is the memory to leave for everything else on a host with
+// this much in all. It is zero when no reserve is set.
+func (s Settings) ReserveBytes(total uint64) uint64 {
+	r, err := parseReserve(s.ReserveMemory)
+	if err != nil {
+		return 0
+	}
+	if r.percent > 0 {
+		return total * uint64(r.percent) / 100
+	}
+	return uint64(r.gigabytes) << 30
 }
 
 func parseSwitch(value string) (bool, error) {

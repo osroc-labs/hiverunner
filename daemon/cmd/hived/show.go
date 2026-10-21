@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -461,6 +462,9 @@ func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taki
 		field("", screen.Dim("At its fullest. "+atOnce)),
 		field("", idle),
 	}
+	for _, line := range budgetLines(facts, current) {
+		rows = append(rows, field("", line))
+	}
 	if problem, _ := overcommit(facts, current, host.AvailableMemory()); problem != "" {
 		for i, line := range wrap(problem, ui.Inner-14) {
 			if i == 0 {
@@ -484,6 +488,9 @@ func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taki
 	return rows
 }
 
+// keyWidth fits the longest setting name.
+const keyWidth = 15
+
 func settingRows(screen ui.Screen, current settings.Settings) []string {
 	limit := "auto"
 	if current.MaxVCPUs != 0 {
@@ -493,6 +500,7 @@ func settingRows(screen ui.Screen, current settings.Settings) []string {
 	if current.Hours != "" {
 		hours = current.Hours
 	}
+	reserve := cmp.Or(current.ReserveMemory, "off")
 	cacheSize := strconv.Itoa(current.CacheGB) + " GB"
 	if current.CacheGB == 0 {
 		cacheSize = "auto"
@@ -501,17 +509,17 @@ func settingRows(screen ui.Screen, current settings.Settings) []string {
 		}
 	}
 	row := func(key, value, meaning string) string {
-		return ui.Pad(key, 12) + ui.Pad(screen.Honey(value), 16) + screen.Dim(meaning)
+		return ui.Pad(key, keyWidth) + ui.Pad(screen.Honey(value), 14) + screen.Dim(meaning)
 	}
 	// A path has the row to itself: it is rarely short.
 	place := func(key, dir, meaning string) string {
 		if dir == "" {
 			return row(key, "default", meaning)
 		}
-		if room := ui.Inner - 12; ui.Width(dir) > room {
+		if room := ui.Inner - keyWidth; ui.Width(dir) > room {
 			dir = "…" + dir[len(dir)-room+1:]
 		}
-		return ui.Pad(key, 12) + screen.Honey(dir)
+		return ui.Pad(key, keyWidth) + screen.Honey(dir)
 	}
 	rows := []string{
 		row("max-jobs", strconv.Itoa(current.MaxJobs), "how many jobs run at once"),
@@ -522,6 +530,7 @@ func settingRows(screen ui.Screen, current settings.Settings) []string {
 		row("hours", hours, "when jobs may start"),
 		row("cache", onOff(current.Cache), "keep an Actions cache on "+thisMachine),
 		row("cache-size", cacheSize, "the most disk the cache may use"),
+		row("reserve-memory", reserve, "memory kept for everything else"),
 		row("macos-jobs", onOff(current.MacOSJobs), "take hive-macos jobs on this Mac itself"),
 		row("auto-update", onOff(current.AutoUpdate), "update to new releases when idle"),
 		place("data-dir", current.DataDir, "where the image and job disks are kept"),
@@ -585,6 +594,7 @@ hived config set <name> <value>  Change one
   hours      22:00-07:00 or any  when jobs may start, in local time
   cache      on or off           keep an Actions cache on this machine
   cache-size 1 to 2000 or auto   the most disk the cache may use, in GB
+  reserve-memory 24G, 40% or off  memory kept for everything else; jobs get the rest
   macos-jobs on or off           take hive-macos jobs, run on this Mac itself
                                  as a separate user; hived macos setup first
   auto-update on or off          update to new releases when no job is running;
@@ -641,7 +651,11 @@ func configure(args []string) error {
 				return errors.New(report.Problem)
 			}
 		}
-		if err := saved(current, args[1]+" is now "+strings.ToLower(args[2])); err != nil {
+		now := strings.ToLower(args[2])
+		if args[1] == "reserve-memory" {
+			now = cmp.Or(current.ReserveMemory, "off")
+		}
+		if err := saved(current, args[1]+" is now "+now); err != nil {
 			return err
 		}
 		if args[1] == "lid" {

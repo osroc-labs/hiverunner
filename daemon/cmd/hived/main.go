@@ -446,8 +446,11 @@ func run(ctx context.Context) error {
 	limits := func() jobs.Limits {
 		current := live.Get()
 		maxJobs, hold := cooling.Get().Cap(time.Now(), current.MaxJobs)
+		if facts, err := host.ReadFacts(); err == nil {
+			maxJobs = min(maxJobs, memoryPlan(facts, current).Jobs)
+		}
 		return jobs.Limits{MaxJobs: maxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(), Hold: hold,
-			Available: host.AvailableMemory(), GuestMemory: guestMemory}
+			Available: host.AvailableMemory(), Reserve: current.ReserveBytes(hostMemory()), GuestMemory: guestMemory}
 	}
 	slot := jobs.New(runner, log)
 	// Every job that stops with the host's kill reports it, and a restarted
