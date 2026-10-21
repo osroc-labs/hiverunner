@@ -21,3 +21,6 @@ const StayAwake = ""
 func StaysAwake() (awake, known bool) { return false, false }
 
 func Unattended() []Check { return nil }
+
+// AvailableMemory is unknown here: zero, so nothing is declined for it.
+func AvailableMemory() uint64 { return 0 }

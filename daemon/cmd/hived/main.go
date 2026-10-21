@@ -438,7 +438,8 @@ func run(ctx context.Context) error {
 	}
 	limits := func() jobs.Limits {
 		current := live.Get()
-		return jobs.Limits{MaxJobs: current.MaxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS()}
+		return jobs.Limits{MaxJobs: current.MaxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(),
+			Available: host.AvailableMemory(), GuestMemory: guestMemory}
 	}
 	slot := jobs.New(runner, log)
 	slot.Native(native)

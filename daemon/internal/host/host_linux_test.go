@@ -76,3 +76,17 @@ func TestLogindDecidesWhetherAClosedLidSuspends(t *testing.T) {
 		}
 	}
 }
+
+func TestMemAvailableIsReadInBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "meminfo")
+	meminfo := "MemTotal:       61000000 kB\nMemFree:          100000 kB\nMemAvailable:    2048 kB\nBuffers: 1 kB\n"
+	if err := os.WriteFile(path, []byte(meminfo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := memAvailable(path); got != 2048<<10 {
+		t.Errorf("memAvailable = %d, want %d", got, 2048<<10)
+	}
+	if got := memAvailable(filepath.Join(t.TempDir(), "missing")); got != 0 {
+		t.Errorf("a missing file read as %d, want unknown (0)", got)
+	}
+}

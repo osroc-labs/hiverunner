@@ -90,6 +90,11 @@ func doctor() error {
 			checks = append(checks, host.Check{Name: "lid", Found: "jobs stop when the lid closes", Fix: "hived config set lid on"})
 		}
 	}
+	if facts, err := host.ReadFacts(); err == nil {
+		if problem, fix := overcommit(facts, current, host.AvailableMemory()); problem != "" {
+			checks = append(checks, host.Check{Name: "memory", Found: problem, Fix: fix})
+		}
+	}
 	// A disk the owner keeps the image or the cache on has to be attached.
 	if gone := absent(current); len(gone) > 0 {
 		checks = append(checks, host.Check{Name: "storage", Found: strings.Join(gone, " and ") + " is not there, so nothing kept in it can be used",
