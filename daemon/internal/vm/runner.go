@@ -584,6 +584,16 @@ func hostKilledVM(vm *instance) {
 		[]byte(strconv.FormatUint(vm.availableAtKill, 10)+"\n"), 0o600)
 }
 
+// HostKillTime is when the host last killed a job's VM in this work
+// directory, or the zero time if it has not.
+func HostKillTime(workDir string) time.Time {
+	info, err := os.Stat(filepath.Join(workDir, hostKillMarker))
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
 // siblingKilled reports whether the host killed another VM after vm booted.
 func siblingKilled(vm *instance) bool {
 	if vm.hostKilled {

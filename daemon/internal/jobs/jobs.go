@@ -69,7 +69,9 @@ const (
 	ReasonTooLarge  = "this job is larger than this machine's owner allows"
 	// ReasonWrongArch names no architecture: the offer's is the pool's word.
 	ReasonWrongArch = "this job is for a machine of another architecture"
-	ReasonNoMacOS   = "this Mac does not take macOS jobs; its owner has not run hived macos setup"
+	// ReasonCoolingOff is declined while the machine waits out a host kill.
+	ReasonCoolingOff = "this machine is cooling off after the host killed a job for want of memory"
+	ReasonNoMacOS    = "this Mac does not take macOS jobs; its owner has not run hived macos setup"
 )
 
 // hostArch is what this machine is. A variable so tests can be another.
@@ -99,6 +101,9 @@ type Limits struct {
 	// GuestMemory is the memory a job of this many vCPUs is given. Nil
 	// means memory is not checked.
 	GuestMemory func(vcpus int) uint64
+	// Hold declines every offer, as the reason it is giving: a machine
+	// waiting out a host kill that already runs one job at most.
+	Hold bool
 }
 
 // MemoryMargin is what a job leaves free on the host beyond its guest's
@@ -137,6 +142,9 @@ type Manager struct {
 	// limits is asked on every offer, so it may change while the daemon
 	// runs. Nil is the zero Limits.
 	limits func() Limits
+	// onHostKilled is told when a job's VM was killed by the host. Nil is
+	// nobody.
+	onHostKilled func()
 
 	mu    sync.Mutex
 	held  map[string]*slot
@@ -168,6 +176,12 @@ func (m *Manager) Limit(limits func() Limits) {
 // Call it before the first offer. Nil declines every such job.
 func (m *Manager) Native(runner Runner) {
 	m.native = runner
+}
+
+// OnHostKilled sets what happens after a job ends because the host itself
+// killed its VM. Call it before the first offer.
+func (m *Manager) OnHostKilled(fn func()) {
+	m.onHostKilled = fn
 }
 
 func (m *Manager) limit() Limits {
@@ -236,6 +250,9 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 		runner = m.native
 	} else if kind != hostArch() {
 		return ReasonWrongArch
+	}
+	if limits.Hold {
+		return ReasonCoolingOff
 	}
 	if runner == nil {
 		return ReasonNoRunner
@@ -393,6 +410,9 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 		m.mu.Unlock()
 		if end.Reason != "" && end.Reason != ReasonReleased {
 			m.log.Error(end.Detail, "assignment", job.AssignmentID, "reason", end.Reason, "exit", exitCode)
+		}
+		if end.Reason == ReasonHostKilled && m.onHostKilled != nil {
+			m.onHostKilled()
 		}
 		m.log.Info("job ended", "assignment", job.AssignmentID, "exit", exitCode, "reason", end.Reason, "released", released)
 		// Said for a released job too: its result is of no interest to the

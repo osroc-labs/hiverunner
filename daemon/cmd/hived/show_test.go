@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cooldown"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
@@ -91,5 +92,19 @@ func TestTheStartupLogSaysWarmIsOffWhenItIsOff(t *testing.T) {
 		if got := warmState(c.vcpus, c.enabled); got != c.want {
 			t.Errorf("warmState(%d, %v) = %q, want %q", c.vcpus, c.enabled, got, c.want)
 		}
+	}
+}
+
+func TestStatusSaysWhenAHostKillHasTheMachineLendingLess(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
+	wait, _ := cooldown.State{}.Hit(now, now)
+	if coolingOff(cooldown.State{}, now, 2) != nil || coolingOff(wait, now.Add(time.Hour), 2) != nil {
+		t.Error("a machine outside a wait reported one")
+	}
+	if got := coolingOff(wait, now, 2); got == nil || got.Paused || got.Strikes != 1 || !got.Until.Equal(now.Add(15*time.Minute)) {
+		t.Errorf("two jobs allowed: %+v", got)
+	}
+	if got := coolingOff(wait, now, 1); got == nil || !got.Paused {
+		t.Errorf("one job allowed should pause: %+v", got)
 	}
 }

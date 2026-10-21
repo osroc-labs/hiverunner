@@ -14,6 +14,7 @@ import (
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/api"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/connection"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cooldown"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/native"
@@ -71,6 +72,9 @@ type snapshot struct {
 		Taking bool   `json:"taking"`
 		Reason string `json:"reason,omitempty"`
 		Fix    string `json:"fix,omitempty"`
+		// Cooldown is set while the machine lends less after the host
+		// killed a job.
+		Cooldown *cooldownState `json:"cooldown,omitempty"`
 	} `json:"jobs"`
 	Paused bool `json:"paused"`
 	// Labels is every runs-on label, and whether this machine takes it.
@@ -86,6 +90,24 @@ type snapshot struct {
 		Automatic bool   `json:"automatic"`
 	} `json:"update"`
 	Settings settings.Settings `json:"settings"`
+}
+
+// cooldownState is the wait after the host killed a job's VM for want of
+// memory. Paused means no job at all; otherwise the machine runs one at a
+// time until Until.
+type cooldownState struct {
+	Until   time.Time `json:"until"`
+	Strikes int       `json:"strikes"`
+	Paused  bool      `json:"paused"`
+}
+
+// coolingOff is nil outside a wait.
+func coolingOff(wait cooldown.State, now time.Time, maxJobs int) *cooldownState {
+	if !wait.Active(now) {
+		return nil
+	}
+	_, hold := wait.Cap(now, maxJobs)
+	return &cooldownState{Until: wait.Until, Strikes: wait.Strikes, Paused: hold}
 }
 
 type tunnelState struct {
@@ -208,6 +230,13 @@ func gather() (snapshot, host.Facts, settings.Settings, host.Power, error) {
 
 	s.Jobs.Reason = current.Holding(power, time.Now())
 	s.Jobs.Fix = current.Fix(power, time.Now())
+	if state := coolingOff(cooldown.Load(), time.Now(), current.MaxJobs); state != nil {
+		s.Jobs.Cooldown = state
+		if state.Paused && s.Jobs.Reason == "" {
+			s.Jobs.Reason = "cooling off until " + when(state.Until, time.Now()) + ", after the host killed a job"
+			s.Jobs.Fix = "the machine ran short of memory; it takes jobs again by itself"
+		}
+	}
 	// The owner's settings may allow a job that the machine cannot run.
 	if s.Jobs.Reason == "" && s.Image != nil {
 		s.Jobs.Reason, s.Jobs.Fix = cannotRunVMs()
@@ -334,6 +363,9 @@ func status(args []string) error {
 	rows = append(rows, field("Jobs", state))
 	if s.Jobs.Fix != "" {
 		rows = append(rows, field("", screen.Dim(s.Jobs.Fix)))
+	}
+	if wait := s.Jobs.Cooldown; wait != nil && !wait.Paused {
+		rows = append(rows, field("", screen.Honey(fmt.Sprintf("one job at a time until %s: the host killed a job", when(wait.Until, time.Now())))))
 	}
 	if problem, fix := asleep(current, power); problem != "" {
 		for _, line := range wrap(problem, ui.Inner-12) {
