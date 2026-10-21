@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/vm"
 )
@@ -66,5 +68,28 @@ func TestTunnelRowsFitTheBoxAndSayWhenAndWhy(t *testing.T) {
 	}
 	if len(tunnelRows(screen, nil, now)) != 0 {
 		t.Error("no daemon running should say nothing of tunnels")
+	}
+}
+
+func TestLendingSaysWarmIsOffOnce(t *testing.T) {
+	facts := host.Facts{Cores: 8, MemoryBytes: 32 << 30}
+	current := settings.Default()
+	current.Warm = false
+	rows := lending(ui.Screen{}, facts, current, true, nil)
+	got := strings.Join(rows, "\n")
+	if n := strings.Count(got, "warm is off"); n != 1 {
+		t.Errorf("warm is off appears %d times in:\n%s", n, got)
+	}
+}
+
+func TestTheStartupLogSaysWarmIsOffWhenItIsOff(t *testing.T) {
+	for _, c := range []struct {
+		vcpus   int
+		enabled bool
+		want    string
+	}{{0, true, "off"}, {2, false, "off"}, {0, false, "off"}, {2, true, "on (2 vCPUs)"}} {
+		if got := warmState(c.vcpus, c.enabled); got != c.want {
+			t.Errorf("warmState(%d, %v) = %q, want %q", c.vcpus, c.enabled, got, c.want)
+		}
 	}
 }
