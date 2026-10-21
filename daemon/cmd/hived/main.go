@@ -434,7 +434,7 @@ func run(ctx context.Context) error {
 				vmRunner.Tend(ctx, func() bool { return live.Get().Warm && holding() == "" })
 			}()
 		}
-		log.Info("ready to run jobs", "runner", vmRunner.Image.RunnerVersion, "image", vmRunner.Image.ImageVersion, "warm", vmRunner.WarmVCPUs)
+		log.Info("ready to run jobs", "runner", vmRunner.Image.RunnerVersion, "image", vmRunner.Image.ImageVersion, "warm", warmState(vmRunner.WarmVCPUs, live.Get().Warm))
 	}
 	limits := func() jobs.Limits {
 		current := live.Get()

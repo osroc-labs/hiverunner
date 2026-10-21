@@ -386,6 +386,15 @@ func most(facts host.Facts, current settings.Settings) []int {
 	return jobsAtOnce
 }
 
+// warmState says whether a warm VM is kept, for the startup log: "off" when
+// HIVE_WARM=0 or the owner's setting is off, else "on" with its size.
+func warmState(vcpus int, enabled bool) string {
+	if vcpus == 0 || !enabled {
+		return "off"
+	}
+	return fmt.Sprintf("on (%d vCPUs)", vcpus)
+}
+
 // warmVCPUs is the size of the VM the daemon keeps booted between jobs.
 const warmVCPUs = 2
 
