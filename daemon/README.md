@@ -346,6 +346,15 @@ size and job count are sent to the hive in `hello`, so the hive neither offers
 past them nor counts the machine as capacity it does not have; changing one
 reconnects the tunnel once the machine is idle.
 
+When the host kills a job's VM for want of memory (`host_killed`), the machine
+lends less for a while: one job at a time, or none if `max-jobs` is already 1.
+The wait is 15 minutes, doubles each time it happens again, and stops at 4
+hours; a kill more than a day after a wait ends starts over. Jobs a kill took
+down with it, and a daemon restarted after one, count as the same event, found
+by the `host-oom` marker's time, so one incident is one step. It is kept in
+`cooldown.json` beside the settings, so a restart does not end it, and
+`hived status` shows it. Deleting the file ends it early.
+
 Jobs running at once share the Mac: together they never take the last two
 cores, and each gets its own VM, memory and disk. A machine serving several
 hives is the judge of its own limits, because one hive cannot see another's

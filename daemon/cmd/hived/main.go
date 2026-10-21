@@ -21,6 +21,7 @@ import (
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/bench"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/config"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/connection"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cooldown"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/native"
@@ -390,6 +391,8 @@ func run(ctx context.Context) error {
 	// it declines jobs and says why.
 	installedImage := ""
 	var runner jobs.Runner
+	// When the host last killed a job's VM, as the VM runner marked it.
+	hostKillAt := func() time.Time { return time.Time{} }
 	// A machine that cannot start a VM right now is another matter: the
 	// runner is kept, declines jobs while that lasts, and says so.
 	connections := connection.NewRecorder()
@@ -398,6 +401,7 @@ func run(ctx context.Context) error {
 	} else {
 		installedImage = update.ImageID(vmRunner.Image.ImageVersion, vmRunner.Image.RunnerVersion)
 		runner = vmRunner
+		hostKillAt = func() time.Time { return vm.HostKillTime(vmRunner.WorkDir) }
 		vmRunner.OnUnusable = connections.Unusable
 		// Asked now so that it is in the log's first lines, where the
 		// installer and the owner both look.
@@ -436,12 +440,34 @@ func run(ctx context.Context) error {
 		}
 		log.Info("ready to run jobs", "runner", vmRunner.Image.RunnerVersion, "image", vmRunner.Image.ImageVersion, "warm", warmState(vmRunner.WarmVCPUs, live.Get().Warm))
 	}
+	// After the host kills a job's VM, the machine lends less for a while,
+	// and for longer each time it happens again. See package cooldown.
+	cooling := cooldown.Watch()
 	limits := func() jobs.Limits {
 		current := live.Get()
-		return jobs.Limits{MaxJobs: current.MaxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(),
+		maxJobs, hold := cooling.Get().Cap(time.Now(), current.MaxJobs)
+		return jobs.Limits{MaxJobs: maxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(), Hold: hold,
 			Available: host.AvailableMemory(), GuestMemory: guestMemory}
 	}
 	slot := jobs.New(runner, log)
+	// Every job that stops with the host's kill reports it, and a restarted
+	// daemon finds the marker of one that stopped it; the marker's time is
+	// what makes those one strike.
+	heardOfKill := func(now, kill time.Time) {
+		state, counted, err := cooling.Hit(now, kill)
+		if counted {
+			log.Warn("the host killed a job; lending less until the machine has had time to recover",
+				"until", state.Until.Format(time.RFC3339), "strikes", state.Strikes)
+		}
+		if err != nil {
+			log.Error("could not remember the cooldown across a restart", "error", err)
+		}
+	}
+	slot.OnHostKilled(func() { heardOfKill(time.Now(), hostKillAt()) })
+	// A kill that took hived down with it left no job to report it.
+	if kill := hostKillAt(); !kill.IsZero() {
+		heardOfKill(kill, kill)
+	}
 	slot.Native(native)
 	slot.Limit(limits)
 
@@ -494,6 +520,9 @@ func run(ctx context.Context) error {
 				return false
 			}
 			warnAsleep()
+			if _, hold := cooling.Get().Cap(time.Now(), live.Get().MaxJobs); hold {
+				return false
+			}
 			return holding() == ""
 		},
 		Limits: limits,

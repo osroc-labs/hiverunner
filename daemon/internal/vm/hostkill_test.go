@@ -46,3 +46,21 @@ func TestASiblingKillMarksJobsBootedBeforeIt(t *testing.T) {
 		t.Fatalf("hostAvailable = %d, want the marker's 1 GiB", got)
 	}
 }
+
+func TestHostKillTimeIsTheMarkers(t *testing.T) {
+	work := t.TempDir()
+	if got := HostKillTime(work); !got.IsZero() {
+		t.Fatalf("no marker: %v", got)
+	}
+	at := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(work, hostKillMarker)
+	if err := os.WriteFile(path, []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
+	if got := HostKillTime(work); !got.Equal(at) {
+		t.Fatalf("got %v, want %v", got, at)
+	}
+}

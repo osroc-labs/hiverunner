@@ -536,3 +536,54 @@ func TestUnknownMemoryDeclinesNothing(t *testing.T) {
 		t.Fatalf("host memory unknown: %q", reason)
 	}
 }
+
+type killer struct{}
+
+func (killer) Run(context.Context, Job) (Result, error) {
+	return Result{ExitCode: 137, Reason: ReasonHostKilled}, nil
+}
+
+// A job the host killed is told to whoever limits the machine, before the
+// next offer can be made.
+func TestAHostKilledJobIsReported(t *testing.T) {
+	m := New(killer{}, quiet)
+	hits := make(chan struct{}, 2)
+	m.OnHostKilled(func() { hits <- struct{}{} })
+	if reason := m.Offer("acme", offer("a-1")); reason != "" {
+		t.Fatalf("offer: %q", reason)
+	}
+	if err := m.Start(context.Background(), "acme", start("a-1")); err != nil {
+		t.Fatal(err)
+	}
+	if done := <-m.Exits("acme"); done.Reason != ReasonHostKilled {
+		t.Fatalf("exit reason %q", done.Reason)
+	}
+	select {
+	case <-hits:
+	default:
+		t.Fatal("a host kill was not reported before the exit")
+	}
+
+	// Any other end is not one.
+	runner := newFake()
+	runner.started = make(chan Job, 1)
+	other := New(runner, quiet)
+	other.OnHostKilled(func() { t.Error("reported a host kill for a job that finished") })
+	other.Offer("acme", offer("a-2"))
+	other.Start(context.Background(), "acme", start("a-2"))
+	<-runner.started
+	runner.finish <- 1
+	<-other.Exits("acme")
+}
+
+func TestAMachineCoolingOffDeclinesEveryOffer(t *testing.T) {
+	m := New(newFake(), quiet)
+	m.Limit(limited(Limits{MaxJobs: 1, Hold: true}))
+	if reason := m.Offer("acme", offer("a-1")); reason != ReasonCoolingOff {
+		t.Fatalf("offer while cooling off: %q", reason)
+	}
+	m.Limit(limited(Limits{MaxJobs: 1}))
+	if reason := m.Offer("acme", offer("a-1")); reason != "" {
+		t.Fatalf("offer after: %q", reason)
+	}
+}
