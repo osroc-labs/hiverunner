@@ -138,6 +138,8 @@ type instance struct {
 	// hostKilled is set when the hypervisor died from outside, typically
 	// the host OOM-killing QEMU.
 	hostKilled bool
+	// availableAtKill is the host's MemAvailable when hostKilled was set.
+	availableAtKill uint64
 	// stop pulls the plug. It is safe to call more than once, and on a VM
 	// that has already stopped.
 	stop func()
@@ -302,21 +304,23 @@ func classifyStop(vm *instance, job jobs.Job, code int, hasExit bool, ctx contex
 	cause := context.Cause(ctx)
 	pulled := vm.stopped.Load()
 	return jobs.Classify(jobs.Evidence{
-		Host:           hostName(),
-		Label:          job.Label,
-		MemoryBytes:    mem,
-		PeakUsedBytes:  used,
-		SwapTotalBytes: swapTotal,
-		SwapUsedBytes:  swapUsed,
-		GuestOOM:       oom || consoleOOM,
-		DiskFull:       disk || consoleDisk,
-		HostKilled:     vm.hostKilled && !pulled,
-		VMFailed:       !pulled && (vm.failure != nil || panicked || (err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded))),
-		ExitCode:       code,
-		HasExit:        hasExit,
-		Timeout:        errors.Is(cause, jobs.ErrTimeout) || errors.Is(err, context.DeadlineExceeded),
-		Released:       errors.Is(cause, jobs.ErrReleased),
-		Shutdown:       errors.Is(err, context.Canceled) && !errors.Is(cause, jobs.ErrTimeout) && !errors.Is(cause, jobs.ErrReleased),
+		Host:               hostName(),
+		Label:              job.Label,
+		MemoryBytes:        mem,
+		PeakUsedBytes:      used,
+		SwapTotalBytes:     swapTotal,
+		SwapUsedBytes:      swapUsed,
+		GuestOOM:           oom || consoleOOM,
+		DiskFull:           disk || consoleDisk,
+		HostKilled:         vm.hostKilled && !pulled,
+		SiblingKilled:      siblingKilled(vm),
+		HostAvailableBytes: hostAvailable(vm),
+		VMFailed:           !pulled && (vm.failure != nil || panicked || (err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded))),
+		ExitCode:           code,
+		HasExit:            hasExit,
+		Timeout:            errors.Is(cause, jobs.ErrTimeout) || errors.Is(err, context.DeadlineExceeded),
+		Released:           errors.Is(cause, jobs.ErrReleased),
+		Shutdown:           errors.Is(err, context.Canceled) && !errors.Is(cause, jobs.ErrTimeout) && !errors.Is(cause, jobs.ErrReleased),
 	})
 }
 
@@ -563,4 +567,71 @@ func (vm *instance) keepConsole() string {
 		return "unavailable"
 	}
 	return saved
+}
+
+// hostKillMarker is touched in the work directory whenever the host kills a
+// job's VM. The host killing one VM is the host out of memory, and the next
+// thing it may take is hived or the other VMs; they then stop with nothing of
+// their own to say. A file, not a variable, so a restarted daemon can see it.
+const hostKillMarker = "host-oom"
+
+// hostKilledVM records that the host killed vm, with how much memory the host
+// had left. Call it before vm.ended closes.
+func hostKilledVM(vm *instance) {
+	vm.hostKilled = true
+	vm.availableAtKill = memAvailable()
+	_ = os.WriteFile(filepath.Join(filepath.Dir(vm.dir), hostKillMarker),
+		[]byte(strconv.FormatUint(vm.availableAtKill, 10)+"\n"), 0o600)
+}
+
+// siblingKilled reports whether the host killed another VM after vm booted.
+func siblingKilled(vm *instance) bool {
+	if vm.hostKilled {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(filepath.Dir(vm.dir), hostKillMarker))
+	return err == nil && !info.ModTime().Before(vm.booted)
+}
+
+// hostAvailable is the memory the host had left when its kill was seen: this
+// VM's own, or the marker's for a sibling's.
+func hostAvailable(vm *instance) uint64 {
+	if vm.hostKilled {
+		return vm.availableAtKill
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(vm.dir), hostKillMarker))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
+	return n
+}
+
+// memAvailable is MemAvailable from /proc/meminfo in bytes, or 0 where there
+// is none.
+func memAvailable() uint64 {
+	raw, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	return parseMemAvailable(string(raw))
+}
+
+func parseMemAvailable(meminfo string) uint64 {
+	for _, line := range strings.Split(meminfo, "\n") {
+		rest, ok := strings.CutPrefix(line, "MemAvailable:")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			return 0
+		}
+		n, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			return 0
+		}
+		return n << 10
+	}
+	return 0
 }

@@ -54,7 +54,7 @@ func (r *Runner) launch(vm *instance, mac net.HardwareAddr) error {
 				if state != vz.VirtualMachineStateStopped {
 					vm.failure = fmt.Errorf("the VM ended in state %v", state)
 					if !vm.stopped.Load() {
-						vm.hostKilled = true
+						hostKilledVM(vm)
 					}
 				}
 				close(vm.ended)

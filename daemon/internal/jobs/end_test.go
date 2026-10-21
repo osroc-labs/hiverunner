@@ -18,13 +18,43 @@ func TestClassifyNamesTheMostSpecificCause(t *testing.T) {
 			name:   "guest OOM wins over a later release",
 			extra:  Evidence{GuestOOM: true, PeakUsedBytes: 79 * (1 << 30) / 10, Released: true},
 			reason: ReasonGuestOOM,
-			want:   "runner killed: guest OOM (7.9/8 GB peak) on MacBook-Pro-5 (hive-4cpu)",
+			want:   "runner killed: guest OOM (guest used 7.9 of 8 GB) on MacBook-Pro-5 (hive-4cpu)",
 		},
 		{
 			name:   "host killed the VM",
 			extra:  Evidence{HostKilled: true},
 			reason: ReasonHostKilled,
-			want:   "runner killed: host pressure (8 GB) on MacBook-Pro-5 (hive-4cpu)",
+			want:   "runner killed: host ran out of memory (guest has 8 GB) on MacBook-Pro-5 (hive-4cpu)",
+		},
+		{
+			name:   "host killed the VM, with what the guest used and the host had left",
+			extra:  Evidence{HostKilled: true, PeakUsedBytes: 11 * (1 << 30) / 2, HostAvailableBytes: 1 << 30},
+			reason: ReasonHostKilled,
+			want:   "runner killed: host ran out of memory (guest used 5.5 of 8 GB, 1 GB available on host) on MacBook-Pro-5 (hive-4cpu)",
+		},
+		{
+			name:   "daemon shutdown after the host killed a sibling",
+			extra:  Evidence{SiblingKilled: true, Shutdown: true, HostAvailableBytes: 512 << 20},
+			reason: ReasonHostKilled,
+			want:   "stopped: host ran out of memory (sibling job killed, 512 MB available on host) on MacBook-Pro-5 (hive-4cpu)",
+		},
+		{
+			name:   "VM lost after the host killed a sibling",
+			extra:  Evidence{SiblingKilled: true},
+			reason: ReasonHostKilled,
+			want:   "stopped: host ran out of memory (sibling job killed) on MacBook-Pro-5 (hive-4cpu)",
+		},
+		{
+			name:   "a sibling's kill does not explain a job that finished",
+			extra:  Evidence{SiblingKilled: true, HasExit: true, ExitCode: 1},
+			reason: "",
+			want:   "",
+		},
+		{
+			name:   "a sibling's kill does not hide a timeout",
+			extra:  Evidence{SiblingKilled: true, Timeout: true},
+			reason: ReasonTimeout,
+			want:   "runner stopped: job timed out on MacBook-Pro-5 (hive-4cpu)",
 		},
 		{
 			name:   "disk full",
@@ -60,7 +90,7 @@ func TestClassifyNamesTheMostSpecificCause(t *testing.T) {
 			name:   "SIGKILL under memory pressure is an OOM",
 			extra:  Evidence{HasExit: true, ExitCode: 137, PeakUsedBytes: 7 << 30},
 			reason: ReasonGuestOOM,
-			want:   "runner killed: guest OOM (7/8 GB peak) on MacBook-Pro-5 (hive-4cpu)",
+			want:   "runner killed: guest OOM (guest used 7 of 8 GB) on MacBook-Pro-5 (hive-4cpu)",
 		},
 		{
 			name:   "a normal runner failure is not a kill",
@@ -75,6 +105,8 @@ func TestClassifyNamesTheMostSpecificCause(t *testing.T) {
 			e.GuestOOM = c.extra.GuestOOM
 			e.DiskFull = c.extra.DiskFull
 			e.HostKilled = c.extra.HostKilled
+			e.SiblingKilled = c.extra.SiblingKilled
+			e.HostAvailableBytes = c.extra.HostAvailableBytes
 			e.VMFailed = c.extra.VMFailed
 			e.PeakUsedBytes = c.extra.PeakUsedBytes
 			e.SwapTotalBytes = c.extra.SwapTotalBytes

@@ -418,7 +418,7 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		var exit *exec.ExitError
 		if errors.As(waitErr, &exit) {
 			if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() && status.Signal() == syscall.SIGKILL && !vm.stopped.Load() {
-				vm.hostKilled = true
+				hostKilledVM(vm)
 				vm.failure = fmt.Errorf("the host killed the VM (%s)", tail(vm.dir, "qemu.log"))
 			} else if exit.ExitCode() > 0 {
 				vm.failure = fmt.Errorf("the VM ended with status %d (%s)", exit.ExitCode(), tail(vm.dir, "qemu.log"))

@@ -80,7 +80,15 @@ job log; they never kill the job.
 When a runner or VM is still killed or shut down, the daemon classifies why
 (`guest_oom`, `host_killed`, `disk_full`, `timeout`, `daemon_shutdown`,
 `vm_crash`, `released`) and writes one sentence such as `runner killed: guest
-OOM (7.9/8 GB peak) on MacBook-Pro-5`. That sentence is injected into the
+OOM (guest used 7.9 of 8 GB) on MacBook-Pro-5`. The memory figures are the
+guest's own use against its own RAM. When the host kills a job's VM the
+sentence adds the host's `MemAvailable` at that moment: `runner killed: host
+ran out of memory (guest used 5.5 of 7.8 GB, 1.2 GB available on host)`. A job
+that stops because the host killed a sibling's VM while it ran (the shortage
+may take hived down too, so these would otherwise read `daemon_shutdown` or
+`vm_crash`) is reported as `host_killed` with `stopped: host ran out of memory
+(sibling job killed)`. The daemon notes the kill in a `host-oom` file in its
+work directory. That sentence is injected into the
 GitHub job log when the guest is still alive, logged by hived, stored on the
 job in D1 (`end_reason` / `end_detail`), and shown on the job page and
 `get_job` / `list_jobs`. The virtio balloon device is present but is not
