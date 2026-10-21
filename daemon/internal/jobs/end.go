@@ -39,12 +39,18 @@ type Evidence struct {
 	GuestOOM       bool
 	DiskFull       bool
 	HostKilled     bool
-	VMFailed       bool
-	ExitCode       int
-	HasExit        bool
-	Timeout        bool
-	Released       bool
-	Shutdown       bool
+	// SiblingKilled is set when the host killed another job's VM while this
+	// one was running. A job that then stops without a result of its own was
+	// taken down by the same shortage.
+	SiblingKilled bool
+	// HostAvailableBytes is MemAvailable when the kill was seen; 0 if unread.
+	HostAvailableBytes uint64
+	VMFailed           bool
+	ExitCode           int
+	HasExit            bool
+	Timeout            bool
+	Released           bool
+	Shutdown           bool
 }
 
 // End is a classified stop: a stable reason and one sentence a human can
@@ -59,12 +65,16 @@ type End struct {
 // "the coordinator released the job" just because GitHub then said it failed.
 func Classify(e Evidence) End {
 	reason := ""
+	// A sibling's kill explains a stop only when nothing more specific does:
+	// a job that finished, timed out or was released stopped for that reason.
+	sibling := e.SiblingKilled && !e.HostKilled && !e.GuestOOM && !e.DiskFull &&
+		!e.Timeout && !e.Released && (e.Shutdown || e.VMFailed || !e.HasExit)
 	switch {
 	case e.GuestOOM:
 		reason = ReasonGuestOOM
 	case e.DiskFull:
 		reason = ReasonDiskFull
-	case e.HostKilled:
+	case e.HostKilled, sibling:
 		reason = ReasonHostKilled
 	case e.VMFailed:
 		reason = ReasonVMCrash
@@ -106,10 +116,14 @@ func FormatDetail(e Evidence, reason string) string {
 		}
 		return "runner killed: guest OOM on " + where
 	case ReasonHostKilled:
-		if mem != "" {
-			return "runner killed: host pressure (" + mem + ") on " + where
+		avail := ""
+		if e.HostAvailableBytes > 0 {
+			avail = formatBytes(e.HostAvailableBytes) + " available on host"
 		}
-		return "runner killed: host pressure on " + where
+		if !e.HostKilled {
+			return "stopped: host ran out of memory (" + joinPhrases("sibling job killed", avail) + ") on " + where
+		}
+		return "runner killed: host ran out of memory (" + joinPhrases(mem, avail) + ") on " + where
 	case ReasonDiskFull:
 		return "runner stopped: disk full on " + where
 	case ReasonTimeout:
@@ -128,15 +142,27 @@ func FormatDetail(e Evidence, reason string) string {
 	}
 }
 
+func joinPhrases(parts ...string) string {
+	var kept []string
+	for _, part := range parts {
+		if part != "" {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, ", ")
+}
+
+// memoryPhrase is the guest's own use against the RAM it was given, never the
+// host's: "guest used 5.5 of 7.8 GB" says nothing about the machine under it.
 func memoryPhrase(e Evidence) string {
 	if e.MemoryBytes == 0 {
 		return ""
 	}
 	peak := e.PeakUsedBytes
 	if peak == 0 {
-		return formatBytes(e.MemoryBytes)
+		return "guest has " + formatBytes(e.MemoryBytes)
 	}
-	phrase := formatRatio(peak, e.MemoryBytes) + " peak"
+	phrase := "guest used " + formatRatio(peak, e.MemoryBytes)
 	if e.SwapTotalBytes > 0 {
 		phrase += ", " + formatRatio(e.SwapUsedBytes, e.SwapTotalBytes) + " swap"
 	}
@@ -146,9 +172,9 @@ func memoryPhrase(e Evidence) string {
 func formatRatio(used, total uint64) string {
 	const gib = 1 << 30
 	if total >= gib {
-		return trimGB(used) + "/" + trimGB(total) + " GB"
+		return trimGB(used) + " of " + trimGB(total) + " GB"
 	}
-	return formatBytes(used) + "/" + formatBytes(total)
+	return formatBytes(used) + " of " + formatBytes(total)
 }
 
 func trimGB(n uint64) string {
