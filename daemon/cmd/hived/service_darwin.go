@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 )
 
 // What this kind of machine is called in what hived prints.
@@ -50,3 +52,6 @@ func forgetService() {}
 func openBrowser(url string) {
 	_ = exec.Command("/usr/bin/open", url).Start()
 }
+
+// serviceChecks has nothing to add on a Mac.
+func serviceChecks(string) []host.Check { return nil }

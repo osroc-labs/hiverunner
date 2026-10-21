@@ -6,6 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 )
 
 // What this kind of machine is called in what hived prints.
@@ -60,4 +63,27 @@ func openBrowser(url string) {
 func exists(file string) bool {
 	_, err := os.Stat(file)
 	return err == nil
+}
+
+// serviceChecks reads the installed unit for what an older installer left
+// out. Without OOMPolicy=continue the kernel killing one job's VM for memory
+// fails the whole service.
+func serviceChecks(definition string) []host.Check {
+	text, err := os.ReadFile(definition)
+	if err != nil {
+		return nil
+	}
+	if hasOOMPolicyContinue(string(text)) {
+		return []host.Check{{Name: "memory", Found: "one job's VM running out of memory leaves the daemon running", OK: true}}
+	}
+	return []host.Check{{Name: "memory", Found: "one job's VM running out of memory stops the daemon and every job", Fix: "run the installer again"}}
+}
+
+func hasOOMPolicyContinue(unit string) bool {
+	for _, line := range strings.Split(unit, "\n") {
+		if key, value, ok := strings.Cut(strings.TrimSpace(line), "="); ok && strings.TrimSpace(key) == "OOMPolicy" {
+			return strings.TrimSpace(value) == "continue"
+		}
+	}
+	return false
 }

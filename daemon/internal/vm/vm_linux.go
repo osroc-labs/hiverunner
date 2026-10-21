@@ -370,7 +370,10 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		}
 	}
 
-	machine, err := run("qemu.log", found.qemu, machineEnd, args...)
+	// The VM is in a scope of its own, so the kernel killing it for memory
+	// ends the scope and not the daemon's service with it.
+	qemu, qemuArgs := inOwnScope(scopesAvailable(), filepath.Base(vm.dir), found.qemu, args)
+	machine, err := run("qemu.log", qemu, machineEnd, qemuArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -400,6 +403,49 @@ func (r *Runner) start(found tools, vm *instance, mac net.HardwareAddr, disk str
 		close(vm.ended)
 	}()
 	return "", nil
+}
+
+var (
+	scopeProbe sync.Once
+	scopeOK    bool
+)
+
+// scopesAvailable is whether this login's systemd will start a transient
+// scope for a VM. It is not where there is no systemd, or no user session.
+func scopesAvailable() bool {
+	scopeProbe.Do(func() {
+		if _, err := exec.LookPath("systemd-run"); err != nil {
+			return
+		}
+		scopeOK = exec.Command("systemd-run", "--user", "--scope", "--quiet", "--collect", "true").Run() == nil
+	})
+	return scopeOK
+}
+
+// inOwnScope is the command that starts a VM in a transient systemd scope of
+// its own, or the command itself where there are no scopes. systemd-run
+// replaces itself with the program once the scope exists, so the process
+// started is still the VM: killing it, and the daemon's death signal to it,
+// work as before.
+func inOwnScope(available bool, name, program string, args []string) (string, []string) {
+	if !available {
+		return program, args
+	}
+	wrapped := []string{"--user", "--scope", "--quiet", "--collect",
+		"--unit=hive-vm-" + unitSafe(name) + "-" + strconv.Itoa(os.Getpid()),
+		"--description=Hive Runner job VM",
+		"-p", "OOMPolicy=continue", "--", program}
+	return "systemd-run", append(wrapped, args...)
+}
+
+// unitSafe keeps what a unit's name may hold.
+func unitSafe(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		return '-'
+	}, name)
 }
 
 // socketAddress is the address the VM's end of the host socket gets. It must
