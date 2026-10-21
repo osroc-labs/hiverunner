@@ -419,8 +419,16 @@ func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taki
 		field("Memory", screen.HeldBar(heldMemory, memory, int(facts.MemoryBytes/gib), bar)+fmt.Sprintf("  %d of %d GB", memory, facts.MemoryBytes/gib)),
 		field("", screen.Dim("At its fullest. "+atOnce)),
 		field("", idle),
-		"",
 	}
+	if problem, _ := overcommit(facts, current, host.AvailableMemory()); problem != "" {
+		for i, line := range wrap(problem, ui.Inner-14) {
+			if i == 0 {
+				line = screen.Ember(ui.Held) + " " + line
+			}
+			rows = append(rows, field("", line))
+		}
+	}
+	rows = append(rows, "")
 	for _, label := range labels {
 		size := "on this Mac itself"
 		if label.Kind == "linux" {

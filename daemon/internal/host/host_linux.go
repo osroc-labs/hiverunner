@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -31,6 +32,33 @@ func ReadFacts() (Facts, error) {
 		Cores:       runtime.NumCPU(),
 		MemoryBytes: int64(uint64(info.Totalram) * uint64(info.Unit)),
 	}, nil
+}
+
+// AvailableMemory is what the kernel says can be given to a new program
+// without swapping: MemAvailable. Zero means it could not be read.
+func AvailableMemory() uint64 { return memAvailable("/proc/meminfo") }
+
+func memAvailable(path string) uint64 {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		rest, ok := strings.CutPrefix(line, "MemAvailable:")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			return 0
+		}
+		kb, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			return 0
+		}
+		return kb << 10
+	}
+	return 0
 }
 
 // readModel is what the hardware calls itself: the firmware's product name

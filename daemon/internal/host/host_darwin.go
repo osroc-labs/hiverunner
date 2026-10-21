@@ -131,3 +131,8 @@ func Unattended() []Check {
 	}
 	return checks
 }
+
+// AvailableMemory is not read on a Mac, where the system reclaims cached
+// memory on demand and no figure says what a new VM can have. Zero means
+// unknown, and nothing is declined for it.
+func AvailableMemory() uint64 { return 0 }

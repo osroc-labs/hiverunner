@@ -481,3 +481,50 @@ func TestAMacOSJobGoesToTheNativeRunner(t *testing.T) {
 	vm.finish <- 0
 	<-m.Exits("p")
 }
+
+const gib = 1 << 30
+
+// Four GiB a job, whatever its size.
+func fourGiB(int) uint64 { return 4 * gib }
+
+// A host without the memory for a guest and the margin declines the job
+// instead of letting the kernel pick a VM to kill.
+func TestAJobIsDeclinedWhenTheHostLacksTheMemory(t *testing.T) {
+	m := New(newFake(), quiet)
+	m.Limit(limited(Limits{MaxJobs: 2, Available: 4*gib + MemoryMargin - 1, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-1", 2)); reason != ReasonLowMemory {
+		t.Fatalf("4 GiB guest with 1 GiB short of the margin: %q, want low memory", reason)
+	}
+	if m.Busy() {
+		t.Fatal("a declined job holds a slot")
+	}
+	m.Limit(limited(Limits{MaxJobs: 2, Available: 4*gib + MemoryMargin, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-1", 2)); reason != "" {
+		t.Fatalf("exactly enough memory: %q", reason)
+	}
+}
+
+// A guest has not touched its memory when it is accepted, so the host's
+// figure does not yet include it.
+func TestAcceptedJobsCountAgainstFreeMemory(t *testing.T) {
+	m := New(newFake(), quiet)
+	m.Limit(limited(Limits{MaxJobs: 2, Available: 8*gib + MemoryMargin, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-1", 2)); reason != "" {
+		t.Fatalf("first job: %q", reason)
+	}
+	if reason := m.Offer("acme", sized("a-2", 2)); reason != "" {
+		t.Fatalf("second job fits beside the first: %q", reason)
+	}
+	m.Limit(limited(Limits{MaxJobs: 3, Available: 8*gib + MemoryMargin, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-3", 2)); reason != ReasonLowMemory {
+		t.Fatalf("third job past two accepted ones: %q, want low memory", reason)
+	}
+}
+
+func TestUnknownMemoryDeclinesNothing(t *testing.T) {
+	m := New(newFake(), quiet)
+	m.Limit(limited(Limits{MaxJobs: 1, GuestMemory: fourGiB}))
+	if reason := m.Offer("acme", sized("a-1", 2)); reason != "" {
+		t.Fatalf("host memory unknown: %q", reason)
+	}
+}

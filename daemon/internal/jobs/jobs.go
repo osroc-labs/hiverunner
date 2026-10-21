@@ -54,10 +54,11 @@ type Unusable interface {
 
 // Reasons an offer is declined, in the machine's own words.
 const (
-	ReasonBusy     = "this machine is running as many jobs as its owner allows"
-	ReasonNoCores  = "this machine does not have the cores free for this job"
-	ReasonNoRunner = "this machine cannot run jobs: no runner image is installed"
-	ReasonTooLarge = "this job is larger than this machine's owner allows"
+	ReasonBusy      = "this machine is running as many jobs as its owner allows"
+	ReasonNoCores   = "this machine does not have the cores free for this job"
+	ReasonNoRunner  = "this machine cannot run jobs: no runner image is installed"
+	ReasonLowMemory = "this machine does not have the memory free for this job"
+	ReasonTooLarge  = "this job is larger than this machine's owner allows"
 	// ReasonWrongArch names no architecture: the offer's is the pool's word.
 	ReasonWrongArch = "this job is for a machine of another architecture"
 	ReasonNoMacOS   = "this Mac does not take macOS jobs; its owner has not run hived macos setup"
@@ -84,7 +85,17 @@ type Limits struct {
 	// MacOS is whether hive-macos jobs are taken: the owner opted in and the
 	// Mac is ready for them.
 	MacOS bool
+	// Available is the memory the host can give a new VM right now, in
+	// bytes. Zero means unknown, and no job is declined for want of memory.
+	Available uint64
+	// GuestMemory is the memory a job of this many vCPUs is given. Nil
+	// means memory is not checked.
+	GuestMemory func(vcpus int) uint64
 }
+
+// MemoryMargin is what a job leaves free on the host beyond its guest's
+// memory: the hypervisor, the daemon and the owner's own programs.
+const MemoryMargin = 1 << 30
 
 type phase int
 
@@ -244,6 +255,21 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 	// job fits the machine, as it always has.
 	if limits.Cores > 0 && used > 0 && used+offer.VCPUs+OwnerCores > limits.Cores {
 		return ReasonNoCores
+	}
+	// A guest's memory is taken as it touches it, so what the host reports
+	// free does not yet count jobs accepted but not started.
+	if limits.Available > 0 && limits.GuestMemory != nil && kind != protocol.KindMacOS {
+		pending := uint64(0)
+		for _, other := range m.held {
+			if other.phase == accepted && other.kind != protocol.KindMacOS {
+				pending += limits.GuestMemory(other.vcpus)
+			}
+		}
+		need := limits.GuestMemory(offer.VCPUs) + pending + MemoryMargin
+		if limits.Available < need {
+			m.log.Warn("declining a job: not enough free memory", "assignment", offer.AssignmentID, "available_mb", limits.Available>>20, "needed_mb", need>>20)
+			return ReasonLowMemory
+		}
 	}
 	held := &slot{
 		pool:         pool,
