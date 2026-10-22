@@ -272,11 +272,10 @@ runner:
 For each job hived makes an APFS clone of the disk and the auxiliary
 storage, gives the VM a machine identifier of its own, and shares two
 directories with it. One it can only read: GitHub's runner, checked against
-the checksum `hived` pins, the job's one-time runner configuration, taken
-back once the agent has read it, and the image's digest. The other is for
-its results, and hived treats what it finds there as hostile: a file is
-opened without following links, refused unless it is a regular file, and
-read only as far as a result can go. The agent, a launch daemon in the
+the checksum `hived` pins, the job's one-time runner configuration, removed
+once the agent has read it, and the image's digest. Results are read
+through the other, without following links, as regular files with a small
+size cap. The agent, a launch daemon in the
 image, waits for `runner`'s automatic login, unpacks the runner onto the
 VM's own disk and runs it as `runner` in that login session (which
 simulators, the keychain and Xcode want), with `HIVE_IMAGE_DIGEST` set to
