@@ -275,7 +275,9 @@ directories with it. One it can only read: GitHub's runner, checked against
 the checksum `hived` pins, the job's one-time runner configuration, removed
 once the agent has read it, and the image's digest. Results are read
 through the other, without following links, as regular files with a small
-size cap. The agent, a launch daemon in the
+size cap, and a VM that leaves more than a few small files there is
+stopped. That is looked at once a second; macOS has no cheap quota for one
+directory, so the free space on the Mac's disk is the real limit. The agent, a launch daemon in the
 image, waits for `runner`'s automatic login, unpacks the runner onto the
 VM's own disk and runs it as `runner` in that login session (which
 simulators, the keychain and Xcode want), with `HIVE_IMAGE_DIGEST` set to
@@ -302,9 +304,10 @@ Apple's macOS licence allows two macOS VMs on a Mac besides its own macOS,
 so a Mac takes two such jobs at once at most, whatever `max-jobs` says, and
 declines a third with that reason. Whether a job runs in a VM is decided when
 it is offered: changing `macos-isolation` changes the jobs offered after,
-not one already accepted. A runner that GitHub refuses as too old (exit 7)
-has the Mac decline macOS jobs for an hour, not for good, since a job can
-report any exit code. A daemon that starts clears any clone one that died
+not one already accepted. A job can report any exit code, so one saying
+GitHub refused its runner as too old (exit 7) is believed only when
+GitHub's latest runner is newer than the one `hived` pins; then the Mac
+declines macOS jobs for an hour, and asks again the next time. A daemon that starts clears any clone one that died
 left behind, whichever way it runs macOS jobs. A job is declined, too, when the Mac does
 not have the VM's memory free beside its reserve. Simulators run inside the
 VM; an Apple Silicon Mac needs no nested virtualization for them.

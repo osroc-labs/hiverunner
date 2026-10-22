@@ -69,16 +69,6 @@ func (w missingWay) Run(context.Context, jobs.Job) (jobs.Result, error) {
 
 func (w missingWay) Unusable() string { return string(w) }
 
-// limit is what the setting asks of the pool's offers: two macOS VMs at
-// most, and each one's memory free on the host. Jobs on the Mac itself are
-// limited by max-jobs alone, as they always were.
-func (m *macosRunner) limit(limits *jobs.Limits, hostBytes uint64) {
-	if m.settings().MacOSInVM() {
-		limits.MostMacOS = macvm.MostVMs
-		limits.MacOSMemory = macvm.Memory(hostBytes)
-	}
-}
-
 // claim makes the macOS VMs' work directory this daemon's and clears what
 // one that died left there, whichever way jobs run now: a clone left behind
 // can hold what its job wrote.
@@ -101,7 +91,7 @@ func newMacOSRunner(log *slog.Logger, live func() settings.Settings) *macosRunne
 	if dir, err := macosImageDir(live()); err != nil {
 		runner.vmMissing = "the macOS image is not available: " + err.Error()
 	} else {
-		runner.machines = &macvm.Runner{Dir: dir, WorkDir: workDir(dir), Log: log}
+		runner.machines = &macvm.Runner{Dir: dir, WorkDir: workDir(dir), Log: log, HostMemory: hostMemory()}
 		runner.vm = runner.machines
 	}
 	return runner

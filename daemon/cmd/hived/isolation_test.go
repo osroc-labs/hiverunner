@@ -23,8 +23,7 @@ func (w way) Run(context.Context, jobs.Job) (jobs.Result, error) {
 
 func (w way) Unusable() string { return w.unusable }
 
-// The owner's setting picks the way each job runs, and what the pool may
-// offer, while the daemon runs.
+// The owner's setting picks the way each job runs while the daemon runs.
 func TestMacOSIsolationPicksTheWayAJobRuns(t *testing.T) {
 	current := settings.Default()
 	runner := &macosRunner{
@@ -36,11 +35,6 @@ func TestMacOSIsolationPicksTheWayAJobRuns(t *testing.T) {
 	if err != nil || result.Detail != "user" || runner.Unusable() != "" {
 		t.Fatalf("by default: ran %q, %v, unusable %q", result.Detail, err, runner.Unusable())
 	}
-	var limits jobs.Limits
-	runner.limit(&limits, 64<<30)
-	if limits.MostMacOS != 0 || limits.MacOSMemory != 0 {
-		t.Errorf("as the hiveworker user: %+v", limits)
-	}
 
 	current.MacOSIsolation = settings.IsolationVM
 	if got := runner.Unusable(); got != "the macOS image is not sealed yet" {
@@ -49,10 +43,6 @@ func TestMacOSIsolationPicksTheWayAJobRuns(t *testing.T) {
 	result, _ = runner.Run(context.Background(), jobs.Job{})
 	if result.Detail != "vm" {
 		t.Errorf("in a VM: ran %q", result.Detail)
-	}
-	runner.limit(&limits, 64<<30)
-	if limits.MostMacOS != macvm.MostVMs || limits.MacOSMemory != macvm.Memory(64<<30) {
-		t.Errorf("in a VM: %+v", limits)
 	}
 }
 

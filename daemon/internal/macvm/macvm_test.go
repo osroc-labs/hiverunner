@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -190,8 +191,11 @@ func copyFile(from, to string) error {
 
 func newRunner(t *testing.T, image string, launch func(*instance) error) *Runner {
 	t.Helper()
-	return &Runner{Dir: image, WorkDir: image + "-jobs", Log: quiet, launch: launch, clone: copyFile}
+	return &Runner{Dir: image, WorkDir: image + "-jobs", Log: quiet, launch: launch, clone: copyFile, latest: newer}
 }
+
+// newer stands in for GitHub with a runner later than the one pinned.
+func newer(context.Context) (string, error) { return "999.0.0", nil }
 
 func job(id string) jobs.Job {
 	return jobs.Job{AssignmentID: id, Kind: "macos", Pool: "acme", JITConfig: "jit-" + id, VCPUs: 4, Label: "hive-macos"}
@@ -564,8 +568,9 @@ func TestAStopReasonIsNeverWrittenThroughALink(t *testing.T) {
 	}
 }
 
-// The configuration leaves what is handed in once the agent has read it.
-func TestTheConfigurationIsTakenBackOnceRead(t *testing.T) {
+// The configuration is removed from what is handed in once the agent has
+// read it.
+func TestTheConfigurationIsRemovedOnceRead(t *testing.T) {
 	var still atomic.Bool
 	r := newRunner(t, sealedImage(t), func(vm *instance) error {
 		_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
@@ -688,4 +693,125 @@ func taken(r *Runner) int {
 		}
 	}
 	return held
+}
+
+// A job can write 7 whenever it likes. It switches macOS jobs off only when
+// GitHub really has a newer runner than the one pinned.
+func TestARefusalIsBelievedOnlyWhenGitHubHasANewerRunner(t *testing.T) {
+	for name, test := range map[string]struct {
+		latest func(context.Context) (string, error)
+		stale  bool
+	}{
+		"GitHub's latest is the one pinned": {func(context.Context) (string, error) { return native.RunnerVersion, nil }, false},
+		"GitHub cannot be asked":            {func(context.Context) (string, error) { return "", errors.New("offline") }, false},
+		"GitHub has a newer one":            {newer, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var seen map[string]string
+			r := newRunner(t, sealedImage(t), guest(t, "7", &seen))
+			r.latest = test.latest
+			if _, err := r.Run(context.Background(), job("a-1")); err != nil {
+				t.Fatal(err)
+			}
+			if got := r.Unusable() == ReasonStaleRunner; got != test.stale {
+				t.Fatalf("declining = %v, want %v", got, test.stale)
+			}
+		})
+	}
+}
+
+func TestVersionsAreComparedAsNumbers(t *testing.T) {
+	for _, test := range []struct {
+		a, b string
+		want bool
+	}{
+		{"2.337.0", "2.338.0", true},
+		{"2.337.0", "2.337.0", false},
+		{"2.337.0", "2.99.0", false},
+		{"2.337.0", "2.337.1", true},
+		{"2.337.0", "nonsense", false},
+	} {
+		if got := older(test.a, test.b); got != test.want {
+			t.Errorf("older(%q, %q) = %v", test.a, test.b, got)
+		}
+	}
+}
+
+// VMs that would not stop count against the licence after their jobs have
+// ended, so offers are declined rather than failing when a VM cannot start.
+func TestVMsThatWillNotStopAreCountedForOffers(t *testing.T) {
+	var stuck []*instance
+	r := newRunner(t, sealedImage(t), func(vm *instance) error {
+		stuck = append(stuck, vm)
+		_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+		return nil
+	})
+	r.HostMemory = 64 << 30
+	runStuck := func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(30 * time.Millisecond)
+			cancel()
+		}()
+		if _, err := r.Run(ctx, job("a-1")); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run() = %v", err)
+		}
+	}
+	var limits jobs.Limits
+	r.Limit(&limits)
+	if limits.MostMacOS != MostVMs || limits.MacOSMemory != Memory(64<<30) {
+		t.Fatalf("limits with nothing running: %+v", limits)
+	}
+	runStuck()
+	r.Limit(&limits)
+	if limits.MostMacOS != MostVMs-1 {
+		t.Fatalf("with one VM that will not stop, %d may run", limits.MostMacOS)
+	}
+	runStuck()
+	if got := r.Unusable(); got != ReasonStuck {
+		t.Fatalf("with every place held: %q", got)
+	}
+	for _, vm := range stuck {
+		vm.end()
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for taken(r) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the places were kept after the VMs stopped")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := r.Unusable(); got == ReasonStuck {
+		t.Fatal("still declining once the VMs stopped")
+	}
+}
+
+// A guest that leaves more than a few small files where its results go is
+// stopped.
+func TestAGuestThatFillsItsResultsIsStopped(t *testing.T) {
+	for name, fill := range map[string]func(out string){
+		"many files": func(out string) {
+			for i := range mostOutEntries + 1 {
+				_ = os.WriteFile(filepath.Join(out, "f"+strconv.Itoa(i)), nil, 0o600)
+			}
+		},
+		"a large file": func(out string) {
+			_ = os.WriteFile(filepath.Join(out, "big"), make([]byte, mostOutBytes+1), 0o600)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var stops atomic.Int32
+			r := newRunner(t, sealedImage(t), func(vm *instance) error {
+				_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+				fill(vm.out)
+				return running(&stops, true)(vm)
+			})
+			if _, err := r.Run(context.Background(), job("a-1")); err == nil || !strings.Contains(err.Error(), "more where its results go") {
+				t.Fatalf("Run() = %v", err)
+			}
+			if stops.Load() == 0 {
+				t.Fatal("the VM was never stopped")
+			}
+		})
+	}
 }

@@ -62,7 +62,7 @@ done
 [ -e "$in/stop-reason" ] && finish 143
 
 # The configuration is read before the host is told the boot is behind it,
-# since the host then takes it away.
+# since the host then removes it.
 jit=$(cat "$in/jitconfig" 2>/dev/null)
 [ -n "$jit" ] || finish 122
 : > "$out/ready"

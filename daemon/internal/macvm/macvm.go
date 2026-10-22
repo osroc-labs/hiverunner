@@ -4,13 +4,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,8 +44,18 @@ const (
 )
 
 // ReasonStaleRunner is why a Mac declines macOS jobs for a while after a
-// job's runner said GitHub refused it as too old.
+// job's runner said GitHub refused it as too old, and GitHub has a newer one.
 const ReasonStaleRunner = "a macOS VM's runner was refused by GitHub as too old, so macOS jobs are declined for an hour; if it happens again, update hived and run hived macos image seal"
+
+// ReasonStuck is why a Mac declines macOS jobs while VMs that would not
+// stop hold every place Apple's licence allows.
+const ReasonStuck = "a macOS VM that would not stop holds this Mac's last place for one; it is declining macOS jobs until it stops"
+
+// What the guest may leave where its results go: a few small files.
+const (
+	mostOutBytes   = 1 << 20
+	mostOutEntries = 64
+)
 
 // How long a VM has to boot and log in before the job is given up on, how
 // long the guest has to power off once it has reported, how long a stopped
@@ -53,6 +68,8 @@ var (
 	stopWait      = 15 * time.Second
 	staleFor      = time.Hour
 	poll          = time.Second
+	// releases is where GitHub says which runner is its latest.
+	releases = "https://api.github.com/repos/actions/runner/releases/latest"
 	// runnerSHA256 is what the runner handed to each VM must hash to.
 	runnerSHA256 = native.RunnerSHA256
 )
@@ -70,10 +87,14 @@ type Runner struct {
 	Dir     string
 	WorkDir string
 	Log     *slog.Logger
+	// HostMemory is the Mac's memory, for what each VM is given.
+	HostMemory uint64
 
 	mu sync.Mutex
-	// slots are the VMs running, by network identity.
+	// slots are the VMs running, by network identity. stuck counts those
+	// held by a VM that would not stop, whose job has already ended.
 	slots   [MostVMs]bool
+	stuck   int
 	checked time.Time
 	problem string
 	// staleUntil is when a runner GitHub refused stops declining jobs, in
@@ -86,13 +107,16 @@ type Runner struct {
 	claiming sync.Mutex
 	claimed  bool
 	unclaim  func()
-	// launch and clone stand in for the host's own in tests.
+	// launch and clone stand in for the host's own in tests, and latest
+	// for GitHub.
 	launch func(*instance) error
 	clone  func(from, to string) error
+	latest func(context.Context) (string, error)
 }
 
 var _ jobs.Runner = (*Runner)(nil)
 var _ jobs.Unusable = (*Runner)(nil)
+var _ jobs.Limiter = (*Runner)(nil)
 
 // ErrFull means MostVMs are already running. The pool is told the limit,
 // so an offer past it is declined before it gets here.
@@ -108,11 +132,23 @@ func (r *Runner) Unusable() string {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stuck >= MostVMs {
+		return ReasonStuck
+	}
 	if r.checked.IsZero() || time.Since(r.checked) > time.Minute {
 		r.problem = r.inspect()
 		r.checked = time.Now()
 	}
 	return r.problem
+}
+
+// Limit implements jobs.Limiter: two VMs at most, fewer while one that
+// would not stop holds a place, and each one's memory free on the host.
+func (r *Runner) Limit(limits *jobs.Limits) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	limits.MostMacOS = max(MostVMs-r.stuck, 1)
+	limits.MacOSMemory = Memory(r.HostMemory)
 }
 
 // Status checks now and says what it found.
@@ -240,11 +276,81 @@ func (r *Runner) Run(ctx context.Context, job jobs.Job) (jobs.Result, error) {
 		err = errors.New("the macOS VM stopped without reporting a result")
 	}
 	if code == native.ExitRunnerDeprecated && err == nil {
-		r.staleUntil.Store(time.Now().Add(staleFor).UnixNano())
-		r.Log.Error("a macOS VM's runner says GitHub refused it as too old; macOS jobs are declined for an hour", "runner", native.RunnerVersion)
+		r.refused()
 	}
 	r.Log.Info("macOS job ended", "job", job.AssignmentID, "exit", code, "seconds", int(time.Since(started).Seconds()))
 	return jobs.Result{ExitCode: code}, err
+}
+
+// refused is a job's word that GitHub refused its runner as too old. A job
+// can write any exit code, so it is believed only when GitHub's latest
+// runner is newer than the one hived pins; then macOS jobs are declined for
+// a while, and asked about again after.
+func (r *Runner) refused() {
+	latest := r.latest
+	if latest == nil {
+		latest = latestRunner
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	newest, err := latest(ctx)
+	switch {
+	case err != nil:
+		r.Log.Warn("a macOS job says GitHub refused its runner, and GitHub could not be asked whether a newer one is out; carrying on", "runner", native.RunnerVersion, "error", err)
+	case !older(native.RunnerVersion, newest):
+		r.Log.Warn("a macOS job says GitHub refused its runner, but it is GitHub's latest; carrying on", "runner", native.RunnerVersion)
+	default:
+		r.staleUntil.Store(time.Now().Add(staleFor).UnixNano())
+		r.Log.Error("GitHub refused the macOS VMs' runner as too old; macOS jobs are declined for an hour", "runner", native.RunnerVersion, "latest", newest)
+	}
+}
+
+// latestRunner asks GitHub which runner release is its latest.
+func latestRunner(ctx context.Context) (string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, releases, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub answered %d", response.StatusCode)
+	}
+	var release struct {
+		Tag string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&release); err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(release.Tag, "v"), nil
+}
+
+// older reports whether version a comes before version b, as 2.337.0 does
+// before 2.338.0. A version that does not read as one is not older.
+func older(a, b string) bool {
+	left, right := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range max(len(left), len(right)) {
+		x, y := 0, 0
+		var err error
+		if i < len(left) {
+			if x, err = strconv.Atoi(left[i]); err != nil {
+				return false
+			}
+		}
+		if i < len(right) {
+			if y, err = strconv.Atoi(right[i]); err != nil {
+				return false
+			}
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
 }
 
 // take reserves one of the VMs.
@@ -399,6 +505,9 @@ func (guest *instance) wait(ctx context.Context) error {
 			ready = true
 			_ = os.Remove(filepath.Join(guest.in, "jitconfig"))
 		}
+		if overfull(guest.out) {
+			return errors.New("the macOS VM wrote more where its results go than results can be")
+		}
 		if _, ok := readExit(guest.out); ok {
 			select {
 			case <-guest.ended:
@@ -410,6 +519,28 @@ func (guest *instance) wait(ctx context.Context) error {
 			return errors.New("the macOS VM did not start its agent; check the image with hived macos image open")
 		}
 	}
+}
+
+// overfull reports whether the guest has left more where its results go
+// than a few small files. It is looked at as often as the results are, so
+// it bounds a mistake rather than a guest set on filling the disk between
+// two looks; macOS has no cheap quota for one directory.
+func overfull(out string) bool {
+	entries, size := 0, int64(0)
+	err := filepath.WalkDir(out, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || path == out {
+			return err
+		}
+		entries++
+		if info, err := entry.Info(); err == nil && info.Mode().IsRegular() {
+			size += info.Size()
+		}
+		if entries > mostOutEntries || size > mostOutBytes {
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return err == nil && (entries > mostOutEntries || size > mostOutBytes)
 }
 
 func stopReason(ctx context.Context) string {
@@ -446,8 +577,15 @@ func (r *Runner) release(guest *instance, slot int, id, digest string) {
 	}
 	if guest.alive() {
 		r.Log.Error("a macOS VM did not stop when told to; its clone and its place stay taken until it does", "job", id)
+		// Its job is over, so the pool no longer counts it: this does.
+		r.mu.Lock()
+		r.stuck++
+		r.mu.Unlock()
 		go func() {
 			<-guest.ended
+			r.mu.Lock()
+			r.stuck--
+			r.mu.Unlock()
 			gone()
 		}()
 		return

@@ -690,3 +690,27 @@ func TestAJobRunsTheWayItWasAcceptedFor(t *testing.T) {
 		t.Fatalf("offer to an unusable way: %q", reason)
 	}
 }
+
+// oneAtATime is a way of running jobs that takes one at most.
+type oneAtATime struct{ *fake }
+
+func (oneAtATime) Limit(limits *Limits) { limits.MostMacOS = 1 }
+
+// An offer's limits are those of the way chosen for it, read once with the
+// choice: not the setting read again, which may have changed in between.
+func TestTheLimitsAreThoseOfTheWayChosen(t *testing.T) {
+	ways := &chooser{now: oneAtATime{newFake()}}
+	m := New(newFake(), quiet)
+	m.Native(ways)
+	m.Limit(limited(Limits{MaxJobs: 4, MacOS: true}))
+	if reason := m.Offer("acme", macOSOffer("m-1")); reason != "" {
+		t.Fatalf("first: %q", reason)
+	}
+	if reason := m.Offer("acme", macOSOffer("m-2")); reason != ReasonMacOSVMs {
+		t.Fatalf("second, past the chosen way's limit: %q", reason)
+	}
+	ways.now = newFake()
+	if reason := m.Offer("acme", macOSOffer("m-2")); reason != "" {
+		t.Fatalf("second, by a way with no limit of its own: %q", reason)
+	}
+}

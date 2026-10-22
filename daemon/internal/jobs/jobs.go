@@ -48,7 +48,9 @@ var ErrReleased = errors.New("job released")
 
 // Runner runs a job to completion in isolation and returns the runner's exit
 // code. It must destroy everything it created before returning, including
-// when ctx is cancelled.
+// when ctx is cancelled. A VM that will not stop is the one exception: its
+// runner may return without it, if it goes on counting it against what it
+// can take (see Limiter and Unusable) until it has gone.
 type Runner interface {
 	Run(ctx context.Context, job Job) (Result, error)
 }
@@ -58,6 +60,13 @@ type Runner interface {
 // setting changed before the job starts does not change how it runs.
 type Chooser interface {
 	Choose() Runner
+}
+
+// Limiter is implemented by a runner with limits of its own, which it sets
+// on an offer's limits once it has been chosen to run the job: so the limits
+// are always those of the way the job will run.
+type Limiter interface {
+	Limit(*Limits)
 }
 
 // Unusable is implemented by a runner that can find out it will not be able
@@ -293,6 +302,9 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 			return reason
 		}
 	}
+	if limiter, ok := runner.(Limiter); ok {
+		limiter.Limit(&limits)
+	}
 	id := key(pool, offer.AssignmentID)
 	// The coordinator repeating itself is not a second job.
 	if _, ok := m.held[id]; ok {
@@ -411,7 +423,8 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 		defer m.running.Done()
 		defer cancel(nil)
 		m.log.Info("job started", "assignment", job.AssignmentID, "runner", job.RunnerName, "kind", job.Kind, "vcpus", job.VCPUs, "label", job.Label)
-		// Run returns only once the VM and its files are gone.
+		// Run returns once the VM and its files are gone, or once a VM that
+		// will not stop is counted by its runner instead of this slot.
 		result, err := runner.Run(runCtx, job)
 		m.mu.Lock()
 		released := held.released

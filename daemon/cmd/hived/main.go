@@ -450,12 +450,10 @@ func run(ctx context.Context) error {
 		if facts, err := host.ReadFacts(); err == nil {
 			maxJobs = min(maxJobs, memoryPlan(facts, current).Jobs)
 		}
-		limits := jobs.Limits{MaxJobs: maxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(), Hold: hold,
+		// A macOS VM's own limits are set by its runner, once it is the
+		// one chosen for an offer: see jobs.Limiter.
+		return jobs.Limits{MaxJobs: maxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(), Hold: hold,
 			Available: host.AvailableMemory(), Reserve: current.ReserveBytes(hostMemory()), GuestMemory: guestMemory}
-		if macosJobs != nil {
-			macosJobs.limit(&limits, hostMemory())
-		}
-		return limits
 	}
 	slot := jobs.New(runner, log)
 	// Every job that stops with the host's kill reports it, and a restarted

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -49,7 +50,7 @@ func present(path string) bool {
 
 // readExit is the exit code the guest reported, if it reported one.
 func readExit(out string) (int, bool) {
-	raw, ok := readResult(out + "/exit")
+	raw, ok := readResult(filepath.Join(out, "exit"))
 	if !ok {
 		return -1, false
 	}

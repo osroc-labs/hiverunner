@@ -42,7 +42,7 @@ rm -f "$rule"
 # Nothing listens for another VM, or the host, to reach.
 for service in com.openssh.sshd com.apple.screensharing com.apple.smbd; do
   launchctl bootout "system/$service" 2>/dev/null || true
-  launchctl disable "system/$service"
+  launchctl disable "system/$service" || true
 done
 /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -deactivate -stop >/dev/null 2>&1 || true
 /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on >/dev/null
