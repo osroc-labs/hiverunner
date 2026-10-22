@@ -42,7 +42,9 @@ const (
 	// guest image pins its own. Bump both together.
 	RunnerVersion = "2.337.0"
 	runnerSHA256  = "5a2cd92908a93d7276a194e1de6008099f3e7946f3f8e14aa7a1a7b4a31fdec2"
-	runnerURL     = "https://github.com/actions/runner/releases/download/v" + RunnerVersion + "/actions-runner-osx-arm64-" + RunnerVersion + ".tar.gz"
+	// RunnerFile is the runner's tarball, as GitHub names it.
+	RunnerFile = "actions-runner-osx-arm64-" + RunnerVersion + ".tar.gz"
+	runnerURL  = "https://github.com/actions/runner/releases/download/v" + RunnerVersion + "/" + RunnerFile
 	// SudoersPath is the one rule setup writes.
 	SudoersPath = "/etc/sudoers.d/hiveworker"
 	// ExitRunnerDeprecated is the runner's exit code when GitHub refuses its
@@ -223,11 +225,12 @@ func askChild(exe string, ask request) ([]byte, error) {
 	return out, nil
 }
 
-// downloadRunner fetches GitHub's runner for this Mac into dir, checks it
+// DownloadRunner fetches GitHub's runner for this Mac into dir, checks it
 // against the pinned checksum, and returns its path. The file is readable by
-// everyone, because the hiveworker user unpacks it.
-func downloadRunner(ctx context.Context, dir string) (string, error) {
-	path := filepath.Join(dir, "actions-runner-osx-arm64-"+RunnerVersion+".tar.gz")
+// everyone, because the hiveworker user unpacks it. A macOS VM is handed
+// the same tarball for each job.
+func DownloadRunner(ctx context.Context, dir string) (string, error) {
+	path := filepath.Join(dir, RunnerFile)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, runnerURL, nil)
 	if err != nil {
 		return "", err

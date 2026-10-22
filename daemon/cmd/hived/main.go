@@ -358,22 +358,20 @@ func run(ctx context.Context) error {
 		unlock()
 	}()
 
-	// macOS jobs, if the owner has set this Mac up for them. Built now,
-	// asked later: whether it is ready is checked when the setting is on.
-	var nativeRunner *native.Runner
+	// macOS jobs, if the owner has set this Mac up for them, run either as
+	// the hiveworker user or in a throwaway macOS VM, as macos-isolation
+	// says. Built now, asked later: whether it is ready is checked when the
+	// setting is on.
+	var macosJobs *macosRunner
 	if runtime.GOOS == "darwin" {
-		if built, err := native.New(log); err != nil {
-			log.Warn("macOS jobs are not available", "error", err)
-		} else {
-			nativeRunner = built
-		}
+		macosJobs = newMacOSRunner(log, live.Get)
 	}
 	macOS := func() bool {
-		return nativeRunner != nil && live.Get().MacOSJobs && nativeRunner.Ready()
+		return macosJobs != nil && live.Get().MacOSJobs && macosJobs.Unusable() == ""
 	}
 	var native jobs.Runner
-	if nativeRunner != nil {
-		native = nativeRunner
+	if macosJobs != nil {
+		native = macosJobs
 	}
 
 	// What the owner asked to be kept somewhere else is moved there now,
@@ -449,8 +447,12 @@ func run(ctx context.Context) error {
 		if facts, err := host.ReadFacts(); err == nil {
 			maxJobs = min(maxJobs, memoryPlan(facts, current).Jobs)
 		}
-		return jobs.Limits{MaxJobs: maxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(), Hold: hold,
+		limits := jobs.Limits{MaxJobs: maxJobs, MaxVCPUs: current.MaxVCPUs, Cores: runtime.NumCPU(), MacOS: macOS(), Hold: hold,
 			Available: host.AvailableMemory(), Reserve: current.ReserveBytes(hostMemory()), GuestMemory: guestMemory}
+		if macosJobs != nil {
+			macosJobs.limit(&limits, hostMemory())
+		}
+		return limits
 	}
 	slot := jobs.New(runner, log)
 	// Every job that stops with the host's kill reports it, and a restarted

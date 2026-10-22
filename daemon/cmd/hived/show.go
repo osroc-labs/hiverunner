@@ -18,6 +18,7 @@ import (
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/cooldown"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/macvm"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/native"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
@@ -139,6 +140,18 @@ const macosLabel = "hive-macos"
 // turning the setting on is refused until nothing is.
 func macosState(current settings.Settings) labelState {
 	state := labelState{Label: macosLabel, Kind: "macos"}
+	if current.MacOSInVM() {
+		problem := macosVMProblem(current)
+		switch {
+		case problem != "":
+			state.Reason, state.Detail = "needs its macOS image: hived macos image", problem
+		case !current.MacOSJobs:
+			state.Reason, state.Detail = "macos-jobs is off", "turn it on with: hived config set macos-jobs on"
+		default:
+			state.Takes = true
+		}
+		return state
+	}
 	runner, err := native.New(nil)
 	if err != nil {
 		state.Reason, state.Detail = "not available", err.Error()
@@ -163,6 +176,16 @@ func macosState(current settings.Settings) labelState {
 		state.Detail = report.Problem
 	}
 	return state
+}
+
+// macosVMProblem is why this Mac cannot run a macOS job in a VM, or "".
+func macosVMProblem(current settings.Settings) string {
+	dir, err := macosImageDir(current)
+	if err != nil {
+		return err.Error()
+	}
+	_, problem := (&macvm.Runner{Dir: dir, WorkDir: workDir(dir)}).Status()
+	return problem
 }
 
 func gather() (snapshot, host.Facts, settings.Settings, host.Power, error) {
@@ -489,7 +512,7 @@ func lending(screen ui.Screen, facts host.Facts, current settings.Settings, taki
 }
 
 // keyWidth fits the longest setting name.
-const keyWidth = 15
+const keyWidth = 16
 
 func settingRows(screen ui.Screen, current settings.Settings) []string {
 	limit := "auto"
@@ -531,7 +554,8 @@ func settingRows(screen ui.Screen, current settings.Settings) []string {
 		row("cache", onOff(current.Cache), "keep an Actions cache on "+thisMachine),
 		row("cache-size", cacheSize, "the most disk the cache may use"),
 		row("reserve-memory", reserve, "memory kept for everything else"),
-		row("macos-jobs", onOff(current.MacOSJobs), "take hive-macos jobs on this Mac itself"),
+		row("macos-jobs", onOff(current.MacOSJobs), "take hive-macos jobs"),
+		row("macos-isolation", cmp.Or(current.MacOSIsolation, settings.IsolationUser), "the "+native.User+" user, or a VM per job"),
 		row("auto-update", onOff(current.AutoUpdate), "update to new releases when idle"),
 		place("data-dir", current.DataDir, "where the image and job disks are kept"),
 		place("cache-dir", current.CacheDir, "where the Actions cache is kept"),
@@ -595,8 +619,11 @@ hived config set <name> <value>  Change one
   cache      on or off           keep an Actions cache on this machine
   cache-size 1 to 2000 or auto   the most disk the cache may use, in GB
   reserve-memory 24G, 40% or off  memory kept for everything else; jobs get the rest
-  macos-jobs on or off           take hive-macos jobs, run on this Mac itself
-                                 as a separate user; hived macos setup first
+  macos-jobs on or off           take hive-macos jobs; hived macos setup first,
+                                 or a macOS image for macos-isolation vm
+  macos-isolation user or vm     run each as a separate user on this Mac (user),
+                                 or in a throwaway macOS VM cloned from the image
+                                 hived macos image makes (vm)
   auto-update on or off          update to new releases when no job is running;
                                  off, hived status and a notification say so
   data-dir   a path or default   where the Linux image and each job's disk are
@@ -639,7 +666,13 @@ func configure(args []string) error {
 		if err := current.Set(args[1], args[2]); err != nil {
 			return err
 		}
-		if args[1] == "macos-jobs" && current.MacOSJobs {
+		if args[1] == "macos-jobs" && current.MacOSJobs && current.MacOSInVM() {
+			// On means jobs run in clones of the owner's image, which
+			// has to be made and sealed first.
+			if problem := macosVMProblem(current); problem != "" {
+				return errors.New(problem)
+			}
+		} else if args[1] == "macos-jobs" && current.MacOSJobs {
 			// On means jobs run here as another user: the Mac has to be
 			// set up for that first, and the setup command is what says
 			// what it will do.
@@ -657,6 +690,11 @@ func configure(args []string) error {
 		}
 		if err := saved(current, args[1]+" is now "+now); err != nil {
 			return err
+		}
+		if args[1] == "macos-isolation" && current.MacOSInVM() {
+			if problem := macosVMProblem(current); problem != "" {
+				fmt.Println("\nNo macOS job runs until that is put right: " + problem + "\nSee: hived macos image help")
+			}
 		}
 		if args[1] == "lid" {
 			if problem, fix := asleep(current, host.ReadPower()); problem != "" {
@@ -709,6 +747,11 @@ func configurePlace(current settings.Settings, key, value string) error {
 // daemonRunning reports whether a hived holds this machine's work directory.
 func daemonRunning(current settings.Settings) bool {
 	dir, err := imageDir(current)
+	if err == nil && vm.WorkDirInUse(workDir(dir)) {
+		return true
+	}
+	// A daemon holds the macOS VMs' directory once it has run one.
+	dir, err = macosImageDir(current)
 	return err == nil && vm.WorkDirInUse(workDir(dir))
 }
 

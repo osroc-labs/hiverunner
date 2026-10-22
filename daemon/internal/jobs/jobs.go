@@ -72,6 +72,7 @@ const (
 	// ReasonCoolingOff is declined while the machine waits out a host kill.
 	ReasonCoolingOff = "this machine is cooling off after the host killed a job for want of memory"
 	ReasonNoMacOS    = "this Mac does not take macOS jobs; its owner has not run hived macos setup"
+	ReasonMacOSVMs   = "this Mac is running as many macOS VMs as Apple's licence allows"
 )
 
 // hostArch is what this machine is. A variable so tests can be another.
@@ -95,6 +96,13 @@ type Limits struct {
 	// MacOS is whether hive-macos jobs are taken: the owner opted in and the
 	// Mac is ready for them.
 	MacOS bool
+	// MostMacOS is how many hive-macos jobs may run at once, within
+	// MaxJobs. Zero sets no limit of its own. A Mac that runs each one in a
+	// macOS VM is held to two: Apple's licence allows a Mac two macOS VMs.
+	MostMacOS int
+	// MacOSMemory is the memory a hive-macos job takes from the host: its
+	// VM's, or zero for one run on the Mac itself, which is not checked.
+	MacOSMemory uint64
 	// Available is the memory the host can give a new VM right now, in
 	// bytes. Zero means unknown, and no job is declined for want of memory.
 	Available uint64
@@ -107,6 +115,14 @@ type Limits struct {
 	// Hold declines every offer, as the reason it is giving: a machine
 	// waiting out a host kill that already runs one job at most.
 	Hold bool
+}
+
+// memory is what a job of this kind and size takes from the host.
+func (l Limits) memory(kind string, vcpus int) uint64 {
+	if kind == protocol.KindMacOS {
+		return l.MacOSMemory
+	}
+	return l.GuestMemory(vcpus)
 }
 
 // MemoryMargin is what a job leaves free on the host beyond its guest's
@@ -276,6 +292,17 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 	if len(m.held) >= limits.MaxJobs {
 		return ReasonBusy
 	}
+	if kind == protocol.KindMacOS && limits.MostMacOS > 0 {
+		macOS := 0
+		for _, held := range m.held {
+			if held.kind == protocol.KindMacOS {
+				macOS++
+			}
+		}
+		if macOS >= limits.MostMacOS {
+			return ReasonMacOSVMs
+		}
+	}
 	used := 0
 	for _, held := range m.held {
 		used += held.vcpus
@@ -287,14 +314,14 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 	}
 	// A guest's memory is taken as it touches it, so what the host reports
 	// free does not yet count jobs accepted but not started.
-	if limits.Available > 0 && limits.GuestMemory != nil && kind != protocol.KindMacOS {
+	if limits.Available > 0 && limits.GuestMemory != nil && limits.memory(kind, offer.VCPUs) > 0 {
 		pending := uint64(0)
 		for _, other := range m.held {
-			if other.phase == accepted && other.kind != protocol.KindMacOS {
-				pending += limits.GuestMemory(other.vcpus)
+			if other.phase == accepted {
+				pending += limits.memory(other.kind, other.vcpus)
 			}
 		}
-		need := limits.GuestMemory(offer.VCPUs) + pending + MemoryMargin + limits.Reserve
+		need := limits.memory(kind, offer.VCPUs) + pending + MemoryMargin + limits.Reserve
 		if limits.Available < need {
 			m.log.Warn("declining a job: not enough free memory", "assignment", offer.AssignmentID, "available_mb", limits.Available>>20, "needed_mb", need>>20)
 			return ReasonLowMemory
