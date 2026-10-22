@@ -319,6 +319,77 @@ stays awake without `SleepDisabled`, so there the warning says it is awake
 only while they are attached. The daemon repeats the sleep warning in its log
 when `lid` is turned on while it runs.
 
+## Securing a host
+
+`hived doctor` says, in a box of its own, how exposed the machine is to the
+jobs it runs and to its network. None of it makes it exit 1: each is the
+owner's call, as FileVault is. What can be read only as root, sshd's settings
+and on Linux the nftables rules, is read with `sudo -n`, which never asks for
+a password; without it the check is left out.
+
+| Check        | Says so when                                                                                               |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| `firewall`   | macOS: the application firewall is off. Linux: no ufw, firewalld or nftables input chain drops             |
+| `ssh`        | sshd is listening and takes passwords, by asking or through PAM (`sshd -T`)                                |
+| `sharing`    | macOS: Screen Sharing, Remote Management, File Sharing or AirPlay Receiver listens. Linux: Samba, VNC, RDP |
+| `network`    | It has a tailnet address (`100.64.0.0/10`), or reaches the internet from a private one                     |
+| `macos jobs` | `macos-jobs` is on, so macOS jobs share one home                                                           |
+
+Turning FileVault off and auto-login on, so that a machine comes back by
+itself, costs two things. Whoever takes the machine can read its disk, and
+whoever sits at it after a restart is its user. Keep such a machine where it
+cannot walk off, and shut what reaches it over the network instead. hived
+needs nothing incoming: its tunnel is a connection it makes.
+
+- **The firewall on.** System Settings > Network > Firewall on a Mac; on
+  Linux, ufw or firewalld, or nftables rules of your own.
+- **SSH by key only**, if it is on at all. sshd keeps the first value it
+  reads, and the system's own files in `sshd_config.d` (`100-macos.conf`,
+  Ubuntu's `50-cloud-init.conf`) come after this one:
+
+  ```sh
+  printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' |
+    sudo tee /etc/ssh/sshd_config.d/00-keys-only.conf
+  sudo systemctl reload ssh   # Linux (sshd on Fedora); a Mac reads it at the next login
+  ```
+
+- **Unused Sharing services off**, in System Settings > General > Sharing,
+  and AirPlay Receiver in General > AirDrop & Handoff.
+
+### On a tailnet
+
+A job reaches what the machine reaches (see "What the guest can reach"), and
+on a tailnet that is every peer the machine is granted. Until hived can keep
+jobs off them, tag the machine in the admin console (Machines, Edit ACL tags)
+and give the tag nothing to reach. A tagged machine is no longer its owner's,
+so `autogroup:self` stops covering it, and no grant here has `tag:hive` as its
+source:
+
+```json
+{
+  "tagOwners": { "tag:hive": ["autogroup:admin"] },
+  "grants": [
+    { "src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"] },
+    { "src": ["autogroup:member"], "dst": ["tag:hive"], "ip": ["tcp:22"] }
+  ]
+}
+```
+
+Members reach their own devices and can SSH to the hive's machines, and the
+machines, and their jobs, reach no one. A policy replaces the default that
+lets everything reach everything, so add what else the tailnet needs. On a
+LAN the same is a network of its own: a guest Wi-Fi or a VLAN with nothing
+else on it.
+
+### macOS jobs
+
+Every macOS job runs as the one `hiveworker` user, and what a job leaves in
+its home (a cache, a tool, a changed shell profile) the next job finds and
+may run, whichever hive sent it (see `docs/running-jobs.md`). Turn
+`macos-jobs` on only for a Mac whose hives may share that: one hive, or hives
+whose repositories you trust with each other's jobs. A pull request's test
+run should not share a Mac with a job that holds a signing certificate.
+
 ## Updating
 
 Once a day, at a random minute, the daemon reads `latest.json` from the
@@ -559,7 +630,7 @@ refuses, rather than sharing the machine with it.
 | `internal/api`      | Device sign-in and enrollment over HTTPS                     |
 | `internal/tunnel`   | The reconnecting WebSocket to the coordinator                |
 | `internal/protocol` | Tunnel messages, tested against `packages/protocol/fixtures` |
-| `internal/host`     | Hardware facts, power and lid state                          |
+| `internal/host`     | Hardware facts, power and lid state, and what it leaves open |
 | `internal/bench`    | The speed score benchmark                                    |
 | `internal/config`   | The machine file                                             |
 

@@ -3,6 +3,7 @@
 package host
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -130,6 +131,41 @@ func Unattended() []Check {
 		checks = append(checks, Check{Name: "FileVault", Found: "off", OK: true})
 	}
 	return checks
+}
+
+// Exposed looks at what this Mac leaves open to the jobs it runs and to its
+// network.
+func Exposed() []Check {
+	var checks []Check
+	said, _ := exec.Command("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate").Output()
+	switch on, known := firewallState(string(said)); {
+	case on:
+		checks = append(checks, Check{Name: "firewall", Found: "on", OK: true})
+	case known:
+		checks = append(checks, Check{Name: "firewall", Found: "off: whatever listens on this Mac answers its network", Note: true, Fix: "turn it on in System Settings > Network > Firewall"})
+	}
+
+	if table, err := exec.Command("/usr/sbin/netstat", "-an", "-p", "tcp").Output(); err == nil {
+		listening := netstatListening(string(table))
+		// sshd's settings are root's to read, and sudo is never let ask
+		// for a password here.
+		if !listening[22] {
+			checks = append(checks, Check{Name: "ssh", Found: "Remote Login is off", OK: true})
+		} else if settings, err := exec.Command("/usr/bin/sudo", "-n", "/usr/sbin/sshd", "-T").Output(); err == nil {
+			if sshPasswords(string(settings)) {
+				checks = append(checks, Check{Name: "ssh", Found: "Remote Login is on and takes passwords", Note: true, Fix: sshKeysOnly + ", or turn Remote Login off"})
+			} else {
+				checks = append(checks, Check{Name: "ssh", Found: "Remote Login takes keys only", OK: true})
+			}
+		}
+		checks = append(checks, sharing(listening, []service{
+			{"Screen Sharing or Remote Management", 5900},
+			{"File Sharing", 445},
+			{"AirPlay Receiver", 7000},
+		}, "turn off what you do not use in System Settings > General > Sharing; AirPlay Receiver is in General > AirDrop & Handoff")...)
+	}
+	addresses, _ := net.InterfaceAddrs()
+	return append(checks, network(addresses, outbound())...)
 }
 
 // AvailableMemory is not read on a Mac, where the system reclaims cached

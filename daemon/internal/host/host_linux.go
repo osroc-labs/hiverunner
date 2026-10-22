@@ -3,6 +3,7 @@
 package host
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -157,6 +158,49 @@ func Unattended() []Check {
 		checks = append(checks, Check{Name: "start at boot", Found: "after a restart hived waits for " + user + " to log in", Fix: "sudo loginctl enable-linger " + user})
 	}
 	return checks
+}
+
+// Exposed looks at what this machine leaves open to the jobs it runs and to
+// its network.
+func Exposed() []Check {
+	var checks []Check
+	// ufw and firewalld say to anyone whether they are on. The rules
+	// themselves, like sshd's settings, are root's to read, and sudo is never
+	// let ask for a password here.
+	ufw, _ := os.ReadFile("/etc/ufw/ufw.conf")
+	if strings.Contains("\n"+string(ufw), "\nENABLED=yes") || exec.Command("systemctl", "is-active", "--quiet", "firewalld").Run() == nil {
+		checks = append(checks, Check{Name: "firewall", Found: "on", OK: true})
+	} else if ruleset, err := exec.Command("sudo", "-n", "nft", "list", "ruleset").Output(); err == nil {
+		if inputFiltered(string(ruleset)) {
+			checks = append(checks, Check{Name: "firewall", Found: "on", OK: true})
+		} else {
+			checks = append(checks, Check{Name: "firewall", Found: "no rules filter what reaches this machine", Note: true, Fix: "turn one on, such as with sudo ufw allow ssh && sudo ufw enable"})
+		}
+	}
+
+	listening := map[int]bool{}
+	for _, table := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		raw, _ := os.ReadFile(table)
+		for port := range procListening(string(raw)) {
+			listening[port] = true
+		}
+	}
+	if !listening[22] {
+		checks = append(checks, Check{Name: "ssh", Found: "sshd is not listening", OK: true})
+	} else if settings, err := exec.Command("sudo", "-n", "/usr/sbin/sshd", "-T").Output(); err == nil {
+		if sshPasswords(string(settings)) {
+			checks = append(checks, Check{Name: "ssh", Found: "sshd takes passwords", Note: true, Fix: sshKeysOnly + ", then reload sshd"})
+		} else {
+			checks = append(checks, Check{Name: "ssh", Found: "sshd takes keys only", OK: true})
+		}
+	}
+	checks = append(checks, sharing(listening, []service{
+		{"Samba", 445},
+		{"VNC", 5900},
+		{"remote desktop", 3389},
+	}, "stop the ones you do not use")...)
+	addresses, _ := net.InterfaceAddrs()
+	return append(checks, network(addresses, outbound())...)
 }
 
 // onBattery is true when the machine has a battery and no mains supply

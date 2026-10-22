@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/connection"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/host"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/settings"
+	"github.com/thecomputerplumbers/hiverunner/daemon/internal/ui"
 )
 
 func TestDoctorSaysWhatTheRunningDaemonCannotOpen(t *testing.T) {
@@ -37,5 +40,27 @@ func TestDoctorSaysWhatTheRunningDaemonCannotOpen(t *testing.T) {
 	}
 	if reason, _ := whyNoVMs(nil, connection.State{WrittenBy: os.Getpid()}); reason != "" {
 		t.Fatalf("a daemon that can run VMs was said not to: %q", reason)
+	}
+}
+
+func TestDoctorSaysHowExposedAMacIsWithoutFailing(t *testing.T) {
+	on := macOSJobs(settings.Settings{MacOSJobs: true}, "darwin")
+	if len(on) != 1 || on[0].OK || !on[0].Note || !strings.Contains(on[0].Found, "hiveworker") || !strings.Contains(on[0].Fix, "macos-jobs off") {
+		t.Fatalf("macOS jobs on said %+v", on)
+	}
+	if off := macOSJobs(settings.Settings{}, "darwin"); len(off) != 1 || !off[0].OK {
+		t.Fatalf("macOS jobs off said %+v", off)
+	}
+	if linux := macOSJobs(settings.Settings{MacOSJobs: true}, "linux"); len(linux) != 0 {
+		t.Fatalf("a Linux machine was told about macOS jobs: %+v", linux)
+	}
+
+	// What is said and not counted shows its fix, and makes nothing exit 1.
+	rows, problems := checkRows(ui.Screen{}, append(on, host.Check{Name: "firewall", Found: "off", Note: true, Fix: "turn it on"}))
+	if problems != 0 || !strings.Contains(strings.Join(rows, "\n"), "turn it on") {
+		t.Fatalf("notes counted %d, drew %q", problems, rows)
+	}
+	if _, problems := checkRows(ui.Screen{}, []host.Check{{Name: "sleep", Found: "on", Fix: "sudo pmset -a disablesleep 1"}}); problems != 1 {
+		t.Fatalf("a problem counted %d", problems)
 	}
 }
