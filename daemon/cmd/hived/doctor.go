@@ -118,14 +118,18 @@ func doctor() error {
 	checks = append(checks, host.Unattended()...)
 
 	screen := ui.For(os.Stdout)
-	rows, problems := checkRows(screen, checks)
-	exposed, _ := checkRows(screen, append(host.Exposed(), macOSJobs(current, runtime.GOOS)...))
+	rows, problems := checkRows(screen, checks, true)
 	fmt.Println()
 	fmt.Print(indent(screen.Box("Unattended", rows...)))
-	fmt.Print(indent(screen.Box("Security", exposed...)))
+	if problems == 0 {
+		fmt.Println(indent(screen.Dim(thisMachine + " keeps taking jobs with nobody at it.")))
+	}
+	// Every warning here is a note, so a note is drawn as what it is.
+	if exposed, _ := checkRows(screen, append(host.Exposed(), macOSJobs(current, runtime.GOOS)...), false); len(exposed) > 0 {
+		fmt.Print(indent(screen.Box("Security", exposed...)))
+	}
 	switch problems {
 	case 0:
-		fmt.Println(indent(screen.Dim(thisMachine + " keeps taking jobs with nobody at it.")))
 		return nil
 	case 1:
 		return fmt.Errorf("one thing would stop %s taking jobs with nobody at it", thisMachine)
@@ -134,12 +138,14 @@ func doctor() error {
 }
 
 // checkRows draws checks as a box's rows, with how many of them are wrong.
-func checkRows(screen ui.Screen, checks []host.Check) (rows []string, problems int) {
+// notesPass draws a note as a pass, as in a box where a note is the
+// exception.
+func checkRows(screen ui.Screen, checks []host.Check, notesPass bool) (rows []string, problems int) {
 	for _, check := range checks {
 		const name = 14
 		for i, line := range wrap(check.Found, ui.Inner-name-2) {
 			if i == 0 {
-				rows = append(rows, screen.Dot(check.OK || check.Note)+" "+ui.Pad(check.Name, name)+line)
+				rows = append(rows, screen.Dot(check.OK || check.Note && notesPass)+" "+ui.Pad(check.Name, name)+line)
 				continue
 			}
 			rows = append(rows, "  "+ui.Pad("", name)+line)

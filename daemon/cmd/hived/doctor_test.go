@@ -56,11 +56,19 @@ func TestDoctorSaysHowExposedAMacIsWithoutFailing(t *testing.T) {
 	}
 
 	// What is said and not counted shows its fix, and makes nothing exit 1.
-	rows, problems := checkRows(ui.Screen{}, append(on, host.Check{Name: "firewall", Found: "off", Note: true, Fix: "turn it on"}))
+	// In the Security box it is drawn as the warning it is.
+	notes := append(on, host.Check{Name: "firewall", Found: "off", Note: true, Fix: "turn it on"}, host.Check{Name: "ssh", Found: "keys only", OK: true})
+	rows, problems := checkRows(ui.Screen{}, notes, false)
 	if problems != 0 || !strings.Contains(strings.Join(rows, "\n"), "turn it on") {
 		t.Fatalf("notes counted %d, drew %q", problems, rows)
 	}
-	if _, problems := checkRows(ui.Screen{}, []host.Check{{Name: "sleep", Found: "on", Fix: "sudo pmset -a disablesleep 1"}}); problems != 1 {
+	if strings.Count(strings.Join(rows, "\n"), "○") != 2 || strings.Count(strings.Join(rows, "\n"), "●") != 1 {
+		t.Fatalf("warnings drawn as passes: %q", rows)
+	}
+	if rows, _ := checkRows(ui.Screen{}, notes, true); strings.Contains(strings.Join(rows, "\n"), "○") {
+		t.Fatalf("FileVault's kind of note drawn as a problem: %q", rows)
+	}
+	if _, problems := checkRows(ui.Screen{}, []host.Check{{Name: "sleep", Found: "on", Fix: "sudo pmset -a disablesleep 1"}}, true); problems != 1 {
 		t.Fatalf("a problem counted %d", problems)
 	}
 }
