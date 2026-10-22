@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fake is a machine that answers the commands in said, and fails the rest.
@@ -29,6 +30,7 @@ func (f *fake) system(sudoer bool, addresses ...address) system {
 		addresses: addresses,
 		user:      "ada",
 		sudoer:    sudoer,
+		ipv6:      true,
 	}
 }
 
@@ -141,6 +143,9 @@ func TestAFirewallDropsWhatItDoesNotAccept(t *testing.T) {
 		"invalid states": {chain("inet", accept+"\t\tct state invalid drop\n"), false, false},
 		// A map over several lines does not end the chain.
 		"a vmap, then a drop": {chain("inet", accept+"\t\ttcp dport vmap {\n\t\t\t22 : accept,\n\t\t\t80 : accept\n\t\t}\n\t\tdrop\n"), true, true},
+		// Logged and counted on the way is still everything.
+		"a logged last drop": {chain("inet", accept+"\t\tct state established,related accept\n\t\tlog prefix \"DROP \" counter packets 0 bytes 0 drop\n"), true, true},
+		"a logged port drop": {chain("inet", accept+"\t\ttcp dport 23 log prefix \"DROP \" drop\n"), false, false},
 	} {
 		if v4, v6 := nftFilters(c.ruleset); v4 != c.v4 || v6 != c.v6 {
 			t.Errorf("%s: got %v, %v; want %v, %v", name, v4, v6, c.v4, c.v6)
@@ -157,8 +162,18 @@ func TestAFirewallDropsWhatItDoesNotAccept(t *testing.T) {
 			t.Errorf("legacy %q: got %v, want %v", rules, got, want)
 		}
 	}
-	if !ufwDrops("ENABLED=yes\n", `DEFAULT_INPUT_POLICY="DROP"`) || ufwDrops("ENABLED=yes\n", `DEFAULT_INPUT_POLICY="ACCEPT"`) || ufwDrops("ENABLED=no\n", `DEFAULT_INPUT_POLICY="DROP"`) {
-		t.Error("ufw misread")
+	for name, c := range map[string]struct {
+		conf, defaults string
+		v4, v6         bool
+	}{
+		"on":        {"ENABLED=yes\n", "IPV6=yes\nDEFAULT_INPUT_POLICY=\"DROP\"\n", true, true},
+		"accepting": {"ENABLED=yes\n", "IPV6=yes\nDEFAULT_INPUT_POLICY=\"ACCEPT\"\n", false, false},
+		"off":       {"ENABLED=no\n", "DEFAULT_INPUT_POLICY=\"DROP\"\n", false, false},
+		"IPv4 only": {"ENABLED=yes\n", "IPV6=no\nDEFAULT_INPUT_POLICY=\"REJECT\"\n", true, false},
+	} {
+		if v4, v6 := ufwDrops(c.conf, c.defaults); v4 != c.v4 || v6 != c.v6 {
+			t.Errorf("ufw %s: got %v, %v", name, v4, v6)
+		}
 	}
 }
 
@@ -167,6 +182,16 @@ func TestLinuxFirewallReadsWhatItMay(t *testing.T) {
 	f := &fake{files: map[string]string{"/etc/ufw/ufw.conf": "ENABLED=yes\n", "/etc/default/ufw": `DEFAULT_INPUT_POLICY="DROP"`}}
 	if got := f.system(true).linuxFirewall(); len(got) != 1 || !got[0].OK || f.sudid() {
 		t.Errorf("ufw: got %+v, ran %q", got, f.ran)
+	}
+	// ufw told IPV6=no leaves IPv6 open, where there is IPv6.
+	f.files["/etc/default/ufw"] = "IPV6=no\n" + `DEFAULT_INPUT_POLICY="DROP"`
+	if got := f.system(false).linuxFirewall(); len(got) != 1 || got[0].OK || got[0].Found != "IPv4 is filtered, and IPv6 is not" {
+		t.Errorf("ufw IPV6=no: got %+v", got)
+	}
+	without := f.system(false)
+	without.ipv6 = false
+	if got := without.linuxFirewall(); len(got) != 1 || !got[0].OK {
+		t.Errorf("ufw IPV6=no, no IPv6: got %+v", got)
 	}
 	// Nobody who may not use sudo is made to try.
 	f = &fake{}
@@ -196,6 +221,34 @@ func TestLinuxFirewallReadsWhatItMay(t *testing.T) {
 			t.Errorf("listed a legacy table that was not loaded: %q", line)
 		}
 	}
+	// A machine with no IPv6 is not told to filter it.
+	without = f.system(true)
+	without.ipv6 = false
+	if got := without.linuxFirewall(); len(got) != 1 || !got[0].OK {
+		t.Errorf("legacy IPv4, no IPv6: got %+v", got)
+	}
+}
+
+func TestIPv6IsMoreThanALink(t *testing.T) {
+	at := func(iface, ip string) address { return address{iface, net.ParseIP(ip)} }
+	links := []address{at("lo", "::1"), at("eth0", "fe80::1"), at("eth0", "10.0.0.2")}
+	if hasIPv6(links, "1\n") || hasIPv6(links, "") {
+		t.Error("link-local IPv6 with IPv6 disabled, or no Linux, read as IPv6")
+	}
+	if !hasIPv6(links, "0\n") || !hasIPv6(append(links, at("eth0", "2001:db8::2")), "") {
+		t.Error("IPv6 not found")
+	}
+}
+
+func TestACommandIsGivenUpOnWithWhatItStarted(t *testing.T) {
+	defer func(limit time.Duration) { commandLimit = limit }(commandLimit)
+	commandLimit = 200 * time.Millisecond
+	// sleep holds the output open after sh is killed, as what sudo runs
+	// would.
+	start := time.Now()
+	if _, err := command("sh", "-c", "sleep 9; true"); err == nil || time.Since(start) > 3*time.Second {
+		t.Errorf("took %v, err %v", time.Since(start), err)
+	}
 }
 
 func TestSSHIsFoundWhereverItListens(t *testing.T) {
@@ -222,7 +275,7 @@ func TestSSHIsFoundWhereverItListens(t *testing.T) {
 	f = &fake{said: map[string]string{
 		"/usr/sbin/netstat -an -p tcp":                 "tcp4  0  0  *.2222  *.*  LISTEN\n",
 		"/bin/launchctl print system/com.openssh.sshd": "\t\t\tservice name = 2222\n",
-	}}
+	}, files: map[string]string{"/etc/ssh/sshd_config": "Include /etc/ssh/sshd_config.d/*\n"}}
 	if ssh := only(t, f.system(true).mac(), "ssh"); ssh.OK || !ssh.Note || !strings.Contains(ssh.Found, "could not read") || !strings.Contains(ssh.Fix, "Remote Login off") {
 		t.Errorf("unread: got %+v", ssh)
 	}
@@ -255,6 +308,35 @@ func TestAMatchBlockIsAskedAbout(t *testing.T) {
 	f.said[sshd+" -G"] = keys
 	if ssh := only(t, f.system(false).linux(), "ssh"); !ssh.OK || ssh.Found != "sshd takes keys only, outside its Match blocks" {
 		t.Errorf("unasked: got %+v", ssh)
+	}
+	// Root asked, and nothing found: a block it did not ask as is still
+	// said to be there.
+	f = &fake{
+		said:  map[string]string{"sudo -n " + sshd + " -T": keys},
+		files: map[string]string{"/proc/net/tcp": listen("0016"), "/etc/ssh/sshd_config": "Match User deploy\n\tPasswordAuthentication yes\n"},
+	}
+	if ssh := only(t, f.system(true).linux(), "ssh"); !ssh.OK || ssh.Found != "sshd takes keys only, outside its Match blocks" {
+		t.Errorf("Match User: got %+v", ssh)
+	}
+	f.said[sshd+" -G"] = keys
+	// A Match block in an included file without .conf, as a Mac's Include
+	// allows.
+	f.files["/etc/ssh/sshd_config"] = "Include /etc/ssh/sshd_config.d/*\nInclude crypto.conf\n"
+	f.files["/etc/ssh/sshd_config.d/*"] = "Match Address 192.168.0.0/16\n\tPasswordAuthentication yes\n"
+	if ssh := only(t, f.system(false).linux(), "ssh"); ssh.Found != "sshd takes keys only, outside its Match blocks" {
+		t.Errorf("included Match: got %+v", ssh)
+	}
+	read := []string{}
+	sshConfig(func(pattern string) string { read = append(read, pattern); return f.files[pattern] })
+	if fmt.Sprint(read) != "[/etc/ssh/sshd_config /etc/ssh/sshd_config.d/* /etc/ssh/crypto.conf]" {
+		t.Errorf("read %v", read)
+	}
+	// Fedora's configuration is root's to read: it may have a block, so
+	// root asks, and keys only is said of the rest.
+	delete(f.files, "/etc/ssh/sshd_config")
+	f.ran = nil
+	if ssh := only(t, f.system(true).linux(), "ssh"); ssh.Found != "sshd takes keys only, outside its Match blocks" || !strings.Contains(strings.Join(f.ran, "\n"), " -T -C ") {
+		t.Errorf("unreadable config: got %+v, ran %q", ssh, f.ran)
 	}
 	// No Match block, nothing to ask.
 	f.files["/etc/ssh/sshd_config"] = "PasswordAuthentication no\n"
@@ -333,8 +415,18 @@ func TestANetworkWithOtherMachinesOnIsSaid(t *testing.T) {
 	if got := network([]address{at("lo", "127.0.0.1")}); len(got) != 0 {
 		t.Errorf("no network at all: got %+v", got)
 	}
-	// A Mac's own VMs are behind a bridge, which is not a LAN.
+	// Containers' and VMs' bridges are said as what they are.
+	got = network([]address{at("eth0", "203.0.113.7"), at("docker0", "172.17.0.1"), at("virbr0", "192.168.122.1")})
+	if len(got) != 1 || got[0].OK || !strings.Contains(got[0].Found, "local bridges (172.17.0.1 on docker0, 192.168.122.1 on virbr0)") ||
+		strings.Contains(got[0].Found, "private network") || strings.Contains(got[0].Fix, "Wi-Fi") {
+		t.Errorf("bridges: got %+v", got)
+	}
+	// A Mac's own VMs are behind vmnet's bridge, which is not a LAN; its
+	// Thunderbolt Bridge can be.
 	if network := only(t, (&fake{}).system(false, at("bridge100", "192.168.64.1"), at("en0", "203.0.113.7")).mac(), "network"); !network.OK {
 		t.Errorf("VM bridge: got %+v", network)
+	}
+	if network := only(t, (&fake{}).system(false, at("bridge0", "169.254.3.4"), at("bridge0", "10.1.1.2")).mac(), "network"); network.OK {
+		t.Errorf("Thunderbolt Bridge: got %+v", network)
 	}
 }

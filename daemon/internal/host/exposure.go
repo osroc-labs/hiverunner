@@ -28,9 +28,12 @@ type system struct {
 	read      func(pattern string) string
 	addresses []address
 	user      string
-	// sudoer is whether the user may use sudo at all. sudo -n is not tried
-	// otherwise, so as not to fill the auth log with refusals.
+	// sudoer is whether sudo -n works here. It is asked once, and every
+	// other sudo is left untried if not, so that the auth log gets one
+	// refusal at most.
 	sudoer bool
+	// ipv6 is whether the machine has IPv6 to filter.
+	ipv6 bool
 }
 
 // address is one of the machine's addresses, and the interface it is on.
@@ -42,11 +45,13 @@ type address struct {
 // local is this machine.
 func local() system {
 	s := system{run: command, read: readAll, user: os.Getenv("USER")}
+	// Nobody outside these groups is made to try at all.
 	groups, _ := command("id", "-Gn")
 	for _, group := range strings.Fields(groups) {
-		switch group {
-		case "admin", "sudo", "wheel", "root":
-			s.sudoer = true
+		if group == "admin" || group == "sudo" || group == "wheel" || group == "root" {
+			_, err := command("sudo", "-n", "true")
+			s.sudoer = err == nil
+			break
 		}
 	}
 	interfaces, _ := net.Interfaces()
@@ -58,25 +63,47 @@ func local() system {
 			}
 		}
 	}
+	s.ipv6 = hasIPv6(s.addresses, s.read("/proc/sys/net/ipv6/conf/all/disable_ipv6"))
 	return s
 }
 
+// hasIPv6 is whether a machine has IPv6 beyond its own links: an address
+// that is not link-local, or, on Linux, IPv6 not disabled.
+func hasIPv6(addresses []address, disabled string) bool {
+	for _, a := range addresses {
+		if a.ip.To4() == nil && !a.ip.IsLoopback() && !a.ip.IsLinkLocalUnicast() {
+			return true
+		}
+	}
+	return strings.TrimSpace(disabled) == "0"
+}
+
+// commandLimit is how long a command may take.
+var commandLimit = 5 * time.Second
+
 // command runs a program and gives what it printed. None of these should
-// take long, so one that does is given up on.
+// take long, so one that does is given up on. Killing it leaves what it
+// started, as sudo starts what it runs, holding its output open; WaitDelay
+// stops waiting for that.
 func command(name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), commandLimit)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
 	return string(out), err
 }
 
+// readAll reads every file a pattern matches, leaving out what cannot be
+// read: nothing read at all is "".
 func readAll(pattern string) string {
 	paths, _ := filepath.Glob(pattern)
 	var all strings.Builder
 	for _, path := range paths {
-		raw, _ := os.ReadFile(path)
-		all.Write(raw)
-		all.WriteString("\n")
+		if raw, err := os.ReadFile(path); err == nil {
+			all.Write(raw)
+			all.WriteString("\n")
+		}
 	}
 	return all.String()
 }
@@ -107,11 +134,11 @@ func (s system) mac() []Check {
 			{"AirPlay Receiver", 7000},
 		}, "turn off what you do not use in System Settings > General > Sharing; AirPlay Receiver is in General > AirDrop & Handoff")...)
 	}
-	// A VM's network, hived's own among them, is a bridge to this Mac's
-	// NAT, not a LAN.
+	// vmnet puts hived's VMs on bridge100 and up, behind this Mac's own
+	// NAT: not a LAN. bridge0 is Thunderbolt Bridge, which can be one.
 	var addresses []address
 	for _, a := range s.addresses {
-		if !strings.HasPrefix(a.iface, "bridge") {
+		if number, err := strconv.Atoi(strings.TrimPrefix(a.iface, "bridge")); err != nil || number < 100 {
 			addresses = append(addresses, a)
 		}
 	}
@@ -122,7 +149,7 @@ func (s system) mac() []Check {
 func (s system) linux() []Check {
 	checks := s.linuxFirewall()
 	listening := procListening(s.read("/proc/net/tcp") + s.read("/proc/net/tcp6"))
-	checks = append(checks, s.ssh("sshd", "sshd is not listening", nil, listening, ", then reload sshd")...)
+	checks = append(checks, s.ssh("sshd", "sshd is not listening", nil, listening, ", then reload sshd: hived reads its files, not the sshd running")...)
 	checks = append(checks, sharing(listening, []service{
 		{"Samba", 445},
 		{"VNC", 5900},
@@ -136,34 +163,39 @@ func (s system) linux() []Check {
 // themselves are root's to read.
 func (s system) linuxFirewall() []Check {
 	on := []Check{{Name: "firewall", Found: "on", OK: true}}
-	if ufwDrops(s.read("/etc/ufw/ufw.conf"), s.read("/etc/default/ufw")) {
-		return on
-	}
 	if _, err := s.run("systemctl", "is-active", "--quiet", "firewalld"); err == nil {
 		return on
 	}
-	if !s.sudoer {
-		return nil
+	v4, v6 := ufwDrops(s.read("/etc/ufw/ufw.conf"), s.read("/etc/default/ufw"))
+	read := v4
+	if s.sudoer && !(v4 && (v6 || !s.ipv6)) {
+		// -t leaves out the members of sets, which in a blocklist can be
+		// millions.
+		ruleset, err := s.run("sudo", "-n", "nft", "-t", "list", "ruleset")
+		read = read || err == nil
+		nft4, nft6 := nftFilters(ruleset)
+		v4, v6 = v4 || nft4, v6 || nft6
+		// nft does not see legacy tables. Listing one loads its module, so
+		// only a table already loaded is listed. A filter table built into
+		// the kernel is not in /proc/modules, and is not listed: that can
+		// only make a firewall look off.
+		modules := s.read("/proc/modules")
+		for _, legacy := range []struct {
+			module, command string
+			filters         *bool
+		}{{"iptable_filter ", "iptables-legacy", &v4}, {"ip6table_filter ", "ip6tables-legacy", &v6}} {
+			if !strings.Contains(modules, legacy.module) {
+				continue
+			}
+			if rules, err := s.run("sudo", "-n", legacy.command, "-S", "INPUT"); err == nil {
+				read = true
+				*legacy.filters = *legacy.filters || legacyFilters(rules)
+			}
+		}
 	}
-	// -t leaves out the members of sets, which in a blocklist can be
-	// millions.
-	ruleset, err := s.run("sudo", "-n", "nft", "-t", "list", "ruleset")
-	read := err == nil
-	v4, v6 := nftFilters(ruleset)
-	// nft does not see legacy tables. Listing one loads its module, so only
-	// a table already loaded is listed.
-	modules := s.read("/proc/modules")
-	for _, legacy := range []struct {
-		module, command string
-		filters         *bool
-	}{{"iptable_filter ", "iptables-legacy", &v4}, {"ip6table_filter ", "ip6tables-legacy", &v6}} {
-		if !strings.Contains(modules, legacy.module) {
-			continue
-		}
-		if rules, err := s.run("sudo", "-n", legacy.command, "-S", "INPUT"); err == nil {
-			read = true
-			*legacy.filters = *legacy.filters || legacyFilters(rules)
-		}
+	// IPv6 is judged only where there is IPv6 to reach the machine by.
+	if !s.ipv6 {
+		v6 = v4
 	}
 	const fix = "turn one on, such as with sudo ufw allow ssh && sudo ufw enable"
 	switch {
@@ -214,24 +246,25 @@ func (s system) ssh(name, off string, ports []int, listening map[int]bool, fix s
 	if settings == "" {
 		return []Check{{Name: "ssh", Found: name + " is on, and hived could not read whether it takes passwords", Note: true, Fix: sshKeysOnly + fix}}
 	}
-	passwords, from, outside := sshPasswords(settings), "", false
+	passwords, from := sshPasswords(settings), ""
 	// What sshd prints is for no connection in particular, so a Match block
-	// has to be asked about by connection, which only root can do.
-	if !passwords && sshMatches(s.read("/etc/ssh/sshd_config")+s.read("/etc/ssh/sshd_config.d/*.conf")) {
-		outside = true
-		for _, probe := range sshProbes {
-			if !s.sudoer {
-				break
-			}
-			matched, err := s.run("sudo", "-n", sshd, "-T", "-C", "user="+s.user+",host=probe,addr="+probe)
-			if err != nil {
-				break
-			}
-			outside = false
-			if sshPasswords(matched) {
-				passwords, from = true, " from "+probe+", by a Match block"
-				break
-			}
+	// is asked about as a connection from each of a few places, which only
+	// root can do. That cannot cover every user and address a block might
+	// name, so where there is one, or the configuration is root's to read
+	// as on Fedora, keys only is said of the rest.
+	config := sshConfig(s.read)
+	outside := !passwords && (config == "" || sshMatches(config))
+	for _, probe := range sshProbes {
+		if !outside || !s.sudoer {
+			break
+		}
+		matched, err := s.run("sudo", "-n", sshd, "-T", "-C", "user="+s.user+",host=probe,addr="+probe)
+		if err != nil {
+			break
+		}
+		if sshPasswords(matched) {
+			passwords, from = true, " from "+probe+", by a Match block"
+			break
 		}
 	}
 	switch {
@@ -255,7 +288,7 @@ var (
 // tailnet or a private network, whose other machines a job can reach as it
 // can.
 func network(addresses []address) []Check {
-	var tailnets, private []string
+	var tailnets, private, bridges []string
 	seen := false
 	for _, a := range addresses {
 		switch {
@@ -263,6 +296,8 @@ func network(addresses []address) []Check {
 			continue
 		case tailnet.Contains(a.ip) || tailnet6.Contains(a.ip):
 			tailnets = append(tailnets, a.ip.String()+" on "+a.iface)
+		case a.ip.IsPrivate() && localBridge(a.iface):
+			bridges = append(bridges, a.ip.String()+" on "+a.iface)
 		case a.ip.IsPrivate():
 			private = append(private, a.ip.String()+" on "+a.iface)
 		}
@@ -277,6 +312,10 @@ func network(addresses []address) []Check {
 		on = append(on, "a private network ("+strings.Join(private, ", ")+")")
 		fixes = append(fixes, "lend it from a network of its own, such as a guest Wi-Fi or VLAN")
 	}
+	if len(bridges) > 0 {
+		on = append(on, "local bridges ("+strings.Join(bridges, ", ")+")")
+		fixes = append(fixes, "keep on its bridges only the containers and VMs a job may reach")
+	}
 	switch {
 	case len(on) > 0:
 		return []Check{{Name: "network", Found: "on " + strings.Join(on, " and ") + ", and a job can reach whatever this machine can there",
@@ -285,6 +324,17 @@ func network(addresses []address) []Check {
 		return []Check{{Name: "network", Found: "on no tailnet or private network", OK: true}}
 	}
 	return nil
+}
+
+// localBridge is whether an interface is one that containers or VMs on this
+// machine sit behind, by the names their tools give them.
+func localBridge(iface string) bool {
+	for _, prefix := range []string{"docker", "br-", "virbr", "cni", "podman", "lxdbr", "lxcbr", "incusbr", "flannel", "cali", "vnet", "veth"} {
+		if strings.HasPrefix(iface, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // sharing is the sharing check from the TCP ports something listens on for
@@ -363,6 +413,26 @@ func sshPorts(settings string) []int {
 	return ports
 }
 
+// sshConfig is sshd's configuration as far as it can be read: sshd_config,
+// and every file its Include lines name. "" if sshd_config cannot be read.
+func sshConfig(read func(string) string) string {
+	config := read("/etc/ssh/sshd_config")
+	all := config
+	for _, line := range strings.Split(config, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "include") {
+			continue
+		}
+		for _, pattern := range fields[1:] {
+			if !strings.HasPrefix(pattern, "/") {
+				pattern = "/etc/ssh/" + pattern
+			}
+			all += read(pattern)
+		}
+	}
+	return all
+}
+
 // sshMatches is whether sshd's configuration has a Match block.
 func sshMatches(config string) bool {
 	for _, line := range strings.Split(config, "\n") {
@@ -399,15 +469,17 @@ func firewallState(said string) (on, known bool) {
 }
 
 // ufwDrops reads ufw.conf and /etc/default/ufw: whether ufw is on and drops
-// what it does not allow.
-func ufwDrops(conf, defaults string) bool {
-	return strings.Contains("\n"+conf, "\nENABLED=yes") &&
+// what it does not allow, for IPv4 and, unless told IPV6=no, for IPv6.
+func ufwDrops(conf, defaults string) (v4, v6 bool) {
+	v4 = strings.Contains("\n"+conf, "\nENABLED=yes") &&
 		(strings.Contains(defaults, `DEFAULT_INPUT_POLICY="DROP"`) || strings.Contains(defaults, `DEFAULT_INPUT_POLICY="REJECT"`))
+	return v4, v4 && !strings.Contains("\n"+defaults, "\nIPV6=no")
 }
 
-// unconditional is a rule that drops or rejects everything that reaches it.
-// A rule that matches first, as fail2ban's do, drops only what it matches.
-var unconditional = regexp.MustCompile(`^(counter( packets \d+ bytes \d+)? )?(drop|reject( with .+)?)$`)
+// unconditional is a rule that drops or rejects everything that reaches it,
+// perhaps logging and counting it first. A rule that matches first, as
+// fail2ban's do, drops only what it matches.
+var unconditional = regexp.MustCompile(`^((log( prefix "[^"]*")?( level \w+)?( flags [\w,]+)?|counter( packets \d+ bytes \d+)?) )*(drop|reject( with .+)?)$`)
 
 // nftFilters reads `nft list ruleset`: whether a chain on the input hook
 // drops what it does not accept, by its policy or by an unconditional last

@@ -324,10 +324,12 @@ when `lid` is turned on while it runs.
 `hived doctor` says, in a box of its own, how exposed the machine is to the
 jobs it runs and to its network. None of it makes it exit 1: each is the
 owner's call, as FileVault is. What only root can read is read with
-`sudo -n`, which never asks for a password, and only for a user in the
-`admin`, `sudo` or `wheel` group. sshd's settings come from `sshd -G` where
-it needs no root (macOS); unread, the `ssh` row says so. When Linux's
-firewall rules cannot be read, there is no `firewall` row.
+`sudo -n`, which never asks for a password. A user in the `admin`, `sudo` or
+`wheel` group is tried once, with `sudo -n true`, and nothing else is tried
+with sudo if that is refused. sshd's settings come from `sshd -G` where it
+needs no root (macOS, recent OpenSSH); unread, the `ssh` row says so. When
+Linux's firewall rules cannot be read, there is no `firewall` row. Every
+command is given five seconds.
 
 | Check        | Says so when                                                                                                 |
 | ------------ | ------------------------------------------------------------------------------------------------------------ |
@@ -337,15 +339,27 @@ firewall rules cannot be read, there is no `firewall` row.
 | `network`    | An interface has a private address, or one in `100.64.0.0/10` (a tailnet's, or another CGNAT VPN's)          |
 | `macos jobs` | `macos-jobs` is on, so macOS jobs share one home                                                             |
 
-On Linux the firewall is on when ufw is on and drops by default, when
-firewalld runs, or when a chain on the input hook, in nftables or in legacy
-iptables, drops by its policy or by an unconditional last rule. A chain that
-drops only some addresses or ports, as fail2ban's and CrowdSec's do, is not a
-firewall. sshd is asked about a `Match` block as a connection from each
-private range, a tailnet's and the internet, which takes root; without it
-the `ssh` row says keys only outside its Match blocks. The `sharing` row
-goes by port: Screen Sharing 5900, Remote Management 3283, File Sharing 445,
-Printer Sharing 631, Remote Apple Events 3031, AirPlay Receiver 7000.
+On Linux the firewall is on when firewalld runs, when ufw is on and drops by
+default (for IPv6 too, unless `IPV6=no`), or when a chain on the input hook,
+in nftables or in a legacy iptables table already loaded, drops by its policy
+or by a last rule that drops everything, logged and counted or not. A chain
+that drops only some addresses or ports, as fail2ban's and CrowdSec's do, is
+not a firewall. IPv6 is judged only on a machine that has it.
+
+`hived doctor` reads sshd's configuration files, not the sshd that is
+running, so reload sshd after a change before believing it. A `Match` block
+can let passwords in for some users or addresses only: sshd is asked as a
+connection from each private range, a tailnet's and the internet, which takes
+root, and where there is a block, or the files are root's to read as on
+Fedora, the `ssh` row says keys only outside its Match blocks. The files read
+are `sshd_config` and whatever its `Include` lines name.
+
+The `sharing` row goes by port: Screen Sharing 5900, Remote Management 3283,
+File Sharing 445, Printer Sharing 631, Remote Apple Events 3031, AirPlay
+Receiver 7000. The `network` row names each address and its interface. A
+Mac's own VMs, behind vmnet's `bridge100` and up, are left out; a Linux
+machine's container and VM bridges (`docker0`, `virbr0`, `cni0` and the like)
+are said as local bridges, whose containers a job can reach too.
 
 Turning FileVault off and auto-login on, so that a machine comes back by
 itself, costs two things. Whoever takes the machine can read its disk, and
@@ -376,10 +390,12 @@ needs nothing incoming: its tunnel is a connection it makes.
      sudo sshd -t   # says nothing when the configuration is good
      ```
 
-  3. Reload it: `sudo systemctl reload ssh` on Debian and Ubuntu,
-     `sudo systemctl reload sshd` on Fedora, RHEL, Arch and SUSE. A Mac, and
-     a socket-activated sshd (Ubuntu 24.04), read it at the next SSH
-     connection.
+  3. On Linux, reload it: `sudo systemctl reload ssh` on Debian and
+     Ubuntu, `sudo systemctl reload sshd` on Fedora, RHEL, Arch and SUSE.
+     A running sshd keeps what it read when it started, socket-activated as
+     on Ubuntu 24.04 or not; one not yet started may say there is nothing
+     to reload. A Mac starts sshd for each connection, so it reads the file
+     at the next SSH connection.
   4. Open a new session with the key before you close the old one.
 
 - **Unused Sharing services off**, in System Settings > General > Sharing,
