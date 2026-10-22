@@ -75,6 +75,7 @@ func doctor() error {
 	} else {
 		checks = append(checks, host.Check{Name: "jobs", Found: "taking jobs", OK: true})
 	}
+	checks = append(checks, networkOf(current, vm.FencesNetwork).check())
 	switch {
 	case !power.OnBattery:
 		checks = append(checks, host.Check{Name: "power", Found: "plugged in", OK: true})
