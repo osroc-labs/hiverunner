@@ -2,6 +2,8 @@ package macvm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -12,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/jobs"
 	"github.com/thecomputerplumbers/hiverunner/daemon/internal/native"
 )
@@ -19,6 +23,10 @@ import (
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func init() {
+	// The runner the tests fetch.
+	sum := sha256.Sum256([]byte("runner"))
+	runnerSHA256 = hex.EncodeToString(sum[:])
+	stopWait = 200 * time.Millisecond
 	bootTimeout = 300 * time.Millisecond
 	powerOffGrace = 200 * time.Millisecond
 	stopGrace = 50 * time.Millisecond
@@ -88,11 +96,22 @@ func TestAnImageRunsJobsOnlyOnceSealed(t *testing.T) {
 		t.Fatalf("read back: %+v %v", loaded, err)
 	}
 
-	// Sealing an unchanged image again neither reads it nor fetches again.
+	// Sealing again reads it all again, and leaves a runner that is the one
+	// pinned where it is.
 	said.Reset()
 	again, err := Seal(dir, func(string) (string, error) { return "", errors.New("fetched again") }, &said)
-	if err != nil || again.Digest != sealed.Digest || said.Len() != 0 {
+	if err != nil || again.Digest != sealed.Digest || !strings.Contains(said.String(), "digest") {
 		t.Fatalf("sealed again: %q %v, said %q", again.Digest, err, said.String())
+	}
+	// A runner that is not is fetched again.
+	if err := os.WriteFile(filepath.Join(dir, native.RunnerFile), []byte("someone else's"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Seal(dir, fetch, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(dir, native.RunnerFile)); string(raw) != "runner" {
+		t.Fatalf("the runner beside the image is %q", raw)
 	}
 }
 
@@ -184,9 +203,9 @@ func guest(t *testing.T, code string, seen *map[string]string) func(*instance) e
 	return func(vm *instance) error {
 		got := map[string]string{}
 		for _, name := range []string{"jitconfig", DigestFile, runnerShared, "label"} {
-			raw, err := os.ReadFile(filepath.Join(vm.share, name))
+			raw, err := os.ReadFile(filepath.Join(vm.in, name))
 			if err != nil {
-				t.Errorf("the share has no %s", name)
+				t.Errorf("nothing handed in as %s", name)
 			}
 			got[name] = string(raw)
 		}
@@ -197,8 +216,8 @@ func guest(t *testing.T, code string, seen *map[string]string) func(*instance) e
 		}
 		*seen = got
 		go func() {
-			_ = os.WriteFile(filepath.Join(vm.share, "ready"), nil, 0o600)
-			_ = os.WriteFile(filepath.Join(vm.share, "exit"), []byte(code+"\n"), 0o600)
+			_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+			_ = os.WriteFile(filepath.Join(vm.out, "exit"), []byte(code+"\n"), 0o600)
 			vm.end()
 		}()
 		return nil
@@ -259,7 +278,7 @@ func TestAVMThatWillNotStartLeavesNothing(t *testing.T) {
 func running(stops *atomic.Int32, ready bool) func(*instance) error {
 	return func(vm *instance) error {
 		if ready {
-			_ = os.WriteFile(filepath.Join(vm.share, "ready"), nil, 0o600)
+			_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
 		}
 		vm.stop = func() {
 			if stops.Add(1) == 1 {
@@ -318,7 +337,7 @@ func TestAnUnsealedImageRunsNothing(t *testing.T) {
 func TestAThirdVMIsRefused(t *testing.T) {
 	booted := make(chan *instance, MostVMs)
 	r := newRunner(t, sealedImage(t), func(vm *instance) error {
-		_ = os.WriteFile(filepath.Join(vm.share, "ready"), nil, 0o600)
+		_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
 		vm.stop = func() {}
 		booted <- vm
 		return nil
@@ -346,7 +365,7 @@ func TestAThirdVMIsRefused(t *testing.T) {
 		t.Fatalf("a third VM: %v, want ErrFull", err)
 	}
 	for _, vm := range vms {
-		_ = os.WriteFile(filepath.Join(vm.share, "exit"), []byte("0"), 0o600)
+		_ = os.WriteFile(filepath.Join(vm.out, "exit"), []byte("0"), 0o600)
 		vm.end()
 	}
 	for range MostVMs {
@@ -367,10 +386,10 @@ func TestWhatAKilledDaemonLeftIsCleared(t *testing.T) {
 	var seen map[string]string
 	r := newRunner(t, sealedImage(t), guest(t, "0", &seen))
 	left := filepath.Join(r.WorkDir, "job-1234")
-	if err := os.MkdirAll(filepath.Join(left, "share"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(left, "in"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(left, "share", "jitconfig"), []byte("a credential"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(left, "in", "jitconfig"), []byte("a credential"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.Run(context.Background(), job("a-1")); err != nil {
@@ -407,7 +426,7 @@ func TestTheGuestsFilesAreWhatTheOwnerInstalls(t *testing.T) {
 		}
 	}
 	agent, _ := os.ReadFile(filepath.Join(dir, "hive-agent"))
-	for _, want := range []string{"mount_virtiofs " + ShareTag, DigestFile, "HIVE_IMAGE_DIGEST", runnerShared, "--jitconfig"} {
+	for _, want := range []string{"mount_share " + InTag, "mount_share " + OutTag, DigestFile, "HIVE_IMAGE_DIGEST", runnerShared, "--jitconfig"} {
 		if !strings.Contains(string(agent), want) {
 			t.Errorf("the agent does not mention %q", want)
 		}
@@ -422,4 +441,251 @@ func TestSealingNoImageSaysHowToMakeOne(t *testing.T) {
 	if err := Remove(missing); err != nil {
 		t.Fatalf("Remove() = %v", err)
 	}
+}
+
+// The guest can put anything where its results go. What it puts there is
+// never followed to the host's files, never waited on, and never read past
+// the size of a result.
+func TestAHostileGuestReachesNothingOfTheHosts(t *testing.T) {
+	for name, plant := range map[string]func(t *testing.T, exit, owners string){
+		"a link to a host file": func(t *testing.T, exit, owners string) {
+			if err := os.Symlink(owners, exit); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a link to a device that never ends": func(t *testing.T, exit, _ string) {
+			if err := os.Symlink("/dev/zero", exit); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a FIFO nobody writes": func(t *testing.T, exit, _ string) {
+			if err := unix.Mkfifo(exit, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a directory": func(t *testing.T, exit, _ string) {
+			if err := os.Mkdir(exit, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a file larger than any result": func(t *testing.T, exit, _ string) {
+			if err := os.WriteFile(exit, []byte(strings.Repeat("7", 1<<20)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			owners := filepath.Join(t.TempDir(), "owners-file")
+			if err := os.WriteFile(owners, []byte("7"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r := newRunner(t, sealedImage(t), func(vm *instance) error {
+				_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+				plant(t, filepath.Join(vm.out, "exit"), owners)
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					vm.end()
+				}()
+				return nil
+			})
+			done := make(chan struct{})
+			var result jobs.Result
+			var err error
+			go func() {
+				defer close(done)
+				result, err = r.Run(context.Background(), job("a-1"))
+			}()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("Run never returned")
+			}
+			if err == nil || !strings.Contains(err.Error(), "without reporting") || result.ExitCode != -1 {
+				t.Fatalf("Run() = %+v, %v; want no result", result, err)
+			}
+			if r.Unusable() == ReasonStaleRunner {
+				t.Error("a planted exit code switched macOS jobs off")
+			}
+			if raw, _ := os.ReadFile(owners); string(raw) != "7" {
+				t.Errorf("the host's file now reads %q", raw)
+			}
+		})
+	}
+}
+
+// A ready that is a link to something is not the agent saying it is ready.
+func TestALinkIsNotReady(t *testing.T) {
+	var stops atomic.Int32
+	r := newRunner(t, sealedImage(t), func(vm *instance) error {
+		_ = os.Symlink("/etc/hosts", filepath.Join(vm.out, "ready"))
+		return running(&stops, false)(vm)
+	})
+	if _, err := r.Run(context.Background(), job("a-1")); err == nil || !strings.Contains(err.Error(), "did not start its agent") {
+		t.Fatalf("Run() = %v", err)
+	}
+}
+
+// What the host hands in is written as a new file, never through whatever
+// had the name before.
+func TestAStopReasonIsNeverWrittenThroughALink(t *testing.T) {
+	owners := filepath.Join(t.TempDir(), "owners-file")
+	if err := os.WriteFile(owners, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stops atomic.Int32
+	var in string
+	r := newRunner(t, sealedImage(t), func(vm *instance) error {
+		in = vm.in
+		if err := os.Symlink(owners, filepath.Join(vm.in, "stop-reason")); err != nil {
+			t.Fatal(err)
+		}
+		vm.stop = func() {
+			if stops.Add(1) == 1 {
+				// Read before the clone is deleted.
+				if info, err := os.Lstat(filepath.Join(in, "stop-reason")); err != nil || !info.Mode().IsRegular() {
+					t.Errorf("stop-reason is not a file of its own: %v", err)
+				}
+				vm.end()
+			}
+		}
+		_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+		return nil
+	})
+	ctx, cancel := context.WithCancelCause(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel(jobs.ErrTimeout)
+	}()
+	if _, err := r.Run(ctx, job("a-1")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() = %v", err)
+	}
+	if raw, _ := os.ReadFile(owners); string(raw) != "mine" {
+		t.Errorf("the host's file now reads %q", raw)
+	}
+}
+
+// The configuration leaves what is handed in once the agent has read it.
+func TestTheConfigurationIsTakenBackOnceRead(t *testing.T) {
+	var still atomic.Bool
+	r := newRunner(t, sealedImage(t), func(vm *instance) error {
+		_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			_, err := os.Stat(filepath.Join(vm.in, "jitconfig"))
+			still.Store(err == nil)
+			_ = os.WriteFile(filepath.Join(vm.out, "exit"), []byte("0"), 0o600)
+			vm.end()
+		}()
+		return nil
+	})
+	if _, err := r.Run(context.Background(), job("a-1")); err != nil {
+		t.Fatal(err)
+	}
+	if still.Load() {
+		t.Error("the configuration was still handed in after the agent said it was ready")
+	}
+}
+
+// A runner replaced beside the image is not handed to a job.
+func TestARunnerThatIsNotThePinnedOneIsRefused(t *testing.T) {
+	dir := sealedImage(t)
+	if err := os.WriteFile(filepath.Join(dir, native.RunnerFile), []byte("someone else's"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := newRunner(t, dir, func(*instance) error { t.Error("a VM booted"); return nil })
+	if _, err := r.Run(context.Background(), job("a-1")); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("Run() = %v", err)
+	}
+	if left := jobDirs(t, r); len(left) != 0 {
+		t.Fatalf("left behind: %v", left)
+	}
+}
+
+// A job can write any exit code, so a refused runner declines jobs for a
+// while, not for good.
+func TestARefusedRunnerDeclinesOnlyForAWhile(t *testing.T) {
+	defer func(was time.Duration) { staleFor = was }(staleFor)
+	staleFor = 100 * time.Millisecond
+	var seen map[string]string
+	r := newRunner(t, sealedImage(t), guest(t, "7", &seen))
+	if _, err := r.Run(context.Background(), job("a-1")); err != nil {
+		t.Fatal(err)
+	}
+	if r.Unusable() != ReasonStaleRunner {
+		t.Fatal("not declining after a refused runner")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if r.Unusable() == ReasonStaleRunner {
+		t.Fatal("still declining once the while is over")
+	}
+}
+
+// A VM that does not stop when told to keeps its clone and its place:
+// another VM must not start beside it past the licence.
+func TestAVMThatWillNotStopKeepsItsPlace(t *testing.T) {
+	var stuck *instance
+	r := newRunner(t, sealedImage(t), func(vm *instance) error {
+		stuck = vm
+		_ = os.WriteFile(filepath.Join(vm.out, "ready"), nil, 0o600)
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	if _, err := r.Run(ctx, job("a-1")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() = %v", err)
+	}
+	if left := jobDirs(t, r); len(left) != 1 {
+		t.Fatalf("a running VM's clone was deleted: %v", left)
+	}
+	if held := taken(r); held != 1 {
+		t.Fatalf("%d places taken with a VM still running", held)
+	}
+	stuck.end()
+	deadline := time.Now().Add(3 * time.Second)
+	for len(jobDirs(t, r)) != 0 || taken(r) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the clone and its place were kept after the VM stopped")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The daemon clears a dead daemon's clones as it starts, before any job,
+// and makes nothing on a Mac that has never had a macOS image.
+func TestClaimClearsLeftoversAtStart(t *testing.T) {
+	r := newRunner(t, sealedImage(t), nil)
+	left := filepath.Join(r.WorkDir, "job-1234")
+	if err := os.MkdirAll(left, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Claim(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(left); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a previous run's clone is still there")
+	}
+	none := filepath.Join(t.TempDir(), "macos-image")
+	empty := &Runner{Dir: none, WorkDir: none + "-jobs", Log: quiet}
+	if err := empty.Claim(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(empty.WorkDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a work directory was made on a Mac with no macOS image")
+	}
+}
+
+// taken is how many VMs the runner counts as running.
+func taken(r *Runner) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	held := 0
+	for _, used := range r.slots {
+		if used {
+			held++
+		}
+	}
+	return held
 }

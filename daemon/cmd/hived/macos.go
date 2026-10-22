@@ -47,6 +47,7 @@ Making one, once:
      In the window:
      - Go through Setup Assistant. Make an admin user named runner. Skip the
        Apple Account, and leave FileVault off: automatic login needs it off.
+       Turn on no sharing service: two jobs' VMs share one network.
      - System Settings > Users & Groups: log in automatically as runner.
      - Xcode: expand the .xip from /Volumes/My Shared Files/files into
        /Applications (or share this Mac's /Applications and copy Xcode.app),
@@ -56,6 +57,8 @@ Making one, once:
      - What every job needs, such as Homebrew, then:
              brew install cocoapods node@24 openjdk@17 && corepack enable
      - The guest agent: sudo "/Volumes/My Shared Files/hive/install.sh"
+       It also turns sharing services off and has the firewall block all
+       incoming connections.
      - Shut it down from the Apple menu.
   3. hived macos image seal
   4. hived config set macos-isolation vm
@@ -63,7 +66,9 @@ Making one, once:
 
 Each job gets a clone of the image with a machine identifier of its own, and
 reads the image's digest as HIVE_IMAGE_DIGEST. Two run at once at most, as
-Apple's licence allows. Opening the image again changes it; seal it after.
+Apple's licence allows. Opening the image again changes it; seal it after,
+and after moving data-dir to another disk. The digest says which image a job
+ran on; this Mac computes it, so it vouches for nothing beyond that.
 `
 
 // macos is `hived macos ...`: setting a Mac up for jobs that need macOS.

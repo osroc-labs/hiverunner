@@ -41,7 +41,7 @@ const (
 	// RunnerVersion is GitHub's runner, pinned with its checksum the way the
 	// guest image pins its own. Bump both together.
 	RunnerVersion = "2.337.0"
-	runnerSHA256  = "5a2cd92908a93d7276a194e1de6008099f3e7946f3f8e14aa7a1a7b4a31fdec2"
+	RunnerSHA256  = "5a2cd92908a93d7276a194e1de6008099f3e7946f3f8e14aa7a1a7b4a31fdec2"
 	// RunnerFile is the runner's tarball, as GitHub names it.
 	RunnerFile = "actions-runner-osx-arm64-" + RunnerVersion + ".tar.gz"
 	runnerURL  = "https://github.com/actions/runner/releases/download/v" + RunnerVersion + "/" + RunnerFile
@@ -255,7 +255,7 @@ func DownloadRunner(ctx context.Context, dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if got := hex.EncodeToString(sum.Sum(nil)); got != runnerSHA256 {
+	if got := hex.EncodeToString(sum.Sum(nil)); got != RunnerSHA256 {
 		os.Remove(path)
 		return "", fmt.Errorf("the downloaded runner does not match its checksum (%s)", got)
 	}

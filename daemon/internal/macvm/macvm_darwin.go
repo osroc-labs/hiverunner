@@ -30,12 +30,13 @@ type machine struct {
 	identifier *vz.MacMachineIdentifier
 	// mac is the VM's network identity; nil is a new one.
 	mac net.HardwareAddr
-	// share, if set, is what the guest sees of the host.
-	share *vz.VirtioFileSystemDeviceConfiguration
+	// shares, if any, are what the guest sees of the host.
+	shares []vz.DirectorySharingDeviceConfiguration
 }
 
 // start boots a job's VM on its clones, with a machine identifier of its
-// own and the share as its one window on the host.
+// own. It sees two directories of the host's and nothing else: one it can
+// only read, and one for its results.
 func start(guest *instance) error {
 	model, err := vz.NewMacHardwareModelWithDataPath(guest.hardwareModel)
 	if err != nil {
@@ -51,19 +52,14 @@ func start(guest *instance) error {
 	if err != nil {
 		return err
 	}
-	directory, err := vz.NewSharedDirectory(guest.share, false)
-	if err != nil {
-		return fmt.Errorf("share: %w", err)
-	}
-	single, err := vz.NewSingleDirectoryShare(directory)
+	in, err := shareOne(InTag, guest.in, true)
 	if err != nil {
 		return err
 	}
-	share, err := vz.NewVirtioFileSystemDeviceConfiguration(ShareTag)
+	out, err := shareOne(OutTag, guest.out, false)
 	if err != nil {
 		return err
 	}
-	share.SetDirectoryShare(single)
 	total, _ := unix.SysctlUint64("hw.memsize")
 	vm, err := configure(machine{
 		vcpus:      uint(min(guest.vcpus, runtime.NumCPU())),
@@ -73,20 +69,26 @@ func start(guest *instance) error {
 		auxiliary:  auxiliary,
 		identifier: identifier,
 		mac:        guest.mac,
-		share:      share,
+		shares:     []vz.DirectorySharingDeviceConfiguration{in, out},
 	})
 	if err != nil {
 		return err
 	}
 	// Subscribe before starting, so a VM that dies at once is still seen.
 	changes := vm.StateChangedNotify()
+	abandoned := make(chan struct{})
 	go func() {
-		for state := range changes {
-			if state == vz.VirtualMachineStateStopped || state == vz.VirtualMachineStateError {
-				if state != vz.VirtualMachineStateStopped {
-					guest.failure = fmt.Errorf("the macOS VM ended in state %v", state)
+		for {
+			select {
+			case state := <-changes:
+				if state == vz.VirtualMachineStateStopped || state == vz.VirtualMachineStateError {
+					if state != vz.VirtualMachineStateStopped {
+						guest.failure = fmt.Errorf("the macOS VM ended in state %v", state)
+					}
+					guest.end()
+					return
 				}
-				guest.end()
+			case <-abandoned:
 				return
 			}
 		}
@@ -97,9 +99,28 @@ func start(guest *instance) error {
 		}
 	}
 	if err := vm.Start(); err != nil {
+		close(abandoned)
 		return err
 	}
 	return nil
+}
+
+// shareOne is a directory the guest mounts by its tag.
+func shareOne(tag, path string, readOnly bool) (*vz.VirtioFileSystemDeviceConfiguration, error) {
+	directory, err := vz.NewSharedDirectory(path, readOnly)
+	if err != nil {
+		return nil, fmt.Errorf("share: %w", err)
+	}
+	single, err := vz.NewSingleDirectoryShare(directory)
+	if err != nil {
+		return nil, err
+	}
+	share, err := vz.NewVirtioFileSystemDeviceConfiguration(tag)
+	if err != nil {
+		return nil, err
+	}
+	share.SetDirectoryShare(single)
+	return share, nil
 }
 
 func configure(m machine) (*vz.VirtualMachine, error) {
@@ -181,8 +202,8 @@ func configure(m machine) (*vz.VirtualMachine, error) {
 	}
 	config.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{entropy})
 
-	if m.share != nil {
-		config.SetDirectorySharingDevicesVirtualMachineConfiguration([]vz.DirectorySharingDeviceConfiguration{m.share})
+	if len(m.shares) > 0 {
+		config.SetDirectorySharingDevicesVirtualMachineConfiguration(m.shares)
 	}
 	if ok, err := config.Validate(); !ok || err != nil {
 		return nil, fmt.Errorf("VM configuration is not valid: %w", err)
@@ -370,7 +391,7 @@ func Open(ctx context.Context, options OpenOptions) error {
 		model:      model,
 		auxiliary:  auxiliary,
 		identifier: identifier,
-		share:      share,
+		shares:     []vz.DirectorySharingDeviceConfiguration{share},
 	})
 	if err != nil {
 		return err

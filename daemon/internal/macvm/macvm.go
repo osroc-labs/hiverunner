@@ -3,14 +3,14 @@ package macvm
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,28 +26,35 @@ const (
 	MostVMs = 2
 	// VCPUs is a job VM's size, which is what a hive-macos job is billed as.
 	VCPUs = 4
-	// ShareTag is the virtio-fs tag the guest agent mounts.
-	ShareTag = "hive"
-	// DigestFile is the image's digest in the share, which the guest agent
+	// InTag is the virtio-fs tag of what the host hands the guest, which it
+	// can only read; OutTag is the one it writes its results to.
+	InTag  = "hive"
+	OutTag = "hive-out"
+	// DigestFile is the image's digest, handed in, which the guest agent
 	// gives the job as HIVE_IMAGE_DIGEST.
 	DigestFile = "image-digest"
-	// runnerShared is GitHub's runner in the share, which the guest agent
+	// runnerShared is GitHub's runner, handed in, which the guest agent
 	// unpacks onto the VM's own disk.
 	runnerShared = "runner.tar.gz"
 )
 
-// ReasonStaleRunner is why a Mac declines macOS jobs once GitHub has refused
-// the runner it hands its VMs as too old.
-const ReasonStaleRunner = "the runner this Mac gives its macOS VMs is too old for GitHub; update hived and run hived macos image seal"
+// ReasonStaleRunner is why a Mac declines macOS jobs for a while after a
+// job's runner said GitHub refused it as too old.
+const ReasonStaleRunner = "a macOS VM's runner was refused by GitHub as too old, so macOS jobs are declined for an hour; if it happens again, update hived and run hived macos image seal"
 
-// How long a VM has to boot and log in before the job is given up on, and
-// how long the guest has to power off once it has reported. Variables so
+// How long a VM has to boot and log in before the job is given up on, how
+// long the guest has to power off once it has reported, how long a stopped
+// VM has to go, and how long a refused runner declines jobs. Variables so
 // the tests need not wait.
 var (
 	bootTimeout   = 5 * time.Minute
 	powerOffGrace = 30 * time.Second
 	stopGrace     = 5 * time.Second
+	stopWait      = 15 * time.Second
+	staleFor      = time.Hour
 	poll          = time.Second
+	// runnerSHA256 is what the runner handed to each VM must hash to.
+	runnerSHA256 = native.RunnerSHA256
 )
 
 // Memory is what a job's VM is given on a host with this much: as much as a
@@ -66,14 +73,19 @@ type Runner struct {
 
 	mu sync.Mutex
 	// slots are the VMs running, by network identity.
-	slots [MostVMs]bool
-	// claimed is whether WorkDir is this process's and has been swept, and
-	// unclaim gives it up. Kept, so the lock's file is never collected.
-	claimed bool
-	unclaim func()
+	slots   [MostVMs]bool
 	checked time.Time
 	problem string
-	stale   atomic.Bool
+	// staleUntil is when a runner GitHub refused stops declining jobs, in
+	// Unix nanoseconds. It expires because a job can write any exit code:
+	// one job must not switch macOS jobs off on this Mac for good.
+	staleUntil atomic.Int64
+	// claiming guards claimed and unclaim, apart from mu, so that offers are
+	// not held up by a sweep. unclaim is kept so the lock's file is never
+	// collected, which would drop the lock.
+	claiming sync.Mutex
+	claimed  bool
+	unclaim  func()
 	// launch and clone stand in for the host's own in tests.
 	launch func(*instance) error
 	clone  func(from, to string) error
@@ -91,7 +103,7 @@ func (r *Runner) Ready() bool { return r.Unusable() == "" }
 
 // Unusable implements jobs.Unusable.
 func (r *Runner) Unusable() string {
-	if r.stale.Load() {
+	if time.Now().UnixNano() < r.staleUntil.Load() {
 		return ReasonStaleRunner
 	}
 	r.mu.Lock()
@@ -123,10 +135,48 @@ func (r *Runner) inspect() string {
 	return image.Problem()
 }
 
+// Claim makes the work directory this process's and clears what a daemon
+// that died left there: a clone can hold whatever its job wrote, a signing
+// key among it. The daemon claims it as it starts, whichever way it runs
+// macOS jobs; a Mac with neither an image nor a work directory has nothing
+// to claim, and its first job claims it.
+func (r *Runner) Claim() error {
+	if _, err := os.Stat(r.WorkDir); err != nil {
+		if _, err := os.Stat(r.Dir); err != nil {
+			return nil
+		}
+	}
+	return r.claim()
+}
+
+func (r *Runner) claim() error {
+	r.claiming.Lock()
+	defer r.claiming.Unlock()
+	if r.claimed {
+		return nil
+	}
+	// Never given back: the kernel drops it when the process ends.
+	release, err := vm.LockWorkDir(r.WorkDir)
+	if err != nil {
+		return err
+	}
+	swept, err := vm.SweepWorkDir(r.WorkDir)
+	if err != nil {
+		release()
+		return err
+	}
+	if swept > 0 && r.Log != nil {
+		r.Log.Info("cleared the macOS VMs a previous run left behind", "directories", swept)
+	}
+	r.unclaim, r.claimed = release, true
+	return nil
+}
+
 // instance is one job's VM and everything on the host that belongs to it.
 type instance struct {
-	dir   string
-	share string
+	dir string
+	// in is handed to the guest to read; out is where it writes.
+	in, out string
 	// The clones, and the image's hardware model, which is not cloned:
 	// nothing writes it.
 	disk, auxiliary, hardwareModel string
@@ -155,35 +205,24 @@ func (guest *instance) alive() bool {
 }
 
 // Run implements jobs.Runner: a clone of the image, booted, handed the job,
-// waited for, stopped and deleted. Run returns only once the clone is gone.
+// waited for, stopped and deleted. Run returns once the clone is gone, or
+// once it is plain that the VM will not stop: see release.
 func (r *Runner) Run(ctx context.Context, job jobs.Job) (jobs.Result, error) {
 	started := time.Now()
+	if err := r.claim(); err != nil {
+		return jobs.Result{ExitCode: -1}, err
+	}
 	slot, err := r.take()
 	if err != nil {
 		return jobs.Result{ExitCode: -1}, err
 	}
-	defer r.give(slot)
-	image, err := Load(r.Dir)
-	if err == nil {
-		if problem := image.Problem(); problem != "" {
-			err = errors.New(problem)
-		}
-	}
+	guest, image, err := r.prepare(job, slot)
 	if err != nil {
+		r.give(slot)
 		return jobs.Result{ExitCode: -1}, err
 	}
-	guest, err := r.prepare(image, job, slot)
-	if err != nil {
-		return jobs.Result{ExitCode: -1}, err
-	}
-	// Whatever happens: the VM stops and its clone, share and credential go.
-	defer func() {
-		if err := guest.destroy(); err != nil {
-			r.Log.Error("could not delete a macOS VM's clone; the next start of hived will", "job", job.AssignmentID, "error", err)
-			return
-		}
-		r.Log.Info("macOS VM deleted", "job", job.AssignmentID, "image", image.Digest)
-	}()
+	// Whatever happens: the VM stops and its clone and credential go.
+	defer r.release(guest, slot, job.AssignmentID, image.Digest)
 	launch := r.launch
 	if launch == nil {
 		launch = start
@@ -196,37 +235,22 @@ func (r *Runner) Run(ctx context.Context, job jobs.Job) (jobs.Result, error) {
 	r.Log.Info("macOS VM has the job", "job", job.AssignmentID, "image", image.Digest, "vcpus", guest.vcpus)
 
 	err = guest.wait(ctx)
-	code, hasExit := readExit(guest.share)
+	code, hasExit := readExit(guest.out)
 	if !hasExit && err == nil {
 		err = errors.New("the macOS VM stopped without reporting a result")
 	}
 	if code == native.ExitRunnerDeprecated && err == nil {
-		r.stale.Store(true)
-		r.Log.Error("GitHub refused the macOS VMs' runner as too old; macOS jobs are declined until hived is updated", "runner", native.RunnerVersion)
+		r.staleUntil.Store(time.Now().Add(staleFor).UnixNano())
+		r.Log.Error("a macOS VM's runner says GitHub refused it as too old; macOS jobs are declined for an hour", "runner", native.RunnerVersion)
 	}
 	r.Log.Info("macOS job ended", "job", job.AssignmentID, "exit", code, "seconds", int(time.Since(started).Seconds()))
 	return jobs.Result{ExitCode: code}, err
 }
 
-// take reserves one of the VMs. The first one this process runs also makes
-// the work directory its own and clears what a daemon that died left there.
+// take reserves one of the VMs.
 func (r *Runner) take() (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.claimed {
-		// Never given back: the kernel drops it when the process ends.
-		release, err := vm.LockWorkDir(r.WorkDir)
-		if err != nil {
-			return -1, err
-		}
-		r.unclaim = release
-		if swept, err := vm.SweepWorkDir(r.WorkDir); err != nil {
-			return -1, err
-		} else if swept > 0 {
-			r.Log.Info("cleared the macOS VMs a previous run left behind", "directories", swept)
-		}
-		r.claimed = true
-	}
 	for slot, used := range r.slots {
 		if !used {
 			r.slots[slot] = true
@@ -243,12 +267,27 @@ func (r *Runner) give(slot int) {
 }
 
 // prepare makes the job's directory: clones of the image's disk and
-// auxiliary storage, and the share, with everything the guest needs in it.
-// The job file goes last and appears whole, so the guest never reads half.
-func (r *Runner) prepare(image Image, job jobs.Job, slot int) (*instance, error) {
+// auxiliary storage, and what is handed in, the job's configuration last.
+// The image is held while it is checked and cloned, so what is cloned is
+// what was checked, and the digest handed in is that image's.
+func (r *Runner) prepare(job jobs.Job, slot int) (*instance, Image, error) {
+	release, err := lockImage(r.Dir, false)
+	if err != nil {
+		return nil, Image{}, err
+	}
+	defer release()
+	image, err := Load(r.Dir)
+	if err == nil {
+		if problem := image.Problem(); problem != "" {
+			err = errors.New(problem)
+		}
+	}
+	if err != nil {
+		return nil, Image{}, err
+	}
 	dir, err := os.MkdirTemp(r.WorkDir, "job-")
 	if err != nil {
-		return nil, err
+		return nil, Image{}, err
 	}
 	vcpus := job.VCPUs
 	if vcpus < 1 {
@@ -256,7 +295,8 @@ func (r *Runner) prepare(image Image, job jobs.Job, slot int) (*instance, error)
 	}
 	guest := &instance{
 		dir:           dir,
-		share:         filepath.Join(dir, "share"),
+		in:            filepath.Join(dir, "in"),
+		out:           filepath.Join(dir, "out"),
 		disk:          filepath.Join(dir, DiskFile),
 		auxiliary:     filepath.Join(dir, AuxiliaryFile),
 		hardwareModel: image.path(HardwareModelFile),
@@ -265,50 +305,69 @@ func (r *Runner) prepare(image Image, job jobs.Job, slot int) (*instance, error)
 		ended:         make(chan struct{}),
 		stop:          func() {},
 	}
-	fail := func(err error) (*instance, error) {
+	fail := func(err error) (*instance, Image, error) {
 		os.RemoveAll(dir)
-		return nil, err
+		return nil, Image{}, err
 	}
 	// The whole of what the guest can see of the host.
-	if err := os.Mkdir(guest.share, 0o700); err != nil {
-		return fail(err)
+	for _, shared := range []string{guest.in, guest.out} {
+		if err := os.Mkdir(shared, 0o700); err != nil {
+			return fail(err)
+		}
 	}
 	clone := r.clone
 	if clone == nil {
 		clone = cloneFile
 	}
-	release, err := lockImage(image.Dir, false)
-	if err != nil {
-		return fail(err)
-	}
+	runner := filepath.Join(guest.in, runnerShared)
 	for from, to := range map[string]string{
 		image.path(DiskFile):      guest.disk,
 		image.path(AuxiliaryFile): guest.auxiliary,
-		image.RunnerPath():        filepath.Join(guest.share, runnerShared),
+		image.RunnerPath():        runner,
 	} {
 		if err := clone(from, to); err != nil {
-			release()
 			return fail(fmt.Errorf("clone %s: %w", filepath.Base(from), err))
 		}
 	}
-	release()
-	extras := map[string]string{"host": hostName(), DigestFile: image.Digest}
-	if job.Label != "" {
-		extras["label"] = job.Label
+	// The runner is not part of the image's digest, and anything running
+	// as this Mac's owner could have replaced it since it was fetched.
+	if err := checkRunner(runner); err != nil {
+		return fail(err)
 	}
-	for name, value := range extras {
-		if err := os.WriteFile(filepath.Join(guest.share, name), []byte(value), 0o600); err != nil {
+	handed := map[string]string{"host": hostName(), DigestFile: image.Digest}
+	if job.Label != "" {
+		handed["label"] = job.Label
+	}
+	for name, value := range handed {
+		if err := writeIn(filepath.Join(guest.in, name), []byte(value)); err != nil {
 			return fail(err)
 		}
 	}
 	temporary := filepath.Join(dir, "jitconfig.tmp")
-	if err := os.WriteFile(temporary, []byte(job.JITConfig), 0o600); err != nil {
+	if err := writeIn(temporary, []byte(job.JITConfig)); err != nil {
 		return fail(err)
 	}
-	if err := os.Rename(temporary, filepath.Join(guest.share, "jitconfig")); err != nil {
+	if err := os.Rename(temporary, filepath.Join(guest.in, "jitconfig")); err != nil {
 		return fail(err)
 	}
-	return guest, nil
+	return guest, image, nil
+}
+
+// checkRunner reports whether the runner at path is the one hived pins.
+func checkRunner(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	sum := sha256.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return err
+	}
+	if hex.EncodeToString(sum.Sum(nil)) != runnerSHA256 {
+		return errors.New("the runner beside the macOS image does not match its checksum; run: hived macos image seal")
+	}
+	return nil
 }
 
 // wait returns when the VM has stopped, when the guest has reported and
@@ -318,6 +377,7 @@ func (r *Runner) prepare(image Image, job jobs.Job, slot int) (*instance, error)
 // job until its timeout.
 func (guest *instance) wait(ctx context.Context) error {
 	booted := time.Now()
+	ready := false
 	tick := time.NewTicker(poll)
 	defer tick.Stop()
 	for {
@@ -325,7 +385,7 @@ func (guest *instance) wait(ctx context.Context) error {
 		case <-guest.ended:
 			return guest.failure
 		case <-ctx.Done():
-			_ = os.WriteFile(filepath.Join(guest.share, "stop-reason"), []byte(stopReason(ctx)+"\n"), 0o600)
+			_ = writeIn(filepath.Join(guest.in, "stop-reason"), []byte(stopReason(ctx)+"\n"))
 			select {
 			case <-guest.ended:
 			case <-time.After(stopGrace):
@@ -333,14 +393,20 @@ func (guest *instance) wait(ctx context.Context) error {
 			return ctx.Err()
 		case <-tick.C:
 		}
-		if exists(filepath.Join(guest.share, "exit")) {
+		if !ready && present(filepath.Join(guest.out, "ready")) {
+			// The agent reads the configuration before it says so, and
+			// nothing else in the VM needs it.
+			ready = true
+			_ = os.Remove(filepath.Join(guest.in, "jitconfig"))
+		}
+		if _, ok := readExit(guest.out); ok {
 			select {
 			case <-guest.ended:
 			case <-time.After(powerOffGrace):
 			}
 			return nil
 		}
-		if !exists(filepath.Join(guest.share, "ready")) && time.Since(booted) > bootTimeout {
+		if !ready && time.Since(booted) > bootTimeout {
 			return errors.New("the macOS VM did not start its agent; check the image with hived macos image open")
 		}
 	}
@@ -357,16 +423,36 @@ func stopReason(ctx context.Context) string {
 	return jobs.ReasonDaemonShutdown
 }
 
-// destroy stops the VM if it is still running and deletes its files.
-func (guest *instance) destroy() error {
+// release stops the VM if it is still running, then deletes its files and
+// gives back its slot. A VM that has not stopped within stopWait keeps
+// both: deleting a disk from under a running VM, or starting another beside
+// it past Apple's licence, would be worse than waiting. They go when it
+// does stop.
+func (r *Runner) release(guest *instance, slot int, id, digest string) {
 	if guest.alive() {
 		guest.stop()
 		select {
 		case <-guest.ended:
-		case <-time.After(15 * time.Second):
+		case <-time.After(stopWait):
 		}
 	}
-	return os.RemoveAll(guest.dir)
+	gone := func() {
+		if err := os.RemoveAll(guest.dir); err != nil {
+			r.Log.Error("could not delete a macOS VM's clone; the next start of hived will", "job", id, "error", err)
+		} else {
+			r.Log.Info("macOS VM deleted", "job", id, "image", digest)
+		}
+		r.give(slot)
+	}
+	if guest.alive() {
+		r.Log.Error("a macOS VM did not stop when told to; its clone and its place stay taken until it does", "job", id)
+		go func() {
+			<-guest.ended
+			gone()
+		}()
+		return
+	}
+	gone()
 }
 
 // mac is a VM's network identity. The host's network remembers each card it
@@ -376,23 +462,6 @@ func mac(workDir string, slot int) net.HardwareAddr {
 	seed := sha256.Sum256([]byte(workDir + "\x00macos"))
 	// 0x02: locally administered, unicast.
 	return net.HardwareAddr{0x02, 0x6d, seed[0], seed[1], seed[2], seed[3]&0xf0 | byte(slot)}
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func readExit(share string) (int, bool) {
-	raw, err := os.ReadFile(filepath.Join(share, "exit"))
-	if err != nil {
-		return -1, false
-	}
-	parsed, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
-		return -1, false
-	}
-	return parsed, true
 }
 
 func hostName() string {

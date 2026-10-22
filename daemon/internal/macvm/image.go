@@ -7,9 +7,14 @@
 // logs in by itself, Xcode and the tools every job needs, and the guest
 // agent, and then sealed (Seal), which takes its digest. A job gets an APFS
 // clone of the image's disk and auxiliary storage, a machine identifier of
-// its own, and a share holding GitHub's runner, the job's one-time runner
-// configuration and the image's digest. Its VM is stopped and its clone
-// deleted when the job ends, however it ends.
+// its own, a directory it can only read holding GitHub's runner, the job's
+// one-time runner configuration and the image's digest, and one it writes
+// its results to. Its VM is stopped and its clone deleted when the job
+// ends, however it ends.
+//
+// The digest names an image; it does not vouch for one. This Mac computes
+// it, and its owner, or anything running as them, can change the image and
+// seal it again. It says which image a job ran on, for an honest Mac.
 //
 // Apple's licence allows a Mac two macOS VMs besides itself, so a Mac runs
 // two of these at most.
@@ -51,10 +56,15 @@ type Image struct {
 	MacOS   string    `json:"macos"`
 	Created time.Time `json:"created"`
 	// Digest is "sha256:" and the hash Seal took of the sealed files, or ""
-	// before it has been sealed. A job reads it as HIVE_IMAGE_DIGEST.
+	// before it has been sealed. A job reads it as HIVE_IMAGE_DIGEST. The
+	// runner beside the image is not part of it: it is checked against the
+	// checksum hived pins, for every job.
 	Digest string `json:"digest,omitempty"`
 	// Stamps are the sealed files' sizes and modification times when the
-	// digest was taken, so a change since is seen without reading them all.
+	// digest was taken. A job compares them, which is cheap, rather than
+	// hash a whole disk: that catches the owner opening the image again and
+	// forgetting to seal it, not a change made to look like none. A copy of
+	// the image to another disk changes them, and needs sealing again.
 	Stamps map[string]Stamp `json:"stamps,omitempty"`
 }
 
@@ -148,10 +158,11 @@ func (i Image) save() error {
 // native.DownloadRunner, which checks it against the pinned checksum.
 type Download func(dir string) (string, error)
 
-// Seal takes the image's digest, unless nothing has changed since it was
-// last taken, and puts GitHub's runner beside it if it is not there. A job
-// runs only from a sealed image, and one changed since is refused until it
-// is sealed again. Nothing may have the image open meanwhile.
+// Seal takes the image's digest, reading every byte of it each time, and
+// puts GitHub's runner beside it unless the one there is the one hived
+// pins. A job runs only from a sealed image, and one whose files have
+// changed since is refused until it is sealed again. Nothing may have the
+// image open meanwhile.
 func Seal(dir string, download Download, say io.Writer) (Image, error) {
 	release, err := lockImage(dir, true)
 	if err != nil {
@@ -162,30 +173,29 @@ func Seal(dir string, download Download, say io.Writer) (Image, error) {
 	if err != nil {
 		return Image{}, err
 	}
-	if image.Digest == "" || !image.unchanged() {
-		fmt.Fprintln(say, "Taking the image's digest. This reads the whole disk once, and can take a few minutes.")
-		stamps := map[string]Stamp{}
-		for _, name := range sealed {
-			if stamps[name], err = stampOf(image.path(name)); err != nil {
-				return Image{}, err
-			}
-		}
-		digest, err := digestOf(dir)
-		if err != nil {
-			return Image{}, err
-		}
-		// A file that changed while it was read is not what was hashed.
-		for _, name := range sealed {
-			if now, err := stampOf(image.path(name)); err != nil || now != stamps[name] {
-				return Image{}, fmt.Errorf("%s changed while its digest was taken; is the image open?", name)
-			}
-		}
-		image.Digest, image.Stamps = digest, stamps
-		if err := image.save(); err != nil {
+	fmt.Fprintln(say, "Taking the image's digest. This reads the whole disk once, and can take a few minutes.")
+	stamps := map[string]Stamp{}
+	for _, name := range sealed {
+		if stamps[name], err = stampOf(image.path(name)); err != nil {
 			return Image{}, err
 		}
 	}
-	if _, err := os.Stat(image.RunnerPath()); err != nil {
+	digest, err := digestOf(dir)
+	if err != nil {
+		return Image{}, err
+	}
+	// A file that changed while it was read is not what was hashed.
+	for _, name := range sealed {
+		if now, err := stampOf(image.path(name)); err != nil || now != stamps[name] {
+			return Image{}, fmt.Errorf("%s changed while its digest was taken; is the image open?", name)
+		}
+	}
+	image.Digest, image.Stamps = digest, stamps
+	if err := image.save(); err != nil {
+		return Image{}, err
+	}
+	if checkRunner(image.RunnerPath()) != nil {
+		os.Remove(image.RunnerPath())
 		fmt.Fprintf(say, "Downloading GitHub's runner %s...\n", native.RunnerVersion)
 		path, err := download(dir)
 		if err != nil {

@@ -651,3 +651,42 @@ func TestAMacOSVMNeedsItsMemory(t *testing.T) {
 		t.Fatalf("a Linux job past an accepted macOS VM: %q, want low memory", reason)
 	}
 }
+
+// chooser hands out whichever runner it is pointed at now.
+type chooser struct{ now Runner }
+
+func (c *chooser) Run(context.Context, Job) (Result, error) { panic("a chooser runs nothing itself") }
+
+func (c *chooser) Choose() Runner { return c.now }
+
+// The way a job runs is decided when it is offered. Changing it before the
+// job starts changes how later jobs run, not that one.
+func TestAJobRunsTheWayItWasAcceptedFor(t *testing.T) {
+	inVM, asUser := newFake(), newFake()
+	ways := &chooser{now: inVM}
+	m := New(newFake(), quiet)
+	m.Native(ways)
+	m.Limit(limited(Limits{MaxJobs: 2, MacOS: true}))
+	if reason := m.Offer("acme", macOSOffer("m-1")); reason != "" {
+		t.Fatalf("offer: %q", reason)
+	}
+	ways.now = asUser
+	if err := m.Start(context.Background(), "acme", start("m-1")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-inVM.started:
+	case <-asUser.started:
+		t.Fatal("a job accepted for a VM ran another way")
+	case <-within(t, "start"):
+		t.Fatal("the job never started")
+	}
+	inVM.finish <- 0
+	<-m.Exits("acme")
+
+	// A way that cannot run declines the offer with its reason.
+	ways.now = broken{}
+	if reason := m.Offer("acme", macOSOffer("m-2")); reason != (broken{}).Unusable() {
+		t.Fatalf("offer to an unusable way: %q", reason)
+	}
+}

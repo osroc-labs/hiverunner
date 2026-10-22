@@ -9,6 +9,11 @@
 # runners: every job's VM is thrown away after it. The runner user and its
 # automatic login come first, made in System Settings.
 #
+# Two jobs' VMs run at once on one network, the host's NAT, and every clone
+# has the same user and password. So nothing in the image listens: Remote
+# Login, Screen Sharing, Remote Management and File Sharing are turned off,
+# and the firewall blocks every incoming connection.
+#
 # NOT YET RUN ON REAL HARDWARE.
 set -eu
 
@@ -33,6 +38,15 @@ echo "$user ALL=(ALL) NOPASSWD: ALL" > "$rule"
 visudo -cf "$rule" >/dev/null
 install -o root -g wheel -m 0440 "$rule" /etc/sudoers.d/hive-runner
 rm -f "$rule"
+
+# Nothing listens for another VM, or the host, to reach.
+for service in com.openssh.sshd com.apple.screensharing com.apple.smbd; do
+  launchctl bootout "system/$service" 2>/dev/null || true
+  launchctl disable "system/$service"
+done
+/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -deactivate -stop >/dev/null 2>&1 || true
+/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on >/dev/null
+/usr/libexec/ApplicationFirewall/socketfilterfw --setblockall on >/dev/null
 
 # A VM that sleeps runs nothing until the host gives up on it.
 pmset -a sleep 0 displaysleep 0 disksleep 0

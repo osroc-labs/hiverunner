@@ -53,6 +53,13 @@ type Runner interface {
 	Run(ctx context.Context, job Job) (Result, error)
 }
 
+// Chooser is implemented by a runner with more than one way of running a
+// job. The way is chosen when the job is offered, and that way runs it: a
+// setting changed before the job starts does not change how it runs.
+type Chooser interface {
+	Choose() Runner
+}
+
 // Unusable is implemented by a runner that can find out it will not be able
 // to run jobs, and why: a guest image GitHub no longer accepts, for one. A
 // non-empty reason declines every offer with it.
@@ -143,7 +150,9 @@ type slot struct {
 	vcpus        int
 	timeout      time.Duration
 	label        string
-	phase        phase
+	// runner is what runs it, chosen when it was offered.
+	runner Runner
+	phase  phase
 	// cancel stops the start timer (accepted) or the runner (running).
 	cancel func()
 	// released means the coordinator backed out of a running job: its VM is
@@ -273,6 +282,9 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 	if limits.Hold {
 		return ReasonCoolingOff
 	}
+	if chooser, ok := runner.(Chooser); ok {
+		runner = chooser.Choose()
+	}
 	if runner == nil {
 		return ReasonNoRunner
 	}
@@ -334,6 +346,7 @@ func (m *Manager) Offer(pool string, offer *protocol.JobAssign) (reason string) 
 		vcpus:        offer.VCPUs,
 		timeout:      time.Duration(offer.TimeoutMinutes) * time.Minute,
 		label:        offer.Label,
+		runner:       runner,
 		phase:        accepted,
 	}
 	// If the coordinator never follows up, the machine must not stay
@@ -392,10 +405,7 @@ func (m *Manager) Start(ctx context.Context, pool string, start *protocol.JobSta
 		Timeout:      held.timeout,
 		Label:        held.label,
 	}
-	runner := m.runner
-	if held.kind == protocol.KindMacOS {
-		runner = m.native
-	}
+	runner := held.runner
 	m.running.Add(1)
 	go func() {
 		defer m.running.Done()

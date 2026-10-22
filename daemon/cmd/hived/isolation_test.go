@@ -108,3 +108,20 @@ func TestTheMacOSImageIsKeptWithTheData(t *testing.T) {
 		t.Fatalf("the macOS image is in %s, the Linux one in %s", dir, image)
 	}
 }
+
+// A job accepted for a VM runs in one even if the owner switches to the
+// hiveworker user before it starts; the manager runs what Choose gave it.
+func TestTheWayIsChosenWhenTheJobIsOffered(t *testing.T) {
+	current := settings.Default()
+	current.MacOSIsolation = settings.IsolationVM
+	runner := &macosRunner{user: way{name: "user"}, vm: way{name: "vm"}, settings: func() settings.Settings { return current }}
+	chosen := runner.Choose()
+	current.MacOSIsolation = ""
+	result, _ := chosen.Run(context.Background(), jobs.Job{})
+	if result.Detail != "vm" {
+		t.Fatalf("a job chosen for a VM ran as %q", result.Detail)
+	}
+	if again, _ := runner.Choose().Run(context.Background(), jobs.Job{}); again.Detail != "user" {
+		t.Fatalf("the next job ran as %q", again.Detail)
+	}
+}
